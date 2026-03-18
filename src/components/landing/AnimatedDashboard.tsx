@@ -38,10 +38,10 @@ export function AnimatedDashboard() {
           className="text-center mb-16 space-y-4"
         >
           <span className="text-sm font-semibold uppercase tracking-widest text-primary">Plataforma en Acción</span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold text-white">
             Analítica que se ve <span className="text-gradient">increíble</span>
           </h2>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+          <p className="text-white/60 text-lg max-w-2xl mx-auto">
             Dashboards inteligentes que transforman tus datos en decisiones estratégicas en tiempo real.
           </p>
         </motion.div>
