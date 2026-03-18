@@ -50,7 +50,7 @@ export function ContactSection() {
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Empresa</label>
+              <label className="text-sm font-medium text-white/80">Empresa</label>
               <Input placeholder="Nombre de tu empresa" required />
             </div>
             <div className="space-y-2">
