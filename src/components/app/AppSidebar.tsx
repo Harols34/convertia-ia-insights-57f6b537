@@ -62,7 +62,7 @@ export function AppSidebar() {
         </div>
 
         {menuGroups.map((group) => (
-          <SidebarGroup key={group.label} defaultOpen>
+          <SidebarGroup key={group.label}>
             <SidebarGroupLabel>{!collapsed ? group.label : ""}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
