@@ -37,7 +37,7 @@ export function ContactSection() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             onSubmit={(e) => { e.preventDefault(); setSubmitted(true); }}
-            className="space-y-5 p-8 rounded-xl border border-border bg-card"
+            className="space-y-5 p-8 rounded-xl border border-white/10 bg-white/[0.04] backdrop-blur-xl"
           >
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
