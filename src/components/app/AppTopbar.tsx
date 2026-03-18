@@ -13,8 +13,8 @@ export function AppTopbar() {
     <header className="h-14 border-b border-border bg-background/80 backdrop-blur-xl flex items-center px-4 gap-3 sticky top-0 z-40">
       <SidebarTrigger />
 
-      <div className="flex-1 flex items-center gap-2 max-w-md">
-        <div className="relative flex-1 hidden sm:block">
+      <div className="flex-1 min-w-0">
+        <div className="relative hidden sm:block">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
