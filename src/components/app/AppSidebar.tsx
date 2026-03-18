@@ -56,8 +56,8 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarContent>
-        <div className={`p-4 flex items-center gap-2.5 ${collapsed ? "justify-center" : ""}`}>
-          <img src={logoImg} alt="Logo" className="h-7 w-7 flex-shrink-0" />
+        <div className={`p-4 flex items-center gap-2.5 ${collapsed ? "justify-center px-1" : ""}`}>
+          <img src={logoImg} alt="Logo" className={`flex-shrink-0 ${collapsed ? "h-6 w-6" : "h-7 w-7"}`} />
           {!collapsed && <span className="font-display font-bold text-sm truncate">Converti-IA</span>}
         </div>
 
