@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 
 export function CTASection() {
   return (
-    <section className="py-24 lg:py-32 bg-background">
+    <section className="py-24 lg:py-32">
       <div className="container">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

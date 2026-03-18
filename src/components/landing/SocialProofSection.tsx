@@ -7,7 +7,7 @@ const logos = [
 
 export function SocialProofSection() {
   return (
-    <section className="py-16 border-y border-border gradient-hero">
+    <section className="py-16 border-y border-white/5">
       <div className="container">
         <p className="text-center text-sm text-white/50 uppercase tracking-widest mb-10 font-semibold">
           Empresas que confían en nosotros

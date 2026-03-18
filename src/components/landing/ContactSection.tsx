@@ -9,7 +9,7 @@ export function ContactSection() {
   const [submitted, setSubmitted] = useState(false);
 
   return (
-    <section id="contacto" className="py-24 lg:py-32 gradient-hero relative overflow-hidden">
+    <section id="contacto" className="py-24 lg:py-32 relative overflow-hidden">
       <div className="container max-w-2xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -18,10 +18,10 @@ export function ContactSection() {
           className="text-center mb-12 space-y-4"
         >
           <span className="text-sm font-semibold uppercase tracking-widest text-primary">Contacto</span>
-          <h2 className="text-3xl sm:text-4xl font-display font-bold text-white">
+          <h2 className="text-3xl sm:text-4xl font-display font-bold text-gray-900">
             Hablemos de tu proyecto
           </h2>
-          <p className="text-white/50">
+          <p className="text-gray-500">
             Completa el formulario y un especialista te contactará en menos de 24 horas.
           </p>
         </motion.div>
@@ -29,7 +29,7 @@ export function ContactSection() {
         {submitted ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center p-12 rounded-xl border border-primary/30 bg-primary/5">
             <p className="text-lg font-display font-semibold text-primary">¡Gracias por tu interés!</p>
-            <p className="text-muted-foreground mt-2">Nos pondremos en contacto contigo pronto.</p>
+            <p className="text-gray-500 mt-2">Nos pondremos en contacto contigo pronto.</p>
           </motion.div>
         ) : (
           <motion.form
@@ -37,24 +37,24 @@ export function ContactSection() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             onSubmit={(e) => { e.preventDefault(); setSubmitted(true); }}
-            className="space-y-5 p-8 rounded-xl border border-white/10 bg-white/[0.04] backdrop-blur-xl"
+            className="space-y-5 p-8 rounded-xl border border-gray-200 bg-white/80 backdrop-blur-xl shadow-lg"
           >
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-white/80">Nombre completo</label>
+                <label className="text-sm font-medium text-gray-700">Nombre completo</label>
                 <Input placeholder="Tu nombre" required />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-white/80">Correo electrónico</label>
+                <label className="text-sm font-medium text-gray-700">Correo electrónico</label>
                 <Input type="email" placeholder="correo@empresa.com" required />
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-white/80">Empresa</label>
+              <label className="text-sm font-medium text-gray-700">Empresa</label>
               <Input placeholder="Nombre de tu empresa" required />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-white/80">Mensaje</label>
+              <label className="text-sm font-medium text-gray-700">Mensaje</label>
               <Textarea placeholder="Cuéntanos qué necesitas..." rows={4} required />
             </div>
             <Button type="submit" className="w-full gradient-primary text-white font-semibold h-11 glow-sm">
