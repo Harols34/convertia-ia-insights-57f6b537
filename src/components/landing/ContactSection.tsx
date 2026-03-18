@@ -9,7 +9,7 @@ export function ContactSection() {
   const [submitted, setSubmitted] = useState(false);
 
   return (
-    <section id="contacto" className="py-24 lg:py-32 bg-muted/30">
+    <section id="contacto" className="py-24 lg:py-32 gradient-hero relative overflow-hidden">
       <div className="container max-w-2xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -18,10 +18,10 @@ export function ContactSection() {
           className="text-center mb-12 space-y-4"
         >
           <span className="text-sm font-semibold uppercase tracking-widest text-primary">Contacto</span>
-          <h2 className="text-3xl sm:text-4xl font-display font-bold">
+          <h2 className="text-3xl sm:text-4xl font-display font-bold text-white">
             Hablemos de tu proyecto
           </h2>
-          <p className="text-muted-foreground">
+          <p className="text-white/50">
             Completa el formulario y un especialista te contactará en menos de 24 horas.
           </p>
         </motion.div>
@@ -37,24 +37,24 @@ export function ContactSection() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             onSubmit={(e) => { e.preventDefault(); setSubmitted(true); }}
-            className="space-y-5 p-8 rounded-xl border border-border bg-card"
+            className="space-y-5 p-8 rounded-xl border border-white/10 bg-white/[0.04] backdrop-blur-xl"
           >
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Nombre completo</label>
+                <label className="text-sm font-medium text-white/80">Nombre completo</label>
                 <Input placeholder="Tu nombre" required />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Correo electrónico</label>
+                <label className="text-sm font-medium text-white/80">Correo electrónico</label>
                 <Input type="email" placeholder="correo@empresa.com" required />
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Empresa</label>
+              <label className="text-sm font-medium text-white/80">Empresa</label>
               <Input placeholder="Nombre de tu empresa" required />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Mensaje</label>
+              <label className="text-sm font-medium text-white/80">Mensaje</label>
               <Textarea placeholder="Cuéntanos qué necesitas..." rows={4} required />
             </div>
             <Button type="submit" className="w-full gradient-primary text-white font-semibold h-11 glow-sm">

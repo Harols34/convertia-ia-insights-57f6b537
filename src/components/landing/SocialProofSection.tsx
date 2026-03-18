@@ -7,9 +7,9 @@ const logos = [
 
 export function SocialProofSection() {
   return (
-    <section className="py-16 border-y border-border bg-muted/30">
+    <section className="py-16 border-y border-border gradient-hero">
       <div className="container">
-        <p className="text-center text-sm text-muted-foreground uppercase tracking-widest mb-10 font-semibold">
+        <p className="text-center text-sm text-white/50 uppercase tracking-widest mb-10 font-semibold">
           Empresas que confían en nosotros
         </p>
         <motion.div
@@ -21,7 +21,7 @@ export function SocialProofSection() {
           {logos.map((name) => (
             <span
               key={name}
-              className="text-xl font-display font-bold text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors select-none"
+              className="text-xl font-display font-bold text-white/30 hover:text-white/60 transition-colors select-none"
             >
               {name}
             </span>
