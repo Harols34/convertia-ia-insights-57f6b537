@@ -33,7 +33,10 @@ export function AppTopbar() {
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => navigate("/login")}
+          onClick={async () => {
+            await signOut();
+            navigate("/login");
+          }}
           title="Cerrar sesión"
         >
           <LogOut className="h-4 w-4" />
