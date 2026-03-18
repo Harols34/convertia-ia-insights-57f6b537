@@ -62,8 +62,8 @@ export function ServicesSection() {
               <div className="w-10 h-10 rounded-lg gradient-primary flex items-center justify-center mb-4 group-hover:glow-sm transition-shadow">
                 <s.icon className="h-5 w-5 text-white" />
               </div>
-              <h3 className="font-display font-semibold text-card-foreground mb-2">{s.title}</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">{s.desc}</p>
+              <h3 className="font-display font-semibold text-gray-900 mb-2">{s.title}</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">{s.desc}</p>
             </motion.div>
           ))}
         </motion.div>

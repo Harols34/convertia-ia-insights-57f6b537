@@ -37,11 +37,11 @@ export function BenefitsSection() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.08 }}
-              className="p-6 rounded-xl glass-dark hover:border-primary/30 transition-colors"
+              className="p-6 rounded-xl bg-white/80 backdrop-blur-sm border border-gray-200 hover:border-primary/30 transition-colors shadow-sm"
             >
               <b.icon className="h-8 w-8 text-primary mb-4" />
-              <h3 className="font-display font-semibold text-white mb-2 text-lg">{b.title}</h3>
-              <p className="text-white/50 text-sm leading-relaxed">{b.desc}</p>
+              <h3 className="font-display font-semibold text-gray-900 mb-2 text-lg">{b.title}</h3>
+              <p className="text-gray-500 text-sm leading-relaxed">{b.desc}</p>
             </motion.div>
           ))}
         </div>

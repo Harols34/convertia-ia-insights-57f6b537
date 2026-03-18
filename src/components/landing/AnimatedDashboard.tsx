@@ -29,7 +29,7 @@ export function AnimatedDashboard() {
   const isInView = useInView(ref, { once: true, margin: "-100px" });
 
   return (
-    <section className="py-24 lg:py-32 relative overflow-hidden bg-background">
+    <section className="py-24 lg:py-32 relative overflow-hidden">
       <div className="container">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
