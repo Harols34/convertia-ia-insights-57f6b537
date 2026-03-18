@@ -21,7 +21,7 @@ export function SocialProofSection() {
           {logos.map((name) => (
             <span
               key={name}
-              className="text-xl font-display font-bold text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors select-none"
+              className="text-xl font-display font-bold text-white/30 hover:text-white/60 transition-colors select-none"
             >
               {name}
             </span>

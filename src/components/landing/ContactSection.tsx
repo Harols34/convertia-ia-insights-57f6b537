@@ -54,7 +54,7 @@ export function ContactSection() {
               <Input placeholder="Nombre de tu empresa" required />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Mensaje</label>
+              <label className="text-sm font-medium text-white/80">Mensaje</label>
               <Textarea placeholder="Cuéntanos qué necesitas..." rows={4} required />
             </div>
             <Button type="submit" className="w-full gradient-primary text-white font-semibold h-11 glow-sm">
