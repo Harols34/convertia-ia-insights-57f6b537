@@ -45,7 +45,7 @@ export function ContactSection() {
                 <Input placeholder="Tu nombre" required />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Correo electrónico</label>
+                <label className="text-sm font-medium text-white/80">Correo electrónico</label>
                 <Input type="email" placeholder="correo@empresa.com" required />
               </div>
             </div>
