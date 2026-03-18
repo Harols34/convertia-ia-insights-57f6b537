@@ -22,10 +22,10 @@ export function BenefitsSection() {
           className="text-center mb-16 space-y-4"
         >
           <span className="text-sm font-semibold uppercase tracking-widest text-primary">Beneficios</span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold text-white">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold text-gray-900">
             ¿Por qué elegir Converti-IA?
           </h2>
-          <p className="text-white/50 text-lg max-w-2xl mx-auto">
+          <p className="text-gray-500 text-lg max-w-2xl mx-auto">
             Tecnología de vanguardia al servicio de tu operación comercial.
           </p>
         </motion.div>
