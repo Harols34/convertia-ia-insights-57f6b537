@@ -41,7 +41,7 @@ export function ContactSection() {
           >
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Nombre completo</label>
+                <label className="text-sm font-medium text-white/80">Nombre completo</label>
                 <Input placeholder="Tu nombre" required />
               </div>
               <div className="space-y-2">
