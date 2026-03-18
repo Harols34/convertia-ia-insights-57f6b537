@@ -7,7 +7,7 @@ import logoImg from "@/assets/logo.ico";
 
 export function HeroSection() {
   return (
-    <section className="relative min-h-screen flex items-center overflow-hidden gradient-hero">
+    <section className="relative min-h-screen flex items-center overflow-hidden">
       {/* Subtle grid */}
       <div className="absolute inset-0 opacity-[0.03]" style={{
         backgroundImage: "linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px)",

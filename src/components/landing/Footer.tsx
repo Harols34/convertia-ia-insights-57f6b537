@@ -2,7 +2,7 @@ import logoImg from "@/assets/logo.ico";
 
 export function Footer() {
   return (
-    <footer className="gradient-hero border-t border-white/5 py-12">
+    <footer className="border-t border-border/20 py-12">
       <div className="container">
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-10">
           <div className="space-y-4">
