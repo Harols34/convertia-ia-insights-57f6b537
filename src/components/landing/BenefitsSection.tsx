@@ -12,7 +12,7 @@ const benefits = [
 
 export function BenefitsSection() {
   return (
-    <section className="py-24 lg:py-32 gradient-hero relative overflow-hidden">
+    <section id="beneficios" className="py-24 lg:py-32 gradient-hero relative overflow-hidden">
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[150px]" />
       <div className="container relative z-10">
         <motion.div
