@@ -3,24 +3,57 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import Index from "./pages/Index.tsx";
+import LoginPage from "./pages/LoginPage.tsx";
+import RecoverPage from "./pages/RecoverPage.tsx";
+import AppLayout from "./layouts/AppLayout.tsx";
+import DashboardPage from "./pages/app/DashboardPage.tsx";
+import DashboardsIAPage from "./pages/app/DashboardsIAPage.tsx";
+import AnalyticsPage from "./pages/app/AnalyticsPage.tsx";
+import ReportesPage from "./pages/app/ReportesPage.tsx";
+import ExportacionesPage from "./pages/app/ExportacionesPage.tsx";
+import BotsPage from "./pages/app/BotsPage.tsx";
+import IntegracionesPage from "./pages/app/IntegracionesPage.tsx";
+import UsuariosPage from "./pages/app/UsuariosPage.tsx";
+import RolesPage from "./pages/app/RolesPage.tsx";
+import AuditoriaPage from "./pages/app/AuditoriaPage.tsx";
+import ConfiguracionPage from "./pages/app/ConfiguracionPage.tsx";
+import SoportePage from "./pages/app/SoportePage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+    <ThemeProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/recuperar" element={<RecoverPage />} />
+            <Route path="/app" element={<AppLayout />}>
+              <Route index element={<DashboardPage />} />
+              <Route path="dashboards-ia" element={<DashboardsIAPage />} />
+              <Route path="analytics" element={<AnalyticsPage />} />
+              <Route path="reportes" element={<ReportesPage />} />
+              <Route path="exportaciones" element={<ExportacionesPage />} />
+              <Route path="bots" element={<BotsPage />} />
+              <Route path="integraciones" element={<IntegracionesPage />} />
+              <Route path="usuarios" element={<UsuariosPage />} />
+              <Route path="roles" element={<RolesPage />} />
+              <Route path="auditoria" element={<AuditoriaPage />} />
+              <Route path="configuracion" element={<ConfiguracionPage />} />
+              <Route path="soporte" element={<SoportePage />} />
+            </Route>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 
