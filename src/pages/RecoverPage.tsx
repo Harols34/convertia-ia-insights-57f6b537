@@ -5,16 +5,23 @@ import { ArrowLeft, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { supabase } from "@/integrations/supabase/client";
 import logoImg from "@/assets/logo.ico";
 
 const RecoverPage = () => {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email) setSent(true);
-    // TODO: supabase.auth.resetPasswordForEmail
+    if (!email) return;
+    setLoading(true);
+    await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setLoading(false);
+    setSent(true);
   };
 
   return (
@@ -61,8 +68,8 @@ const RecoverPage = () => {
                   required
                 />
               </div>
-              <Button type="submit" className="w-full h-11 gradient-primary text-white font-semibold">
-                Enviar enlace
+              <Button type="submit" disabled={loading} className="w-full h-11 gradient-primary text-white font-semibold">
+                {loading ? "Enviando..." : "Enviar enlace"}
               </Button>
             </form>
             <Button variant="ghost" size="sm" className="w-full" asChild>
