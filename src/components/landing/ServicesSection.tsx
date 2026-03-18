@@ -37,11 +37,11 @@ export function ServicesSection() {
           className="text-center mb-16 space-y-4"
         >
           <span className="text-sm font-semibold uppercase tracking-widest text-primary">Servicios</span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold text-gray-900">
             Todo lo que necesitas para{" "}
             <span className="text-gradient">crecer con datos</span>
           </h2>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+          <p className="text-gray-500 text-lg max-w-2xl mx-auto">
             Una plataforma integral que combina analítica avanzada, inteligencia artificial y automatización para potenciar la toma de decisiones.
           </p>
         </motion.div>
