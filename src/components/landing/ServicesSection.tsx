@@ -57,7 +57,7 @@ export function ServicesSection() {
             <motion.div
               key={s.title}
               variants={item}
-              className="group relative p-6 rounded-xl border border-border bg-card hover:border-primary/40 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5"
+              className="group relative p-6 rounded-xl border border-gray-200 bg-white/80 backdrop-blur-sm hover:border-primary/40 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5"
             >
               <div className="w-10 h-10 rounded-lg gradient-primary flex items-center justify-center mb-4 group-hover:glow-sm transition-shadow">
                 <s.icon className="h-5 w-5 text-white" />
