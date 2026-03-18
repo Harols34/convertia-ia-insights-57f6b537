@@ -3,9 +3,11 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { LogOut, Search, Bell } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/use-auth";
 
 export function AppTopbar() {
   const navigate = useNavigate();
+  const { signOut } = useAuth();
 
   return (
     <header className="h-14 border-b border-border bg-background/80 backdrop-blur-xl flex items-center px-4 gap-3 sticky top-0 z-40">
