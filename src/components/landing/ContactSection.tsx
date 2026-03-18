@@ -9,7 +9,7 @@ export function ContactSection() {
   const [submitted, setSubmitted] = useState(false);
 
   return (
-    <section id="contacto" className="py-24 lg:py-32 bg-muted/30">
+    <section id="contacto" className="py-24 lg:py-32 gradient-hero relative overflow-hidden">
       <div className="container max-w-2xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
