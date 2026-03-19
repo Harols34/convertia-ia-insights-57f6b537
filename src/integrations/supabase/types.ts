@@ -120,6 +120,104 @@ export type Database = {
           },
         ]
       }
+      leads: {
+        Row: {
+          agente_negocio: string | null
+          agente_prim_gestion: string | null
+          agente_ultim_gestion: string | null
+          bpo: string | null
+          campana_inconcert: string | null
+          campana_mkt: string | null
+          categoria_mkt: string | null
+          ciudad: string | null
+          cliente: string | null
+          created_at: string
+          email: string | null
+          fch_creacion: string | null
+          fch_negocio: string | null
+          fch_prim_gestion: string | null
+          fch_prim_resultado_marcadora: string | null
+          fch_ultim_gestion: string | null
+          id: string
+          id_lead: string | null
+          id_llave: string | null
+          keyword: string | null
+          prim_resultado_marcadora: string | null
+          result_negocio: string | null
+          result_prim_gestion: string | null
+          result_ultim_gestion: string | null
+          tenant_id: string
+          tipo_llamada: string | null
+          updated_at: string
+        }
+        Insert: {
+          agente_negocio?: string | null
+          agente_prim_gestion?: string | null
+          agente_ultim_gestion?: string | null
+          bpo?: string | null
+          campana_inconcert?: string | null
+          campana_mkt?: string | null
+          categoria_mkt?: string | null
+          ciudad?: string | null
+          cliente?: string | null
+          created_at?: string
+          email?: string | null
+          fch_creacion?: string | null
+          fch_negocio?: string | null
+          fch_prim_gestion?: string | null
+          fch_prim_resultado_marcadora?: string | null
+          fch_ultim_gestion?: string | null
+          id?: string
+          id_lead?: string | null
+          id_llave?: string | null
+          keyword?: string | null
+          prim_resultado_marcadora?: string | null
+          result_negocio?: string | null
+          result_prim_gestion?: string | null
+          result_ultim_gestion?: string | null
+          tenant_id: string
+          tipo_llamada?: string | null
+          updated_at?: string
+        }
+        Update: {
+          agente_negocio?: string | null
+          agente_prim_gestion?: string | null
+          agente_ultim_gestion?: string | null
+          bpo?: string | null
+          campana_inconcert?: string | null
+          campana_mkt?: string | null
+          categoria_mkt?: string | null
+          ciudad?: string | null
+          cliente?: string | null
+          created_at?: string
+          email?: string | null
+          fch_creacion?: string | null
+          fch_negocio?: string | null
+          fch_prim_gestion?: string | null
+          fch_prim_resultado_marcadora?: string | null
+          fch_ultim_gestion?: string | null
+          id?: string
+          id_lead?: string | null
+          id_llave?: string | null
+          keyword?: string | null
+          prim_resultado_marcadora?: string | null
+          result_negocio?: string | null
+          result_prim_gestion?: string | null
+          result_ultim_gestion?: string | null
+          tenant_id?: string
+          tipo_llamada?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       modules: {
         Row: {
           description: string | null
