@@ -83,7 +83,7 @@ export default function BotsPage() {
     }
     setShowForm(false);
     setEditBot(null);
-    setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", n8n_webhook_url: "", dataSources: ["leads"] });
+    setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", n8n_webhook_url: "", dataSources: ["leads"], responseMode: "prompt" });
     fetchBots();
   };
 
