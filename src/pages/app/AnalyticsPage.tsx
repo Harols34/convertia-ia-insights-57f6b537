@@ -42,6 +42,7 @@ export default function AnalyticsPage() {
       body: JSON.stringify({ filters }),
     });
     const result = await res.json();
+    if (result.error) { setLoading(false); return; }
     setData(result);
 
     // Fetch raw leads for table

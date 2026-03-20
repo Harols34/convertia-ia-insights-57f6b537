@@ -24,7 +24,7 @@ export default function DashboardPage() {
         body: JSON.stringify({}),
       });
       const data = await res.json();
-      setStats(data);
+      if (!data.error) setStats(data);
 
       // Fetch recent audit logs
       const { data: logs } = await supabase
