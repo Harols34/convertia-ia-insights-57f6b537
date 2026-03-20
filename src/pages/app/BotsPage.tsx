@@ -298,35 +298,64 @@ export default function BotsPage() {
               <Textarea value={form.system_prompt} onChange={(e) => setForm({ ...form, system_prompt: e.target.value })} rows={4} />
             </div>
 
-            {/* n8n Integration */}
-            <div className="rounded-lg border border-border p-4 space-y-3 bg-muted/30">
-              <div className="flex items-center gap-2">
-                <Link2 className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Integración n8n</span>
-                <Badge variant="secondary" className="text-[10px]">Opcional</Badge>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Conecta un webhook de n8n para que el bot consulte datos a través de un workflow externo en lugar de usar IA directamente.
-              </p>
-              <div>
-                <label className="text-xs font-medium mb-1 block">Webhook URL</label>
-                <Input
-                  value={form.n8n_webhook_url}
-                  onChange={(e) => setForm({ ...form, n8n_webhook_url: e.target.value })}
-                  placeholder="https://tu-n8n.com/webhook/abc123..."
-                  className="text-xs"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium mb-1 block">Workflow ID (opcional)</label>
-                <Input
-                  value={form.n8n_workflow_id}
-                  onChange={(e) => setForm({ ...form, n8n_workflow_id: e.target.value })}
-                  placeholder="workflow-id"
-                  className="text-xs"
-                />
+            {/* Response Mode */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Modo de respuesta</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, responseMode: "prompt" })}
+                  className={`p-3 rounded-lg border text-left transition-colors ${
+                    form.responseMode === "prompt"
+                      ? "border-primary bg-primary/10"
+                      : "border-border bg-muted/50 hover:bg-muted"
+                  }`}
+                >
+                  <p className="text-sm font-medium">🤖 Prompt / IA</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">Usa la Edge Function con OpenAI para responder</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, responseMode: "n8n" })}
+                  className={`p-3 rounded-lg border text-left transition-colors ${
+                    form.responseMode === "n8n"
+                      ? "border-primary bg-primary/10"
+                      : "border-border bg-muted/50 hover:bg-muted"
+                  }`}
+                >
+                  <p className="text-sm font-medium">🔗 n8n Webhook</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">Envía el mensaje a un workflow de n8n</p>
+                </button>
               </div>
             </div>
+
+            {/* n8n config - only when n8n mode */}
+            {form.responseMode === "n8n" && (
+              <div className="rounded-lg border border-border p-4 space-y-3 bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <Link2 className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Configuración n8n</span>
+                </div>
+                <div>
+                  <label className="text-xs font-medium mb-1 block">Webhook URL <span className="text-destructive">*</span></label>
+                  <Input
+                    value={form.n8n_webhook_url}
+                    onChange={(e) => setForm({ ...form, n8n_webhook_url: e.target.value })}
+                    placeholder="https://tu-n8n.com/webhook/abc123..."
+                    className="text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium mb-1 block">Workflow ID (opcional)</label>
+                  <Input
+                    value={form.n8n_workflow_id}
+                    onChange={(e) => setForm({ ...form, n8n_workflow_id: e.target.value })}
+                    placeholder="workflow-id"
+                    className="text-xs"
+                  />
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
