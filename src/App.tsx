@@ -20,6 +20,7 @@ import RolesPage from "./pages/app/RolesPage.tsx";
 import AuditoriaPage from "./pages/app/AuditoriaPage.tsx";
 import ConfiguracionPage from "./pages/app/ConfiguracionPage.tsx";
 import SoportePage from "./pages/app/SoportePage.tsx";
+import CuentasPage from "./pages/app/CuentasPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
