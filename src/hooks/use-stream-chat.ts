@@ -25,22 +25,30 @@ export function useStreamChat() {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 message: input,
-                messages: allMsgs,
-                botId: opts.botId,
+                chatInput: input,
+                sessionId: opts.botId || "default",
               }),
             });
 
             if (!resp.ok) throw new Error(`Webhook error: ${resp.status}`);
 
             const data = await resp.json();
-            const reply = typeof data === "string" ? data : data.output || data.response || data.message || data.text || JSON.stringify(data);
+            // Handle common n8n response formats
+            let reply: string;
+            if (typeof data === "string") {
+              reply = data;
+            } else if (Array.isArray(data) && data.length > 0) {
+              const first = data[0];
+              reply = first.output || first.response || first.message || first.text || JSON.stringify(first);
+            } else {
+              reply = data.output || data.response || data.message || data.text || JSON.stringify(data);
+            }
 
             setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
             setIsLoading(false);
             return;
           } catch (webhookErr: any) {
             console.error("n8n webhook error, falling back to AI:", webhookErr);
-            // Fall through to AI if webhook fails
           }
         }
 

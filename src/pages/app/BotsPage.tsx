@@ -42,6 +42,7 @@ export default function BotsPage() {
     n8n_workflow_id: "",
     n8n_webhook_url: "",
     dataSources: ["leads"] as string[],
+    responseMode: "prompt" as "prompt" | "n8n",
   });
   const { messages, isLoading: chatLoading, sendMessage, clearMessages } = useStreamChat();
   const { toast } = useToast();
@@ -68,7 +69,8 @@ export default function BotsPage() {
       tenant_id: tenantId,
       config: {
         dataSources: form.dataSources,
-        n8n_webhook_url: form.n8n_webhook_url || null,
+        n8n_webhook_url: form.responseMode === "n8n" ? (form.n8n_webhook_url || null) : null,
+        responseMode: form.responseMode,
       },
     };
 
@@ -81,7 +83,7 @@ export default function BotsPage() {
     }
     setShowForm(false);
     setEditBot(null);
-    setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", n8n_webhook_url: "", dataSources: ["leads"] });
+    setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", n8n_webhook_url: "", dataSources: ["leads"], responseMode: "prompt" });
     fetchBots();
   };
 
@@ -107,6 +109,7 @@ export default function BotsPage() {
       n8n_workflow_id: bot.n8n_workflow_id || "",
       n8n_webhook_url: cfg?.n8n_webhook_url || "",
       dataSources: cfg?.dataSources || ["leads"],
+      responseMode: cfg?.responseMode || (cfg?.n8n_webhook_url ? "n8n" : "prompt"),
     });
     setShowForm(true);
   };
@@ -131,9 +134,11 @@ export default function BotsPage() {
 
   const getBotConfig = (bot: BotRow) => {
     const cfg = bot.config as any;
+    const mode = cfg?.responseMode || (cfg?.n8n_webhook_url ? "n8n" : "prompt");
     return {
       dataSource: cfg?.dataSources?.[0] || "leads",
-      webhookUrl: cfg?.n8n_webhook_url || null,
+      webhookUrl: mode === "n8n" ? (cfg?.n8n_webhook_url || null) : null,
+      responseMode: mode,
     };
   };
 
@@ -152,7 +157,7 @@ export default function BotsPage() {
           <h1 className="text-2xl font-display font-bold">Chatbots / AI Agents</h1>
           <p className="text-sm text-muted-foreground mt-1">Administra agentes inteligentes para tus canales</p>
         </div>
-        <Button onClick={() => { setEditBot(null); setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", n8n_webhook_url: "", dataSources: ["leads"] }); setShowForm(true); }}>
+        <Button onClick={() => { setEditBot(null); setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", n8n_webhook_url: "", dataSources: ["leads"], responseMode: "prompt" }); setShowForm(true); }}>
           <Plus className="h-4 w-4 mr-2" /> Nuevo Bot
         </Button>
       </div>
@@ -194,11 +199,11 @@ export default function BotsPage() {
                           <Badge variant={bot.is_active ? "default" : "outline"} className="text-[10px]">
                             {bot.is_active ? "Activo" : "Inactivo"}
                           </Badge>
-                          {cfg.webhookUrl && (
-                            <Badge variant="secondary" className="text-[10px] gap-1">
-                              <Link2 className="h-2.5 w-2.5" /> n8n
-                            </Badge>
-                          )}
+                          <Badge variant="secondary" className="text-[10px] gap-1">
+                            {cfg.responseMode === "n8n" ? (
+                              <><Link2 className="h-2.5 w-2.5" /> n8n</>
+                            ) : "Prompt/IA"}
+                          </Badge>
                         </div>
                       </div>
                     </div>
@@ -295,39 +300,68 @@ export default function BotsPage() {
               <Textarea value={form.system_prompt} onChange={(e) => setForm({ ...form, system_prompt: e.target.value })} rows={4} />
             </div>
 
-            {/* n8n Integration */}
-            <div className="rounded-lg border border-border p-4 space-y-3 bg-muted/30">
-              <div className="flex items-center gap-2">
-                <Link2 className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Integración n8n</span>
-                <Badge variant="secondary" className="text-[10px]">Opcional</Badge>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Conecta un webhook de n8n para que el bot consulte datos a través de un workflow externo en lugar de usar IA directamente.
-              </p>
-              <div>
-                <label className="text-xs font-medium mb-1 block">Webhook URL</label>
-                <Input
-                  value={form.n8n_webhook_url}
-                  onChange={(e) => setForm({ ...form, n8n_webhook_url: e.target.value })}
-                  placeholder="https://tu-n8n.com/webhook/abc123..."
-                  className="text-xs"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium mb-1 block">Workflow ID (opcional)</label>
-                <Input
-                  value={form.n8n_workflow_id}
-                  onChange={(e) => setForm({ ...form, n8n_workflow_id: e.target.value })}
-                  placeholder="workflow-id"
-                  className="text-xs"
-                />
+            {/* Response Mode */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Modo de respuesta</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, responseMode: "prompt" })}
+                  className={`p-3 rounded-lg border text-left transition-colors ${
+                    form.responseMode === "prompt"
+                      ? "border-primary bg-primary/10"
+                      : "border-border bg-muted/50 hover:bg-muted"
+                  }`}
+                >
+                  <p className="text-sm font-medium">🤖 Prompt / IA</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">Usa la Edge Function con OpenAI para responder</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, responseMode: "n8n" })}
+                  className={`p-3 rounded-lg border text-left transition-colors ${
+                    form.responseMode === "n8n"
+                      ? "border-primary bg-primary/10"
+                      : "border-border bg-muted/50 hover:bg-muted"
+                  }`}
+                >
+                  <p className="text-sm font-medium">🔗 n8n Webhook</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">Envía el mensaje a un workflow de n8n</p>
+                </button>
               </div>
             </div>
+
+            {/* n8n config - only when n8n mode */}
+            {form.responseMode === "n8n" && (
+              <div className="rounded-lg border border-border p-4 space-y-3 bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <Link2 className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Configuración n8n</span>
+                </div>
+                <div>
+                  <label className="text-xs font-medium mb-1 block">Webhook URL <span className="text-destructive">*</span></label>
+                  <Input
+                    value={form.n8n_webhook_url}
+                    onChange={(e) => setForm({ ...form, n8n_webhook_url: e.target.value })}
+                    placeholder="https://tu-n8n.com/webhook/abc123..."
+                    className="text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium mb-1 block">Workflow ID (opcional)</label>
+                  <Input
+                    value={form.n8n_workflow_id}
+                    onChange={(e) => setForm({ ...form, n8n_workflow_id: e.target.value })}
+                    placeholder="workflow-id"
+                    className="text-xs"
+                  />
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={!form.name.trim()}>
+            <Button onClick={handleSave} disabled={!form.name.trim() || (form.responseMode === "n8n" && !form.n8n_webhook_url.trim())}>
               {editBot ? "Guardar Cambios" : "Crear Bot"}
             </Button>
           </DialogFooter>
