@@ -9,7 +9,7 @@ export function useStreamChat() {
   const [isLoading, setIsLoading] = useState(false);
 
   const sendMessage = useCallback(
-    async (input: string, opts?: { mode?: string; botId?: string; session?: any }) => {
+    async (input: string, opts?: { mode?: string; botId?: string; dataSource?: string }) => {
       const userMsg: Msg = { role: "user", content: input };
       setMessages((prev) => [...prev, userMsg]);
       setIsLoading(true);
@@ -18,8 +18,8 @@ export function useStreamChat() {
       const allMsgs = [...messages, userMsg];
 
       try {
-        const token = (await import("@/integrations/supabase/client")).supabase;
-        const { data: { session: s } } = await token.auth.getSession();
+        const { supabase } = await import("@/integrations/supabase/client");
+        const { data: { session: s } } = await supabase.auth.getSession();
 
         const resp = await fetch(CHAT_URL, {
           method: "POST",
@@ -31,6 +31,7 @@ export function useStreamChat() {
             messages: allMsgs,
             mode: opts?.mode,
             botId: opts?.botId,
+            dataSource: opts?.dataSource || "leads",
           }),
         });
 
