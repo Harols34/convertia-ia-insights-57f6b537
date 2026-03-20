@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Bot, Plus, MessageSquare, Settings2, Trash2, Power, PowerOff, Loader2 } from "lucide-react";
+import { Bot, Plus, MessageSquare, Settings2, Trash2, Power, PowerOff, Loader2, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -40,6 +40,7 @@ export default function BotsPage() {
     system_prompt: "Eres un asistente inteligente de análisis de datos.",
     model: "gpt-4o-mini",
     n8n_workflow_id: "",
+    n8n_webhook_url: "",
     dataSources: ["leads"] as string[],
   });
   const { messages, isLoading: chatLoading, sendMessage, clearMessages } = useStreamChat();
@@ -65,7 +66,10 @@ export default function BotsPage() {
       model: form.model,
       n8n_workflow_id: form.n8n_workflow_id || null,
       tenant_id: tenantId,
-      config: { dataSources: form.dataSources },
+      config: {
+        dataSources: form.dataSources,
+        n8n_webhook_url: form.n8n_webhook_url || null,
+      },
     };
 
     if (editBot) {
@@ -77,7 +81,7 @@ export default function BotsPage() {
     }
     setShowForm(false);
     setEditBot(null);
-    setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", dataSources: ["leads"] });
+    setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", n8n_webhook_url: "", dataSources: ["leads"] });
     fetchBots();
   };
 
@@ -101,6 +105,7 @@ export default function BotsPage() {
       system_prompt: bot.system_prompt,
       model: bot.model,
       n8n_workflow_id: bot.n8n_workflow_id || "",
+      n8n_webhook_url: cfg?.n8n_webhook_url || "",
       dataSources: cfg?.dataSources || ["leads"],
     });
     setShowForm(true);
@@ -115,7 +120,7 @@ export default function BotsPage() {
     setForm((prev) => {
       const current = prev.dataSources;
       if (current.includes(value)) {
-        if (current.length === 1) return prev; // must have at least one
+        if (current.length === 1) return prev;
         return { ...prev, dataSources: current.filter((v) => v !== value) };
       }
       return { ...prev, dataSources: [...current, value] };
@@ -124,9 +129,12 @@ export default function BotsPage() {
 
   const channelLabel: Record<string, string> = { web: "Web", whatsapp: "WhatsApp", telegram: "Telegram", webchat: "Webchat" };
 
-  const getBotDataSource = (bot: BotRow) => {
+  const getBotConfig = (bot: BotRow) => {
     const cfg = bot.config as any;
-    return cfg?.dataSources?.[0] || "leads";
+    return {
+      dataSource: cfg?.dataSources?.[0] || "leads",
+      webhookUrl: cfg?.n8n_webhook_url || null,
+    };
   };
 
   if (loading) {
@@ -144,7 +152,7 @@ export default function BotsPage() {
           <h1 className="text-2xl font-display font-bold">Chatbots / AI Agents</h1>
           <p className="text-sm text-muted-foreground mt-1">Administra agentes inteligentes para tus canales</p>
         </div>
-        <Button onClick={() => { setEditBot(null); setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", dataSources: ["leads"] }); setShowForm(true); }}>
+        <Button onClick={() => { setEditBot(null); setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", n8n_webhook_url: "", dataSources: ["leads"] }); setShowForm(true); }}>
           <Plus className="h-4 w-4 mr-2" /> Nuevo Bot
         </Button>
       </div>
@@ -161,46 +169,54 @@ export default function BotsPage() {
               </Button>
             </div>
           ) : (
-            bots.map((bot, i) => (
-              <motion.div
-                key={bot.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className={`rounded-xl border p-4 transition-all cursor-pointer hover:shadow-md ${
-                  activeBot?.id === bot.id ? "border-primary bg-primary/5" : "border-border bg-card"
-                }`}
-                onClick={() => openChat(bot)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <Bot className="h-4 w-4 text-primary" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm truncate">{bot.name}</p>
-                      <div className="flex gap-2 mt-1">
-                        <Badge variant="secondary" className="text-[10px]">{channelLabel[bot.channel] || bot.channel}</Badge>
-                        <Badge variant={bot.is_active ? "default" : "outline"} className="text-[10px]">
-                          {bot.is_active ? "Activo" : "Inactivo"}
-                        </Badge>
+            bots.map((bot, i) => {
+              const cfg = getBotConfig(bot);
+              return (
+                <motion.div
+                  key={bot.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.05 }}
+                  className={`rounded-xl border p-4 transition-all cursor-pointer hover:shadow-md ${
+                    activeBot?.id === bot.id ? "border-primary bg-primary/5" : "border-border bg-card"
+                  }`}
+                  onClick={() => openChat(bot)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <Bot className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm truncate">{bot.name}</p>
+                        <div className="flex gap-2 mt-1 flex-wrap">
+                          <Badge variant="secondary" className="text-[10px]">{channelLabel[bot.channel] || bot.channel}</Badge>
+                          <Badge variant={bot.is_active ? "default" : "outline"} className="text-[10px]">
+                            {bot.is_active ? "Activo" : "Inactivo"}
+                          </Badge>
+                          {cfg.webhookUrl && (
+                            <Badge variant="secondary" className="text-[10px] gap-1">
+                              <Link2 className="h-2.5 w-2.5" /> n8n
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     </div>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); toggleBot(bot); }}>
+                        {bot.is_active ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openEdit(bot); }}>
+                        <Settings2 className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={(e) => { e.stopPropagation(); deleteBot(bot.id); }}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); toggleBot(bot); }}>
-                      {bot.is_active ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openEdit(bot); }}>
-                      <Settings2 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={(e) => { e.stopPropagation(); deleteBot(bot.id); }}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              </motion.div>
-            ))
+                </motion.div>
+              );
+            })
           )}
         </div>
 
@@ -209,7 +225,14 @@ export default function BotsPage() {
           {activeBot ? (
             <ChatWindow
               messages={messages}
-              onSend={(text) => sendMessage(text, { botId: activeBot.id, dataSource: getBotDataSource(activeBot) })}
+              onSend={(text) => {
+                const cfg = getBotConfig(activeBot);
+                sendMessage(text, {
+                  botId: activeBot.id,
+                  dataSource: cfg.dataSource,
+                  webhookUrl: cfg.webhookUrl,
+                });
+              }}
               isLoading={chatLoading}
               placeholder={`Chatea con ${activeBot.name}...`}
             />
@@ -226,7 +249,7 @@ export default function BotsPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editBot ? "Editar Bot" : "Nuevo Bot"}</DialogTitle>
           </DialogHeader>
@@ -271,9 +294,35 @@ export default function BotsPage() {
               <label className="text-sm font-medium mb-1 block">Prompt del sistema</label>
               <Textarea value={form.system_prompt} onChange={(e) => setForm({ ...form, system_prompt: e.target.value })} rows={4} />
             </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">ID Workflow n8n (opcional)</label>
-              <Input value={form.n8n_workflow_id} onChange={(e) => setForm({ ...form, n8n_workflow_id: e.target.value })} placeholder="workflow-id" />
+
+            {/* n8n Integration */}
+            <div className="rounded-lg border border-border p-4 space-y-3 bg-muted/30">
+              <div className="flex items-center gap-2">
+                <Link2 className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Integración n8n</span>
+                <Badge variant="secondary" className="text-[10px]">Opcional</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Conecta un webhook de n8n para que el bot consulte datos a través de un workflow externo en lugar de usar IA directamente.
+              </p>
+              <div>
+                <label className="text-xs font-medium mb-1 block">Webhook URL</label>
+                <Input
+                  value={form.n8n_webhook_url}
+                  onChange={(e) => setForm({ ...form, n8n_webhook_url: e.target.value })}
+                  placeholder="https://tu-n8n.com/webhook/abc123..."
+                  className="text-xs"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium mb-1 block">Workflow ID (opcional)</label>
+                <Input
+                  value={form.n8n_workflow_id}
+                  onChange={(e) => setForm({ ...form, n8n_workflow_id: e.target.value })}
+                  placeholder="workflow-id"
+                  className="text-xs"
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>

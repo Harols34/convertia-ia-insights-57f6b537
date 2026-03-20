@@ -1,30 +1,65 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { TrendingUp, Users, MessageSquare, BarChart3, ArrowUpRight, Loader2 } from "lucide-react";
+import { TrendingUp, Users, MessageSquare, BarChart3, ArrowUpRight, Loader2, MapPin, Megaphone } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { LeadsBarChart } from "@/components/app/LeadsChart";
+import { LeadsBarChart, LeadsPieChart } from "@/components/app/LeadsChart";
+
+interface LeadStats {
+  total: number;
+  conGestion: number;
+  conNegocio: number;
+  tasaGestion: string;
+  tasaNegocio: string;
+  porCliente: { name: string; value: number }[];
+  porCampanaMkt: { name: string; value: number }[];
+  porCiudad: { name: string; value: number }[];
+  porResultNegocio: { name: string; value: number }[];
+  porResultPrimGestion: { name: string; value: number }[];
+}
+
+function countBy(arr: any[], key: string): { name: string; value: number }[] {
+  const map: Record<string, number> = {};
+  arr.forEach((item) => {
+    const val = item[key];
+    if (val) map[val] = (map[val] || 0) + 1;
+  });
+  return Object.entries(map)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+}
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<LeadStats | null>(null);
   const [activity, setActivity] = useState<any[]>([]);
 
   useEffect(() => {
-    const fetch = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { setLoading(false); return; }
+    const loadData = async () => {
+      // Fetch leads directly from Supabase (RLS handles tenant filtering)
+      const { data: leads } = await supabase
+        .from("leads")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1000);
 
-      // Fetch analytics
-      const res = await window.fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-leads`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({}),
-      });
-      const data = await res.json();
-      if (!data.error) setStats(data);
+      if (leads && leads.length > 0) {
+        const total = leads.length;
+        const conGestion = leads.filter((l) => l.result_prim_gestion && l.result_prim_gestion !== "").length;
+        const conNegocio = leads.filter((l) => l.result_negocio && l.result_negocio !== "").length;
+
+        setStats({
+          total,
+          conGestion,
+          conNegocio,
+          tasaGestion: total > 0 ? ((conGestion / total) * 100).toFixed(1) : "0",
+          tasaNegocio: total > 0 ? ((conNegocio / total) * 100).toFixed(1) : "0",
+          porCliente: countBy(leads, "cliente"),
+          porCampanaMkt: countBy(leads, "campana_mkt"),
+          porCiudad: countBy(leads, "ciudad"),
+          porResultNegocio: countBy(leads, "result_negocio"),
+          porResultPrimGestion: countBy(leads, "result_prim_gestion"),
+        });
+      }
 
       // Fetch recent audit logs
       const { data: logs } = await supabase
@@ -33,9 +68,10 @@ export default function DashboardPage() {
         .order("created_at", { ascending: false })
         .limit(5);
       setActivity(logs || []);
+
       setLoading(false);
     };
-    fetch();
+    loadData();
   }, []);
 
   if (loading) {
@@ -46,25 +82,18 @@ export default function DashboardPage() {
     );
   }
 
-  const kpis = stats
-    ? [
-        { label: "Total Leads", value: stats.total?.toLocaleString() || "0", icon: Users },
-        { label: "Con Gestión", value: stats.conGestion?.toLocaleString() || "0", icon: MessageSquare },
-        { label: "Tasa Gestión", value: `${stats.tasaGestion || 0}%`, icon: BarChart3 },
-        { label: "Tasa Negocio", value: `${stats.tasaNegocio || 0}%`, icon: TrendingUp },
-      ]
-    : [
-        { label: "Total Leads", value: "0", icon: Users },
-        { label: "Con Gestión", value: "0", icon: MessageSquare },
-        { label: "Tasa Gestión", value: "0%", icon: BarChart3 },
-        { label: "Tasa Negocio", value: "0%", icon: TrendingUp },
-      ];
+  const kpis = [
+    { label: "Total Leads", value: stats?.total?.toLocaleString() || "0", icon: Users, color: "text-blue-500" },
+    { label: "Con Gestión", value: stats?.conGestion?.toLocaleString() || "0", icon: MessageSquare, color: "text-emerald-500" },
+    { label: "Tasa Gestión", value: `${stats?.tasaGestion || 0}%`, icon: BarChart3, color: "text-amber-500" },
+    { label: "Tasa Negocio", value: `${stats?.tasaNegocio || 0}%`, icon: TrendingUp, color: "text-violet-500" },
+  ];
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-display font-bold">Dashboard Ejecutivo</h1>
-        <p className="text-muted-foreground text-sm mt-1">Resumen general de la operación</p>
+        <p className="text-muted-foreground text-sm mt-1">Resumen general de la operación basado en datos de leads</p>
       </div>
 
       {/* KPIs */}
@@ -79,9 +108,11 @@ export default function DashboardPage() {
           >
             <div className="flex items-center justify-between mb-3">
               <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-                <kpi.icon className="h-4 w-4 text-primary" />
+                <kpi.icon className={`h-4 w-4 ${kpi.color}`} />
               </div>
-              <ArrowUpRight className="h-3.5 w-3.5 text-success" />
+              {stats && stats.total > 0 && (
+                <ArrowUpRight className="h-3.5 w-3.5 text-emerald-500" />
+              )}
             </div>
             <p className="text-2xl font-mono font-bold">{kpi.value}</p>
             <p className="text-xs text-muted-foreground mt-1">{kpi.label}</p>
@@ -90,12 +121,26 @@ export default function DashboardPage() {
       </div>
 
       {/* Charts */}
-      {stats && (
-        <div className="grid md:grid-cols-2 gap-4">
-          <LeadsBarChart data={stats.porCliente || []} title="Leads por Cliente" />
-          <LeadsBarChart data={stats.porBpo || []} title="Leads por BPO" />
-        </div>
+      {stats && stats.total > 0 && (
+        <>
+          <div className="grid md:grid-cols-2 gap-4">
+            <LeadsBarChart data={stats.porCampanaMkt} title="Leads por Campaña MKT" />
+            <LeadsPieChart data={stats.porCiudad} title="Distribución por Ciudad" />
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <LeadsBarChart data={stats.porCliente} title="Leads por Cliente" />
+            <LeadsPieChart data={stats.porResultPrimGestion} title="Resultado Primera Gestión" />
+          </div>
+        </>
       )}
+
+      {!stats || stats.total === 0 ? (
+        <div className="rounded-xl border border-border bg-card p-12 text-center">
+          <BarChart3 className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-40" />
+          <p className="text-muted-foreground text-sm">No hay datos de leads disponibles aún</p>
+          <p className="text-xs text-muted-foreground mt-1">Los datos se cargarán automáticamente cuando se ingesten desde n8n</p>
+        </div>
+      ) : null}
 
       {/* Recent activity */}
       <div className="rounded-xl border border-border bg-card">
