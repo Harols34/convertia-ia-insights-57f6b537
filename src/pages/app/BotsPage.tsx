@@ -361,7 +361,7 @@ export default function BotsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={!form.name.trim()}>
+            <Button onClick={handleSave} disabled={!form.name.trim() || (form.responseMode === "n8n" && !form.n8n_webhook_url.trim())}>
               {editBot ? "Guardar Cambios" : "Crear Bot"}
             </Button>
           </DialogFooter>
