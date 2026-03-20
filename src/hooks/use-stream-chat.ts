@@ -17,45 +17,10 @@ export function useStreamChat() {
       const allMsgs = [...messages, userMsg];
 
       try {
-        // If webhook URL is configured, route through n8n
-        if (opts?.webhookUrl) {
-          try {
-            const resp = await fetch(opts.webhookUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                message: input,
-                chatInput: input,
-                sessionId: opts.botId || "default",
-              }),
-            });
-
-            if (!resp.ok) throw new Error(`Webhook error: ${resp.status}`);
-
-            const data = await resp.json();
-            // Handle common n8n response formats
-            let reply: string;
-            if (typeof data === "string") {
-              reply = data;
-            } else if (Array.isArray(data) && data.length > 0) {
-              const first = data[0];
-              reply = first.output || first.response || first.message || first.text || JSON.stringify(first);
-            } else {
-              reply = data.output || data.response || data.message || data.text || JSON.stringify(data);
-            }
-
-            setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
-            setIsLoading(false);
-            return;
-          } catch (webhookErr: any) {
-            console.error("n8n webhook error, falling back to AI:", webhookErr);
-          }
-        }
-
-        // Default: use Edge Function with OpenAI streaming
         const { supabase } = await import("@/integrations/supabase/client");
         const { data: { session: s } } = await supabase.auth.getSession();
 
+        // Always route through Edge Function (handles both n8n proxy and AI)
         const resp = await fetch(CHAT_URL, {
           method: "POST",
           headers: {
@@ -67,6 +32,7 @@ export function useStreamChat() {
             mode: opts?.mode,
             botId: opts?.botId,
             dataSource: opts?.dataSource || "leads",
+            webhookUrl: opts?.webhookUrl || null,
           }),
         });
 
@@ -75,6 +41,18 @@ export function useStreamChat() {
           throw new Error(errorData.error || `Error ${resp.status}`);
         }
 
+        const contentType = resp.headers.get("content-type") || "";
+
+        // n8n webhook returns JSON directly (not streaming)
+        if (contentType.includes("application/json")) {
+          const data = await resp.json();
+          const reply = data.reply || data.error || "Sin respuesta";
+          setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+          setIsLoading(false);
+          return;
+        }
+
+        // Streaming SSE from OpenAI
         if (!resp.body) throw new Error("No hay stream");
 
         let assistantSoFar = "";

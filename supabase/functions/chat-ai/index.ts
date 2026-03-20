@@ -7,13 +7,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Tables that contain business data (not config)
-const BUSINESS_TABLES: Record<string, { label: string; description: string }> = {
-  leads: { label: "Leads", description: "Datos de leads de marketing, gestiones, negocios, campañas" },
-  exports: { label: "Exportaciones", description: "Historial de archivos exportados" },
-  audit_logs: { label: "Auditoría", description: "Eventos y actividad del sistema" },
-};
-
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -41,7 +34,7 @@ serve(async (req) => {
     }
     const userId = user.id;
 
-    const { messages, mode, botId, dataSource } = await req.json();
+    const { messages, mode, botId, dataSource, webhookUrl } = await req.json();
 
     const adminClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -50,94 +43,119 @@ serve(async (req) => {
 
     const { data: tenantId } = await adminClient.rpc("get_user_tenant", { _user_id: userId });
 
-    let systemPrompt = `Eres un asistente analítico avanzado de la plataforma Converti-IA Analytics. 
+    // ── n8n webhook mode: proxy the call server-side to avoid CORS ──
+    if (webhookUrl) {
+      try {
+        const lastUserMsg = messages[messages.length - 1]?.content || "";
+        const resp = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: lastUserMsg,
+            chatInput: lastUserMsg,
+            sessionId: botId || "default",
+            tenantId,
+          }),
+        });
+
+        if (!resp.ok) throw new Error(`Webhook ${resp.status}`);
+
+        const data = await resp.json();
+        let reply: string;
+        if (typeof data === "string") {
+          reply = data;
+        } else if (Array.isArray(data) && data.length > 0) {
+          const first = data[0];
+          reply = first.output || first.response || first.message || first.text || JSON.stringify(first);
+        } else {
+          reply = data.output || data.response || data.message || data.text || JSON.stringify(data);
+        }
+
+        return new Response(JSON.stringify({ reply }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (whErr) {
+        console.error("n8n webhook error:", whErr);
+        return new Response(JSON.stringify({ error: `Error al conectar con n8n: ${whErr instanceof Error ? whErr.message : "desconocido"}` }), {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // ── AI mode: build system prompt with real data context ──
+    let systemPrompt = `Eres un asistente analítico BI (Business Intelligence) avanzado de la plataforma Converti-IA Analytics.
 Responde siempre en español. Eres experto en análisis de datos de marketing, leads, campañas y gestión comercial.
 Cuando presentes datos, usa formato markdown con tablas, listas y negritas para mayor claridad.
-Si te piden gráficos, describe los datos en formato que pueda ser interpretado para visualización.`;
+Basa TODAS tus respuestas en los datos reales proporcionados abajo. Nunca inventes datos.`;
 
     // If a bot is specified, use its system prompt
     if (botId) {
       const { data: bot } = await adminClient
         .from("bots")
-        .select("system_prompt, n8n_workflow_id")
+        .select("system_prompt")
         .eq("id", botId)
         .single();
       if (bot?.system_prompt) systemPrompt = bot.system_prompt;
     }
 
-    // Inject real data context based on selected data source
-    const selectedTable = dataSource || "leads";
-    
-    if ((mode === "analytics" || botId) && tenantId && BUSINESS_TABLES[selectedTable]) {
-      if (selectedTable === "leads") {
-        const { data: leads, error: leadsErr } = await adminClient
-          .from("leads")
-          .select("*")
-          .eq("tenant_id", tenantId)
-          .limit(500);
+    // Inject real leads data context
+    if (tenantId) {
+      const { data: leads, error: leadsErr } = await adminClient
+        .from("leads")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .limit(500);
 
-        if (!leadsErr && leads && leads.length > 0) {
-          const countBy = (arr: any[], key: string) => {
-            const m: Record<string, number> = {};
-            arr.forEach((i) => { if (i[key]) m[i[key]] = (m[i[key]] || 0) + 1; });
-            return m;
-          };
+      if (!leadsErr && leads && leads.length > 0) {
+        const countBy = (arr: any[], key: string) => {
+          const m: Record<string, number> = {};
+          arr.forEach((i) => { if (i[key]) m[i[key]] = (m[i[key]] || 0) + 1; });
+          return m;
+        };
 
-          const conNegocio = leads.filter((l: any) => l.result_negocio && l.result_negocio !== "").length;
-          const conGestion = leads.filter((l: any) => l.result_prim_gestion && l.result_prim_gestion !== "").length;
+        const totalLeads = leads.length;
+        const ventas = leads.filter((l: any) => l.es_venta === true).length;
+        const noVentas = leads.filter((l: any) => l.es_venta === false).length;
+        const conNegocio = leads.filter((l: any) => l.result_negocio && l.result_negocio !== "").length;
+        const conGestion = leads.filter((l: any) => l.result_prim_gestion && l.result_prim_gestion !== "").length;
 
-          systemPrompt += `\n\n📊 CONTEXTO DE DATOS REALES — Tabla: LEADS (${leads.length} registros del tenant)
-Total de leads: ${leads.length}
-Leads con gestión: ${conGestion} (${((conGestion/leads.length)*100).toFixed(1)}%)
-Leads con negocio: ${conNegocio} (${((conNegocio/leads.length)*100).toFixed(1)}%)
-Distribución por cliente: ${JSON.stringify(countBy(leads, "cliente"))}
-Distribución por campaña MKT: ${JSON.stringify(countBy(leads, "campana_mkt"))}
-Distribución por BPO: ${JSON.stringify(countBy(leads, "bpo"))}
+        systemPrompt += `
+
+📊 DATOS REALES DE LA BASE DE DATOS — Tabla LEADS (${totalLeads} registros)
+
+=== KPIs PRINCIPALES ===
+- Total de leads: ${totalLeads}
+- **Ventas (es_venta=true, tienen id_llave): ${ventas}** (${((ventas/totalLeads)*100).toFixed(1)}%)
+- No ventas (es_venta=false): ${noVentas} (${((noVentas/totalLeads)*100).toFixed(1)}%)
+- Leads con gestión: ${conGestion} (${((conGestion/totalLeads)*100).toFixed(1)}%)
+- Leads con negocio: ${conNegocio} (${((conNegocio/totalLeads)*100).toFixed(1)}%)
+
+=== DISTRIBUCIONES ===
+Por cliente: ${JSON.stringify(countBy(leads, "cliente"))}
+Por campaña MKT: ${JSON.stringify(countBy(leads, "campana_mkt"))}
+Por BPO: ${JSON.stringify(countBy(leads, "bpo"))}
 Resultados de negocio: ${JSON.stringify(countBy(leads, "result_negocio"))}
 Resultados primera gestión: ${JSON.stringify(countBy(leads, "result_prim_gestion"))}
-Distribución por ciudad: ${JSON.stringify(countBy(leads, "ciudad"))}
-Categoría MKT: ${JSON.stringify(countBy(leads, "categoria_mkt"))}
-Tipo de llamada: ${JSON.stringify(countBy(leads, "tipo_llamada"))}
+Resultados última gestión: ${JSON.stringify(countBy(leads, "result_ultim_gestion"))}
+Por ciudad: ${JSON.stringify(countBy(leads, "ciudad"))}
+Por categoría MKT: ${JSON.stringify(countBy(leads, "categoria_mkt"))}
+Por tipo de llamada: ${JSON.stringify(countBy(leads, "tipo_llamada"))}
+Por keyword: ${JSON.stringify(countBy(leads, "keyword"))}
+Por agente negocio: ${JSON.stringify(countBy(leads, "agente_negocio"))}
+Por agente primera gestión: ${JSON.stringify(countBy(leads, "agente_prim_gestion"))}
 
-Columnas disponibles: cliente, id_lead, id_llave, campana_inconcert, campana_mkt, categoria_mkt, tipo_llamada, fch_creacion, fch_prim_resultado_marcadora, prim_resultado_marcadora, fch_prim_gestion, agente_prim_gestion, result_prim_gestion, fch_ultim_gestion, agente_ultim_gestion, result_ultim_gestion, fch_negocio, agente_negocio, result_negocio, ciudad, email, keyword, bpo
+=== COLUMNAS DISPONIBLES ===
+cliente, id_lead, id_llave, campana_inconcert, campana_mkt, categoria_mkt, tipo_llamada, fch_creacion, fch_prim_resultado_marcadora, prim_resultado_marcadora, fch_prim_gestion, agente_prim_gestion, result_prim_gestion, fch_ultim_gestion, agente_ultim_gestion, result_ultim_gestion, fch_negocio, agente_negocio, result_negocio, ciudad, email, keyword, bpo, es_venta
 
-Muestra primeros 5 registros como ejemplo:
-${JSON.stringify(leads.slice(0, 5), null, 2)}
+=== MUESTRA DE REGISTROS (10 primeros) ===
+${JSON.stringify(leads.slice(0, 10), null, 2)}
 
-Usa estos datos reales para responder con precisión. Genera tablas, KPIs, comparaciones y análisis detallados.`;
-        } else {
-          systemPrompt += `\n\nNo hay datos de leads disponibles para este tenant aún.`;
-        }
-      } else if (selectedTable === "exports") {
-        const { data: exports } = await adminClient
-          .from("exports")
-          .select("*")
-          .eq("tenant_id", tenantId)
-          .limit(200);
-        
-        if (exports && exports.length > 0) {
-          systemPrompt += `\n\n📊 CONTEXTO DE DATOS REALES — Tabla: EXPORTACIONES (${exports.length} registros)
-${JSON.stringify(exports.slice(0, 10), null, 2)}`;
-        }
-      } else if (selectedTable === "audit_logs") {
-        const { data: logs } = await adminClient
-          .from("audit_logs")
-          .select("*")
-          .eq("tenant_id", tenantId)
-          .order("created_at", { ascending: false })
-          .limit(200);
-        
-        if (logs && logs.length > 0) {
-          systemPrompt += `\n\n📊 CONTEXTO DE DATOS REALES — Tabla: AUDITORÍA (${logs.length} registros)
-${JSON.stringify(logs.slice(0, 10), null, 2)}`;
-        }
+IMPORTANTE: Usa SIEMPRE estos datos reales para responder. Si preguntan cuántas ventas hay, la respuesta es ${ventas}. Nunca digas que no tienes acceso a datos.`;
+      } else {
+        systemPrompt += `\n\nNo hay datos de leads disponibles para este tenant aún.`;
       }
     }
-
-    // Append available tables info
-    systemPrompt += `\n\nTablas de negocio disponibles para consulta:
-${Object.entries(BUSINESS_TABLES).map(([k, v]) => `- ${v.label} (${k}): ${v.description}`).join("\n")}
-El usuario está consultando la tabla: ${BUSINESS_TABLES[selectedTable]?.label || selectedTable}`;
 
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     if (!OPENAI_API_KEY) {
