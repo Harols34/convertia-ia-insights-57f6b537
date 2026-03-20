@@ -55,6 +55,130 @@ export type Database = {
           },
         ]
       }
+      bot_conversations: {
+        Row: {
+          bot_id: string
+          created_at: string
+          id: string
+          tenant_id: string
+          title: string | null
+          user_id: string | null
+        }
+        Insert: {
+          bot_id: string
+          created_at?: string
+          id?: string
+          tenant_id: string
+          title?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          bot_id?: string
+          created_at?: string
+          id?: string
+          tenant_id?: string
+          title?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_conversations_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bot_conversations_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bot_messages: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string
+          id: string
+          role: string
+        }
+        Insert: {
+          content: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          role: string
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "bot_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bots: {
+        Row: {
+          channel: string
+          config: Json | null
+          created_at: string
+          id: string
+          is_active: boolean | null
+          model: string | null
+          n8n_workflow_id: string | null
+          name: string
+          system_prompt: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          channel?: string
+          config?: Json | null
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          model?: string | null
+          n8n_workflow_id?: string | null
+          name: string
+          system_prompt?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          config?: Json | null
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          model?: string | null
+          n8n_workflow_id?: string | null
+          name?: string
+          system_prompt?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bots_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       custom_role_permissions: {
         Row: {
           custom_role_id: string
@@ -113,6 +237,88 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "custom_roles_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dashboard_sessions: {
+        Row: {
+          created_at: string
+          id: string
+          prompt: string
+          result: Json | null
+          tenant_id: string
+          title: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          prompt: string
+          result?: Json | null
+          tenant_id: string
+          title?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          prompt?: string
+          result?: Json | null
+          tenant_id?: string
+          title?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dashboard_sessions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      exports: {
+        Row: {
+          created_at: string
+          export_type: string
+          file_name: string | null
+          file_url: string | null
+          id: string
+          metadata: Json | null
+          source_module: string | null
+          tenant_id: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          export_type: string
+          file_name?: string | null
+          file_url?: string | null
+          id?: string
+          metadata?: Json | null
+          source_module?: string | null
+          tenant_id: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          export_type?: string
+          file_name?: string | null
+          file_url?: string | null
+          id?: string
+          metadata?: Json | null
+          source_module?: string | null
+          tenant_id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exports_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"

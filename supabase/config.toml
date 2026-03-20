@@ -7,3 +7,12 @@ site_url = "http://localhost:5173"
 [auth.email]
 enable_confirmations = false
 enable_signup = true
+
+[functions.create-user]
+verify_jwt = false
+
+[functions.chat-ai]
+verify_jwt = false
+
+[functions.analyze-leads]
+verify_jwt = false
