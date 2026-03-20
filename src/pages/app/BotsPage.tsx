@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Bot, Plus, MessageSquare, Settings2, Trash2, Power, PowerOff, Loader2 } from "lucide-react";
+import { Bot, Plus, MessageSquare, Settings2, Trash2, Power, PowerOff, Loader2, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,12 +23,19 @@ interface BotRow {
   created_at: string;
 }
 
+const DATA_SOURCES = [
+  { value: "leads", label: "📊 Leads" },
+  { value: "exports", label: "📁 Exportaciones" },
+  { value: "audit_logs", label: "🔍 Auditoría" },
+];
+
 export default function BotsPage() {
   const [bots, setBots] = useState<BotRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editBot, setEditBot] = useState<BotRow | null>(null);
   const [activeBot, setActiveBot] = useState<BotRow | null>(null);
+  const [dataSource, setDataSource] = useState("leads");
   const [form, setForm] = useState({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "" });
   const { messages, isLoading: chatLoading, sendMessage, clearMessages } = useStreamChat();
   const { toast } = useToast();
@@ -168,22 +175,40 @@ export default function BotsPage() {
         </div>
 
         {/* Chat area */}
-        <div className="h-[600px]">
-          {activeBot ? (
-            <ChatWindow
-              messages={messages}
-              onSend={(text) => sendMessage(text, { botId: activeBot.id })}
-              isLoading={chatLoading}
-              placeholder={`Chatea con ${activeBot.name}...`}
-            />
-          ) : (
-            <div className="h-full rounded-xl border border-dashed border-border flex items-center justify-center">
-              <div className="text-center text-muted-foreground">
-                <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                <p className="text-sm">Selecciona un bot para chatear</p>
-              </div>
+        <div className="space-y-3">
+          {activeBot && (
+            <div className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card">
+              <Database className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <span className="text-xs font-medium text-muted-foreground">Fuente:</span>
+              <Select value={dataSource} onValueChange={setDataSource}>
+                <SelectTrigger className="w-[180px] h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DATA_SOURCES.map((src) => (
+                    <SelectItem key={src.value} value={src.value}>{src.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
+          <div className="h-[560px]">
+            {activeBot ? (
+              <ChatWindow
+                messages={messages}
+                onSend={(text) => sendMessage(text, { botId: activeBot.id, dataSource })}
+                isLoading={chatLoading}
+                placeholder={`Chatea con ${activeBot.name}...`}
+              />
+            ) : (
+              <div className="h-full rounded-xl border border-dashed border-border flex items-center justify-center">
+                <div className="text-center text-muted-foreground">
+                  <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                  <p className="text-sm">Selecciona un bot para chatear</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
