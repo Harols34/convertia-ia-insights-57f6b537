@@ -33,6 +33,7 @@ const menuGroups = [
   {
     label: "Gestión",
     items: [
+      { title: "Cuentas (Tenants)", url: "/app/cuentas", icon: Building2 },
       { title: "Usuarios", url: "/app/usuarios", icon: Users },
       { title: "Roles y Permisos", url: "/app/roles", icon: ShieldCheck },
       { title: "Auditoría y Logs", url: "/app/auditoria", icon: ScrollText },
