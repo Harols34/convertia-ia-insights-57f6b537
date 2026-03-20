@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Bot, Plus, MessageSquare, Settings2, Trash2, Power, PowerOff, Loader2, Database } from "lucide-react";
+import { Bot, Plus, MessageSquare, Settings2, Trash2, Power, PowerOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,13 +20,12 @@ interface BotRow {
   model: string;
   is_active: boolean;
   n8n_workflow_id: string | null;
+  config: any;
   created_at: string;
 }
 
-const DATA_SOURCES = [
-  { value: "leads", label: "📊 Leads" },
-  { value: "exports", label: "📁 Exportaciones" },
-  { value: "audit_logs", label: "🔍 Auditoría" },
+const AVAILABLE_TABLES = [
+  { value: "leads", label: "Leads", description: "Datos de marketing, gestiones y negocios" },
 ];
 
 export default function BotsPage() {
@@ -35,8 +34,14 @@ export default function BotsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editBot, setEditBot] = useState<BotRow | null>(null);
   const [activeBot, setActiveBot] = useState<BotRow | null>(null);
-  const [dataSource, setDataSource] = useState("leads");
-  const [form, setForm] = useState({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "" });
+  const [form, setForm] = useState({
+    name: "",
+    channel: "web",
+    system_prompt: "Eres un asistente inteligente de análisis de datos.",
+    model: "gpt-4o-mini",
+    n8n_workflow_id: "",
+    dataSources: ["leads"] as string[],
+  });
   const { messages, isLoading: chatLoading, sendMessage, clearMessages } = useStreamChat();
   const { toast } = useToast();
 
@@ -60,6 +65,7 @@ export default function BotsPage() {
       model: form.model,
       n8n_workflow_id: form.n8n_workflow_id || null,
       tenant_id: tenantId,
+      config: { dataSources: form.dataSources },
     };
 
     if (editBot) {
@@ -71,7 +77,7 @@ export default function BotsPage() {
     }
     setShowForm(false);
     setEditBot(null);
-    setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "" });
+    setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", dataSources: ["leads"] });
     fetchBots();
   };
 
@@ -88,7 +94,15 @@ export default function BotsPage() {
 
   const openEdit = (bot: BotRow) => {
     setEditBot(bot);
-    setForm({ name: bot.name, channel: bot.channel, system_prompt: bot.system_prompt, model: bot.model, n8n_workflow_id: bot.n8n_workflow_id || "" });
+    const cfg = bot.config as any;
+    setForm({
+      name: bot.name,
+      channel: bot.channel,
+      system_prompt: bot.system_prompt,
+      model: bot.model,
+      n8n_workflow_id: bot.n8n_workflow_id || "",
+      dataSources: cfg?.dataSources || ["leads"],
+    });
     setShowForm(true);
   };
 
@@ -97,7 +111,23 @@ export default function BotsPage() {
     clearMessages();
   };
 
+  const toggleDataSource = (value: string) => {
+    setForm((prev) => {
+      const current = prev.dataSources;
+      if (current.includes(value)) {
+        if (current.length === 1) return prev; // must have at least one
+        return { ...prev, dataSources: current.filter((v) => v !== value) };
+      }
+      return { ...prev, dataSources: [...current, value] };
+    });
+  };
+
   const channelLabel: Record<string, string> = { web: "Web", whatsapp: "WhatsApp", telegram: "Telegram", webchat: "Webchat" };
+
+  const getBotDataSource = (bot: BotRow) => {
+    const cfg = bot.config as any;
+    return cfg?.dataSources?.[0] || "leads";
+  };
 
   if (loading) {
     return (
@@ -114,7 +144,7 @@ export default function BotsPage() {
           <h1 className="text-2xl font-display font-bold">Chatbots / AI Agents</h1>
           <p className="text-sm text-muted-foreground mt-1">Administra agentes inteligentes para tus canales</p>
         </div>
-        <Button onClick={() => { setEditBot(null); setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "" }); setShowForm(true); }}>
+        <Button onClick={() => { setEditBot(null); setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", dataSources: ["leads"] }); setShowForm(true); }}>
           <Plus className="h-4 w-4 mr-2" /> Nuevo Bot
         </Button>
       </div>
@@ -175,40 +205,22 @@ export default function BotsPage() {
         </div>
 
         {/* Chat area */}
-        <div className="space-y-3">
-          {activeBot && (
-            <div className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card">
-              <Database className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-              <span className="text-xs font-medium text-muted-foreground">Fuente:</span>
-              <Select value={dataSource} onValueChange={setDataSource}>
-                <SelectTrigger className="w-[180px] h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DATA_SOURCES.map((src) => (
-                    <SelectItem key={src.value} value={src.value}>{src.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <div className="h-[600px]">
+          {activeBot ? (
+            <ChatWindow
+              messages={messages}
+              onSend={(text) => sendMessage(text, { botId: activeBot.id, dataSource: getBotDataSource(activeBot) })}
+              isLoading={chatLoading}
+              placeholder={`Chatea con ${activeBot.name}...`}
+            />
+          ) : (
+            <div className="h-full rounded-xl border border-dashed border-border flex items-center justify-center">
+              <div className="text-center text-muted-foreground">
+                <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                <p className="text-sm">Selecciona un bot para chatear</p>
+              </div>
             </div>
           )}
-          <div className="h-[560px]">
-            {activeBot ? (
-              <ChatWindow
-                messages={messages}
-                onSend={(text) => sendMessage(text, { botId: activeBot.id, dataSource })}
-                isLoading={chatLoading}
-                placeholder={`Chatea con ${activeBot.name}...`}
-              />
-            ) : (
-              <div className="h-full rounded-xl border border-dashed border-border flex items-center justify-center">
-                <div className="text-center text-muted-foreground">
-                  <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                  <p className="text-sm">Selecciona un bot para chatear</p>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
@@ -234,6 +246,26 @@ export default function BotsPage() {
                   <SelectItem value="webchat">Webchat</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Tablas de datos</label>
+              <p className="text-xs text-muted-foreground mb-2">Selecciona las tablas que este bot podrá consultar</p>
+              <div className="flex flex-wrap gap-2">
+                {AVAILABLE_TABLES.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => toggleDataSource(t.value)}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                      form.dataSources.includes(t.value)
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border bg-muted/50 text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    📊 {t.label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div>
               <label className="text-sm font-medium mb-1 block">Prompt del sistema</label>
