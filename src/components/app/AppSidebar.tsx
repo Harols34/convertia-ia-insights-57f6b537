@@ -1,7 +1,7 @@
 import {
   BarChart3, Brain, MessageSquare, FileBarChart, Download,
   Bot, Plug, Users, ShieldCheck, ScrollText, Settings, HelpCircle,
-  LayoutDashboard
+  LayoutDashboard, Building2
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -33,6 +33,7 @@ const menuGroups = [
   {
     label: "Gestión",
     items: [
+      { title: "Cuentas (Tenants)", url: "/app/cuentas", icon: Building2 },
       { title: "Usuarios", url: "/app/usuarios", icon: Users },
       { title: "Roles y Permisos", url: "/app/roles", icon: ShieldCheck },
       { title: "Auditoría y Logs", url: "/app/auditoria", icon: ScrollText },

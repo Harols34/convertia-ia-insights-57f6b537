@@ -20,6 +20,7 @@ import RolesPage from "./pages/app/RolesPage.tsx";
 import AuditoriaPage from "./pages/app/AuditoriaPage.tsx";
 import ConfiguracionPage from "./pages/app/ConfiguracionPage.tsx";
 import SoportePage from "./pages/app/SoportePage.tsx";
+import CuentasPage from "./pages/app/CuentasPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -47,6 +48,7 @@ const App = () => (
               <Route path="roles" element={<RolesPage />} />
               <Route path="auditoria" element={<AuditoriaPage />} />
               <Route path="configuracion" element={<ConfiguracionPage />} />
+              <Route path="cuentas" element={<CuentasPage />} />
               <Route path="soporte" element={<SoportePage />} />
             </Route>
             <Route path="*" element={<NotFound />} />
