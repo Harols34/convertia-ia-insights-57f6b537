@@ -339,6 +339,7 @@ export type Database = {
           cliente: string | null
           created_at: string
           email: string | null
+          es_venta: boolean | null
           fch_creacion: string | null
           fch_negocio: string | null
           fch_prim_gestion: string | null
@@ -368,6 +369,7 @@ export type Database = {
           cliente?: string | null
           created_at?: string
           email?: string | null
+          es_venta?: boolean | null
           fch_creacion?: string | null
           fch_negocio?: string | null
           fch_prim_gestion?: string | null
@@ -397,6 +399,7 @@ export type Database = {
           cliente?: string | null
           created_at?: string
           email?: string | null
+          es_venta?: boolean | null
           fch_creacion?: string | null
           fch_negocio?: string | null
           fch_prim_gestion?: string | null
