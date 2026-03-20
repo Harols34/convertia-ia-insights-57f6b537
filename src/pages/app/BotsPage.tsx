@@ -109,6 +109,7 @@ export default function BotsPage() {
       n8n_workflow_id: bot.n8n_workflow_id || "",
       n8n_webhook_url: cfg?.n8n_webhook_url || "",
       dataSources: cfg?.dataSources || ["leads"],
+      responseMode: cfg?.responseMode || (cfg?.n8n_webhook_url ? "n8n" : "prompt"),
     });
     setShowForm(true);
   };
