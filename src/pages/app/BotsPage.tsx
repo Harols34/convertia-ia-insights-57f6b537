@@ -204,7 +204,6 @@ export default function BotsPage() {
                               <><Link2 className="h-2.5 w-2.5" /> n8n</>
                             ) : "Prompt/IA"}
                           </Badge>
-                          )}
                         </div>
                       </div>
                     </div>
