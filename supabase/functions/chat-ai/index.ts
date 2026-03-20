@@ -153,6 +153,10 @@ cliente, id_lead, id_llave, campana_inconcert, campana_mkt, categoria_mkt, tipo_
 ${JSON.stringify(leads.slice(0, 10), null, 2)}
 
 IMPORTANTE: Usa SIEMPRE estos datos reales para responder. Si preguntan cuántas ventas hay, la respuesta es ${ventas}. Nunca digas que no tienes acceso a datos.`;
+
+        if (n8nFallbackReason) {
+          systemPrompt += `\n\nAVISO TÉCNICO: El webhook de n8n falló y estás respondiendo con fallback de IA usando los datos reales de la base de datos. Error n8n: ${n8nFallbackReason}`;
+        }
       } else {
         systemPrompt += `\n\nNo hay datos de leads disponibles para este tenant aún.`;
       }
