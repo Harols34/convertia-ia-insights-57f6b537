@@ -42,6 +42,7 @@ export default function BotsPage() {
     n8n_workflow_id: "",
     n8n_webhook_url: "",
     dataSources: ["leads"] as string[],
+    responseMode: "prompt" as "prompt" | "n8n",
   });
   const { messages, isLoading: chatLoading, sendMessage, clearMessages } = useStreamChat();
   const { toast } = useToast();
