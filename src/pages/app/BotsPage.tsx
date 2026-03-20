@@ -199,10 +199,11 @@ export default function BotsPage() {
                           <Badge variant={bot.is_active ? "default" : "outline"} className="text-[10px]">
                             {bot.is_active ? "Activo" : "Inactivo"}
                           </Badge>
-                          {cfg.webhookUrl && (
-                            <Badge variant="secondary" className="text-[10px] gap-1">
-                              <Link2 className="h-2.5 w-2.5" /> n8n
-                            </Badge>
+                          <Badge variant="secondary" className="text-[10px] gap-1">
+                            {cfg.responseMode === "n8n" ? (
+                              <><Link2 className="h-2.5 w-2.5" /> n8n</>
+                            ) : "Prompt/IA"}
+                          </Badge>
                           )}
                         </div>
                       </div>
