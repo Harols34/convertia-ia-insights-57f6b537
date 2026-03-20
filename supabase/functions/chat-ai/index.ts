@@ -42,6 +42,7 @@ serve(async (req) => {
     );
 
     const { data: tenantId } = await adminClient.rpc("get_user_tenant", { _user_id: userId });
+    let n8nFallbackReason = "";
 
     // ── n8n webhook mode: proxy the call server-side to avoid CORS ──
     if (webhookUrl) {
@@ -58,7 +59,10 @@ serve(async (req) => {
           }),
         });
 
-        if (!resp.ok) throw new Error(`Webhook ${resp.status}`);
+        if (!resp.ok) {
+          const errorText = await resp.text().catch(() => "");
+          throw new Error(`Webhook ${resp.status}${errorText ? ` - ${errorText}` : ""}`);
+        }
 
         const data = await resp.json();
         let reply: string;
@@ -75,11 +79,8 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } catch (whErr) {
-        console.error("n8n webhook error:", whErr);
-        return new Response(JSON.stringify({ error: `Error al conectar con n8n: ${whErr instanceof Error ? whErr.message : "desconocido"}` }), {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        n8nFallbackReason = whErr instanceof Error ? whErr.message : "desconocido";
+        console.error("n8n webhook error, using AI fallback:", whErr);
       }
     }
 
