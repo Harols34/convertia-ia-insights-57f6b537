@@ -1,0 +1,1 @@
+UPDATE bots SET config = jsonb_set(config, '{n8n_webhook_url}', '"https://n8ndesarrollo.testbot.click/webhook/Recibe"') WHERE id = 'eb6a8e7f-1fbc-486b-af76-ea6818370575';
