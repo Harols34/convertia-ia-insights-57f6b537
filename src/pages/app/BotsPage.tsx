@@ -134,9 +134,11 @@ export default function BotsPage() {
 
   const getBotConfig = (bot: BotRow) => {
     const cfg = bot.config as any;
+    const mode = cfg?.responseMode || (cfg?.n8n_webhook_url ? "n8n" : "prompt");
     return {
       dataSource: cfg?.dataSources?.[0] || "leads",
-      webhookUrl: cfg?.n8n_webhook_url || null,
+      webhookUrl: mode === "n8n" ? (cfg?.n8n_webhook_url || null) : null,
+      responseMode: mode,
     };
   };
 
