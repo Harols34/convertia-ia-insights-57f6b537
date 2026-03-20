@@ -155,7 +155,7 @@ export default function BotsPage() {
           <h1 className="text-2xl font-display font-bold">Chatbots / AI Agents</h1>
           <p className="text-sm text-muted-foreground mt-1">Administra agentes inteligentes para tus canales</p>
         </div>
-        <Button onClick={() => { setEditBot(null); setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", n8n_webhook_url: "", dataSources: ["leads"] }); setShowForm(true); }}>
+        <Button onClick={() => { setEditBot(null); setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", n8n_webhook_url: "", dataSources: ["leads"], responseMode: "prompt" }); setShowForm(true); }}>
           <Plus className="h-4 w-4 mr-2" /> Nuevo Bot
         </Button>
       </div>
