@@ -81,7 +81,7 @@ export default function DashboardPage() {
               <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
                 <kpi.icon className="h-4 w-4 text-primary" />
               </div>
-              <ArrowUpRight className="h-3.5 w-3.5 text-emerald-500" />
+              <ArrowUpRight className="h-3.5 w-3.5 text-success" />
             </div>
             <p className="text-2xl font-mono font-bold">{kpi.value}</p>
             <p className="text-xs text-muted-foreground mt-1">{kpi.label}</p>
