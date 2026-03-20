@@ -9,15 +9,42 @@ export function useStreamChat() {
   const [isLoading, setIsLoading] = useState(false);
 
   const sendMessage = useCallback(
-    async (input: string, opts?: { mode?: string; botId?: string; dataSource?: string }) => {
+    async (input: string, opts?: { mode?: string; botId?: string; dataSource?: string; webhookUrl?: string }) => {
       const userMsg: Msg = { role: "user", content: input };
       setMessages((prev) => [...prev, userMsg]);
       setIsLoading(true);
 
-      let assistantSoFar = "";
       const allMsgs = [...messages, userMsg];
 
       try {
+        // If webhook URL is configured, route through n8n
+        if (opts?.webhookUrl) {
+          try {
+            const resp = await fetch(opts.webhookUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                message: input,
+                messages: allMsgs,
+                botId: opts.botId,
+              }),
+            });
+
+            if (!resp.ok) throw new Error(`Webhook error: ${resp.status}`);
+
+            const data = await resp.json();
+            const reply = typeof data === "string" ? data : data.output || data.response || data.message || data.text || JSON.stringify(data);
+
+            setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+            setIsLoading(false);
+            return;
+          } catch (webhookErr: any) {
+            console.error("n8n webhook error, falling back to AI:", webhookErr);
+            // Fall through to AI if webhook fails
+          }
+        }
+
+        // Default: use Edge Function with OpenAI streaming
         const { supabase } = await import("@/integrations/supabase/client");
         const { data: { session: s } } = await supabase.auth.getSession();
 
@@ -42,6 +69,7 @@ export function useStreamChat() {
 
         if (!resp.body) throw new Error("No hay stream");
 
+        let assistantSoFar = "";
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let textBuffer = "";
