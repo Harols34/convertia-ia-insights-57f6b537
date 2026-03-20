@@ -69,7 +69,8 @@ export default function BotsPage() {
       tenant_id: tenantId,
       config: {
         dataSources: form.dataSources,
-        n8n_webhook_url: form.n8n_webhook_url || null,
+        n8n_webhook_url: form.responseMode === "n8n" ? (form.n8n_webhook_url || null) : null,
+        responseMode: form.responseMode,
       },
     };
 
