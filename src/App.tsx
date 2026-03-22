@@ -41,6 +41,8 @@ const App = () => (
             <Route path="/app" element={<AppLayout />}>
               <Route index element={<DashboardPage />} />
               <Route path="dashboards-ia" element={<DashboardsIAPage />} />
+              <Route path="dashdinamics" element={<DashDinamicsPage />} />
+              <Route path="dashdinamics/detail" element={<ChartDetailPage />} />
               <Route path="analytics" element={<AnalyticsPage />} />
               <Route path="reportes" element={<ReportesPage />} />
               <Route path="exportaciones" element={<ExportacionesPage />} />

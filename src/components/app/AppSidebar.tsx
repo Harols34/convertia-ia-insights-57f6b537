@@ -18,6 +18,7 @@ const menuGroups = [
     items: [
       { title: "Dashboard Ejecutivo", url: "/app", icon: LayoutDashboard },
       { title: "Dashboards con IA", url: "/app/dashboards-ia", icon: Brain },
+      { title: "DashDinamics", url: "/app/dashdinamics", icon: Sparkles },
       { title: "Analytics Conversacional", url: "/app/analytics", icon: MessageSquare },
       { title: "Reportes", url: "/app/reportes", icon: FileBarChart },
       { title: "Exportaciones", url: "/app/exportaciones", icon: Download },
