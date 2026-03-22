@@ -427,6 +427,30 @@ export type Database = {
           },
         ]
       }
+      memory_analitycs: {
+        Row: {
+          action: string | null
+          chatInput: string | null
+          created_at: string
+          id: number
+          sessionId: string | null
+        }
+        Insert: {
+          action?: string | null
+          chatInput?: string | null
+          created_at?: string
+          id?: number
+          sessionId?: string | null
+        }
+        Update: {
+          action?: string | null
+          chatInput?: string | null
+          created_at?: string
+          id?: number
+          sessionId?: string | null
+        }
+        Relationships: []
+      }
       modules: {
         Row: {
           description: string | null

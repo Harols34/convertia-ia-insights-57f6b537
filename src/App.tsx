@@ -10,6 +10,8 @@ import RecoverPage from "./pages/RecoverPage.tsx";
 import AppLayout from "./layouts/AppLayout.tsx";
 import DashboardPage from "./pages/app/DashboardPage.tsx";
 import DashboardsIAPage from "./pages/app/DashboardsIAPage.tsx";
+import DashDinamicsPage from "./pages/app/DashDinamicsPage.tsx";
+import ChartDetailPage from "./pages/app/ChartDetailPage.tsx";
 import AnalyticsPage from "./pages/app/AnalyticsPage.tsx";
 import ReportesPage from "./pages/app/ReportesPage.tsx";
 import ExportacionesPage from "./pages/app/ExportacionesPage.tsx";
@@ -39,6 +41,8 @@ const App = () => (
             <Route path="/app" element={<AppLayout />}>
               <Route index element={<DashboardPage />} />
               <Route path="dashboards-ia" element={<DashboardsIAPage />} />
+              <Route path="dashdinamics" element={<DashDinamicsPage />} />
+              <Route path="dashdinamics/detail" element={<ChartDetailPage />} />
               <Route path="analytics" element={<AnalyticsPage />} />
               <Route path="reportes" element={<ReportesPage />} />
               <Route path="exportaciones" element={<ExportacionesPage />} />
