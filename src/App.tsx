@@ -10,6 +10,8 @@ import RecoverPage from "./pages/RecoverPage.tsx";
 import AppLayout from "./layouts/AppLayout.tsx";
 import DashboardPage from "./pages/app/DashboardPage.tsx";
 import DashboardsIAPage from "./pages/app/DashboardsIAPage.tsx";
+import DashDinamicsPage from "./pages/app/DashDinamicsPage.tsx";
+import ChartDetailPage from "./pages/app/ChartDetailPage.tsx";
 import AnalyticsPage from "./pages/app/AnalyticsPage.tsx";
 import ReportesPage from "./pages/app/ReportesPage.tsx";
 import ExportacionesPage from "./pages/app/ExportacionesPage.tsx";
