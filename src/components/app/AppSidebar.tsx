@@ -1,7 +1,7 @@
 import {
   BarChart3, Brain, MessageSquare, FileBarChart, Download,
   Bot, Plug, Users, ShieldCheck, ScrollText, Settings, HelpCircle,
-  LayoutDashboard, Building2
+  LayoutDashboard, Building2, Sparkles
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
