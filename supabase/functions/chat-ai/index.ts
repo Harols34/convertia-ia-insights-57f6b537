@@ -20,7 +20,6 @@ function buildLeadsContext(leads: any[]): string {
     return m;
   };
 
-  // Group leads by hour of creation for temporal analysis
   const byHour: Record<string, number> = {};
   const byDate: Record<string, number> = {};
   leads.forEach((l: any) => {
@@ -35,7 +34,6 @@ function buildLeadsContext(leads: any[]): string {
     }
   });
 
-  // Ventas por ciudad
   const ventasPorCiudad: Record<string, number> = {};
   const ventasPorCampana: Record<string, number> = {};
   const ventasPorBpo: Record<string, number> = {};
@@ -48,73 +46,119 @@ function buildLeadsContext(leads: any[]): string {
   });
 
   return `
-📊 DATOS REALES DE LA BASE DE DATOS — Tabla LEADS (${totalLeads} registros)
+📊 DATOS REALES — Tabla LEADS (${totalLeads} registros)
 
-=== KPIs PRINCIPALES ===
-- Total de leads: ${totalLeads}
-- **Ventas (es_venta=true): ${ventas}** (${totalLeads > 0 ? ((ventas/totalLeads)*100).toFixed(1) : 0}%)
-- No ventas (es_venta=false): ${noVentas} (${totalLeads > 0 ? ((noVentas/totalLeads)*100).toFixed(1) : 0}%)
-- Leads con gestión: ${conGestion} (${totalLeads > 0 ? ((conGestion/totalLeads)*100).toFixed(1) : 0}%)
-- Leads con negocio: ${conNegocio} (${totalLeads > 0 ? ((conNegocio/totalLeads)*100).toFixed(1) : 0}%)
+=== KPIs ===
+Total leads: ${totalLeads}
+Ventas (es_venta=true): ${ventas} (${totalLeads > 0 ? ((ventas/totalLeads)*100).toFixed(1) : 0}%)
+No ventas: ${noVentas} (${totalLeads > 0 ? ((noVentas/totalLeads)*100).toFixed(1) : 0}%)
+Con gestión: ${conGestion} (${totalLeads > 0 ? ((conGestion/totalLeads)*100).toFixed(1) : 0}%)
+Con negocio: ${conNegocio} (${totalLeads > 0 ? ((conNegocio/totalLeads)*100).toFixed(1) : 0}%)
 
-=== DISTRIBUCIONES GENERALES ===
+=== DISTRIBUCIONES ===
 Por cliente: ${JSON.stringify(countBy(leads, "cliente"))}
 Por campaña MKT: ${JSON.stringify(countBy(leads, "campana_mkt"))}
 Por BPO: ${JSON.stringify(countBy(leads, "bpo"))}
-Resultados de negocio: ${JSON.stringify(countBy(leads, "result_negocio"))}
+Resultados negocio: ${JSON.stringify(countBy(leads, "result_negocio"))}
 Resultados primera gestión: ${JSON.stringify(countBy(leads, "result_prim_gestion"))}
 Resultados última gestión: ${JSON.stringify(countBy(leads, "result_ultim_gestion"))}
 Por ciudad: ${JSON.stringify(countBy(leads, "ciudad"))}
 Por categoría MKT: ${JSON.stringify(countBy(leads, "categoria_mkt"))}
-Por tipo de llamada: ${JSON.stringify(countBy(leads, "tipo_llamada"))}
+Por tipo llamada: ${JSON.stringify(countBy(leads, "tipo_llamada"))}
 Por keyword: ${JSON.stringify(countBy(leads, "keyword"))}
 Por agente negocio: ${JSON.stringify(countBy(leads, "agente_negocio"))}
 Por agente primera gestión: ${JSON.stringify(countBy(leads, "agente_prim_gestion"))}
 
 === VENTAS POR DIMENSIÓN ===
 Ventas por ciudad: ${JSON.stringify(ventasPorCiudad)}
-Ventas por campaña MKT: ${JSON.stringify(ventasPorCampana)}
+Ventas por campaña: ${JSON.stringify(ventasPorCampana)}
 Ventas por BPO: ${JSON.stringify(ventasPorBpo)}
-Ventas por agente negocio: ${JSON.stringify(ventasPorAgente)}
+Ventas por agente: ${JSON.stringify(ventasPorAgente)}
 
-=== DISTRIBUCIÓN TEMPORAL ===
-Leads por fecha: ${JSON.stringify(byDate)}
-Leads por hora (últimas entradas): ${JSON.stringify(Object.fromEntries(Object.entries(byHour).slice(-48)))}
+=== TEMPORAL ===
+Por fecha: ${JSON.stringify(byDate)}
+Por hora: ${JSON.stringify(Object.fromEntries(Object.entries(byHour).slice(-48)))}
 
-=== COLUMNAS DISPONIBLES ===
-cliente, id_lead, id_llave, campana_inconcert, campana_mkt, categoria_mkt, tipo_llamada, fch_creacion, fch_prim_resultado_marcadora, prim_resultado_marcadora, fch_prim_gestion, agente_prim_gestion, result_prim_gestion, fch_ultim_gestion, agente_ultim_gestion, result_ultim_gestion, fch_negocio, agente_negocio, result_negocio, ciudad, email, keyword, bpo, es_venta
-
-=== MUESTRA DE REGISTROS (primeros 10) ===
-${JSON.stringify(leads.slice(0, 10), null, 2)}`;
+=== COLUMNAS ===
+cliente, id_lead, id_llave, campana_inconcert, campana_mkt, categoria_mkt, tipo_llamada, fch_creacion, fch_prim_resultado_marcadora, prim_resultado_marcadora, fch_prim_gestion, agente_prim_gestion, result_prim_gestion, fch_ultim_gestion, agente_ultim_gestion, result_ultim_gestion, fch_negocio, agente_negocio, result_negocio, ciudad, email, keyword, bpo, es_venta`;
 }
 
-const DASHDINAMICS_EXTRA = `
+const DASHDINAMICS_SYSTEM = `Eres el motor de inteligencia del módulo DashDinamics. Actúas como consultor senior de BI y toma de decisiones.
 
-=== INSTRUCCIONES PARA GRÁFICOS DINÁMICOS ===
-Cuando el usuario pida un gráfico, dashboard o visualización, DEBES incluir un bloque JSON de ECharts envuelto en etiquetas <CHART_CONFIG> y </CHART_CONFIG>.
-El JSON debe ser una configuración válida de ECharts (Apache ECharts). Ejemplo:
+REGLA CRÍTICA: Responde SIEMPRE con JSON válido y NADA MÁS. Sin texto fuera del JSON. Sin markdown. Sin explicaciones fuera del JSON. Solo el objeto JSON.
 
-<CHART_CONFIG>
+Tu respuesta DEBE ser un único objeto JSON con esta estructura:
+
 {
-  "title": { "text": "Ventas por Ciudad", "left": "center", "textStyle": { "color": "#e0e0e0" } },
-  "tooltip": { "trigger": "axis" },
-  "xAxis": { "type": "category", "data": ["Bogotá", "Medellín", "Cali"], "axisLabel": { "color": "#aaa", "rotate": 30 } },
-  "yAxis": { "type": "value", "axisLabel": { "color": "#aaa" }, "splitLine": { "lineStyle": { "color": "#333" } } },
-  "series": [{ "name": "Ventas", "type": "bar", "data": [45, 30, 20], "itemStyle": { "color": "#008080", "borderRadius": [4,4,0,0] } }]
+  "response_mode": "dashboard" | "clarification" | "recommendation",
+  "assistant_message": "string breve",
+  "decision_goal": "string o null",
+  ...campos según el modo
 }
-</CHART_CONFIG>
 
-Reglas para gráficos:
-- USA SIEMPRE los datos reales proporcionados arriba, NUNCA inventes números.
-- Usa colores como #008080, #e74c3c, #f39c12, #3498db, #2ecc71, #9b59b6.
-- Para gráficos de pastel usa "type": "pie" con "data": [{"name":"...", "value": N}].
-- Para líneas usa "type": "line".
-- Para barras horizontales usa yAxis type category y xAxis type value.
-- Incluye "tooltip" siempre.
-- Puedes generar MÚLTIPLES gráficos en una sola respuesta.
-- Siempre explica el gráfico con texto markdown antes y/o después del bloque.
-- El fondo siempre es transparente (no pongas backgroundColor).
-`;
+=== MODO "dashboard" ===
+Usa cuando hay suficiente contexto. Incluye:
+{
+  "response_mode": "dashboard",
+  "assistant_message": "Resumen ejecutivo breve (1-2 oraciones)",
+  "decision_goal": "Qué decisión ayuda a tomar",
+  "dashboard": {
+    "title": "string",
+    "subtitle": "string",
+    "time_range": "string",
+    "kpis": [{"label":"string","value":"string o number","change":"string o null","trend":"up|down|neutral","icon":"TrendingUp|Users|Target|DollarSign|BarChart|Activity"}],
+    "charts": [{"id":"string","title":"string","type":"bar|line|pie|area|horizontalBar|donut|stackedBar|combo","config":{...ECharts config...}}],
+    "insights": [{"type":"success|warning|info|alert","title":"string","description":"string"}],
+    "recommended_next_steps": ["string"],
+    "tables": [{"title":"string","headers":["string"],"rows":[["string"]]}]
+  }
+}
+
+=== MODO "clarification" ===
+Usa cuando falta contexto clave. Incluye:
+{
+  "response_mode": "clarification",
+  "assistant_message": "Pregunta o contexto breve",
+  "decision_goal": null,
+  "clarifying_questions": [
+    {"id":"q1","question":"string","type":"single_select","options":["string"]}
+  ]
+}
+
+=== MODO "recommendation" ===
+Usa cuando la solicitud es amplia. Incluye:
+{
+  "response_mode": "recommendation",
+  "assistant_message": "Mensaje ejecutivo breve",
+  "decision_goal": null,
+  "recommendations": [
+    {"id":"r1","title":"string","description":"string","icon":"BarChart|TrendingUp|Target|Users|Activity","action_label":"Generar este dashboard"}
+  ]
+}
+
+REGLAS DE GRÁFICOS (ECharts):
+- USA SIEMPRE datos reales proporcionados, NUNCA inventes.
+- Colores: #008080, #e74c3c, #f39c12, #3498db, #2ecc71, #9b59b6, #1abc9c, #e67e22.
+- Fondo transparente siempre.
+- Incluye tooltip siempre.
+- Para pie/donut: "type":"pie", data:[{name,value}].
+- Para barras horizontales: yAxis type category, xAxis type value.
+- Para tendencias: type "line" o "area".
+- Textos de ejes en color #aaa.
+
+REGLAS DE DECISIÓN:
+- Si la intención del usuario es clara y específica → dashboard
+- Si falta información clave (período, dimensión, nivel detalle) → clarification (máx 3 preguntas)
+- Si la solicitud es muy amplia ("analiza todo", "hazme un dashboard") → recommendation (2-4 opciones)
+
+REGLAS DE CONTENIDO:
+- KPIs: 3-6 métricas clave con tendencia.
+- Insights: 2-4 hallazgos accionables.
+- Next steps: 2-3 recomendaciones.
+- Mensajes breves, ejecutivos, orientados a decisión.
+- Nunca texto largo. Dashboard es protagonista.
+- Genera múltiples gráficos complementarios cuando sea útil (2-4).
+- Incluye tablas solo si aportan valor real.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -123,8 +167,7 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "No autorizado" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -137,11 +180,9 @@ serve(async (req) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "Token inválido" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const userId = user.id;
 
     const { messages, mode, botId, dataSource, webhookUrl } = await req.json();
 
@@ -150,8 +191,7 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { data: tenantId } = await adminClient.rpc("get_user_tenant", { _user_id: userId });
-    let n8nFallbackReason = "";
+    const { data: tenantId } = await adminClient.rpc("get_user_tenant", { _user_id: user.id });
 
     // ── n8n webhook mode ──
     if (webhookUrl) {
@@ -175,9 +215,8 @@ serve(async (req) => {
 
         const data = await resp.json();
         let reply: string;
-        if (typeof data === "string") {
-          reply = data;
-        } else if (Array.isArray(data) && data.length > 0) {
+        if (typeof data === "string") reply = data;
+        else if (Array.isArray(data) && data.length > 0) {
           const first = data[0];
           reply = first.output || first.response || first.message || first.text || JSON.stringify(first);
         } else {
@@ -188,50 +227,37 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } catch (whErr) {
-        n8nFallbackReason = whErr instanceof Error ? whErr.message : "desconocido";
         console.error("n8n webhook error, using AI fallback:", whErr);
       }
     }
 
     // ── Build system prompt ──
-    let systemPrompt = `Eres un asistente analítico BI (Business Intelligence) avanzado de la plataforma Converti-IA Analytics.
-Responde siempre en español. Eres experto en análisis de datos de marketing, leads, campañas y gestión comercial.
-Cuando presentes datos, usa formato markdown con tablas, listas y negritas para mayor claridad.
-Basa TODAS tus respuestas en los datos reales proporcionados abajo. Nunca inventes datos.
-Si te piden "ventas", filtra por es_venta=true. Si te piden leads por hora, usa la distribución temporal.
-Si te piden datos por ciudad, campaña, BPO, agente, etc., usa las distribuciones correspondientes.
-Siempre da números exactos basados en los datos.`;
+    let systemPrompt: string;
+    
+    if (mode === "dashdinamics") {
+      systemPrompt = DASHDINAMICS_SYSTEM;
+    } else {
+      systemPrompt = `Eres un asistente analítico BI avanzado de Converti-IA Analytics.
+Responde en español. Experto en análisis de datos de marketing, leads, campañas y gestión comercial.
+Usa formato markdown con tablas, listas y negritas.
+Basa TODAS tus respuestas en los datos reales. Nunca inventes datos.
+Si piden "ventas", filtra por es_venta=true.`;
+    }
 
     if (botId) {
       const { data: bot } = await adminClient
-        .from("bots")
-        .select("system_prompt")
-        .eq("id", botId)
-        .single();
+        .from("bots").select("system_prompt").eq("id", botId).single();
       if (bot?.system_prompt) systemPrompt = bot.system_prompt;
-    }
-
-    // Add chart generation instructions for dashdinamics mode
-    if (mode === "dashdinamics") {
-      systemPrompt += DASHDINAMICS_EXTRA;
     }
 
     // Inject real data
     if (tenantId) {
       const { data: leads, error: leadsErr } = await adminClient
-        .from("leads")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .limit(1000);
+        .from("leads").select("*").eq("tenant_id", tenantId).limit(1000);
 
       if (!leadsErr && leads && leads.length > 0) {
         systemPrompt += "\n\n" + buildLeadsContext(leads);
-
-        systemPrompt += `\n\nIMPORTANTE: Usa SIEMPRE estos datos reales para responder. Si preguntan cuántas ventas hay, la respuesta es ${leads.filter((l: any) => l.es_venta === true).length}. Nunca digas que no tienes acceso a datos.`;
-
-        if (n8nFallbackReason) {
-          systemPrompt += `\n\nAVISO: Webhook n8n falló (${n8nFallbackReason}), respondiendo con IA + datos reales.`;
-        }
+        systemPrompt += `\n\nIMPORTANTE: Usa SIEMPRE estos datos reales. Ventas totales: ${leads.filter((l: any) => l.es_venta === true).length}. Nunca digas que no tienes datos.`;
       } else {
         systemPrompt += `\n\nNo hay datos de leads disponibles para este tenant aún.`;
       }
@@ -240,11 +266,51 @@ Siempre da números exactos basados en los datos.`;
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     if (!OPENAI_API_KEY) {
       return new Response(JSON.stringify({ error: "OPENAI_API_KEY no configurada" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    // For dashdinamics mode, use non-streaming to get clean JSON
+    if (mode === "dashdinamics") {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [{ role: "system", content: systemPrompt }, ...messages],
+          response_format: { type: "json_object" },
+          temperature: 0.7,
+        }),
+      });
+
+      if (!response.ok) {
+        const status = response.status;
+        if (status === 429) return new Response(JSON.stringify({ error: "Límite excedido" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        if (status === 402) return new Response(JSON.stringify({ error: "Créditos agotados" }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        const t = await response.text();
+        console.error("OpenAI error:", status, t);
+        return new Response(JSON.stringify({ error: "Error del servicio de IA" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const aiData = await response.json();
+      const content = aiData.choices?.[0]?.message?.content || "{}";
+      
+      try {
+        const parsed = JSON.parse(content);
+        return new Response(JSON.stringify({ reply: parsed }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch {
+        return new Response(JSON.stringify({ reply: { response_mode: "dashboard", assistant_message: content, dashboard: null } }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // Streaming for other modes (analytics, bots)
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -260,24 +326,11 @@ Siempre da números exactos basados en los datos.`;
 
     if (!response.ok) {
       const status = response.status;
-      if (status === 429) {
-        return new Response(JSON.stringify({ error: "Límite de solicitudes excedido, intenta más tarde." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (status === 402) {
-        return new Response(JSON.stringify({ error: "Créditos agotados." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      if (status === 429) return new Response(JSON.stringify({ error: "Límite excedido" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (status === 402) return new Response(JSON.stringify({ error: "Créditos agotados" }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       const t = await response.text();
       console.error("OpenAI error:", status, t);
-      return new Response(JSON.stringify({ error: "Error del servicio de IA" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(JSON.stringify({ error: "Error del servicio de IA" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     return new Response(response.body, {
@@ -286,8 +339,7 @@ Siempre da números exactos basados en los datos.`;
   } catch (e) {
     console.error("chat-ai error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Error desconocido" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
