@@ -6,9 +6,10 @@ import { useNavigate } from "react-router-dom";
 interface DynamicChartProps {
   config: Record<string, unknown>;
   allowExpand?: boolean;
+  height?: number;
 }
 
-export function DynamicChart({ config, allowExpand = true }: DynamicChartProps) {
+export function DynamicChart({ config, allowExpand = true, height = 280 }: DynamicChartProps) {
   const navigate = useNavigate();
 
   const option = {
@@ -29,7 +30,7 @@ export function DynamicChart({ config, allowExpand = true }: DynamicChartProps) 
           <Expand className="h-3.5 w-3.5" />
         </Button>
       )}
-      <ReactECharts option={option} style={{ height: 280, width: "100%" }} notMerge lazyUpdate />
+      <ReactECharts option={option} style={{ height, width: "100%" }} notMerge lazyUpdate />
     </div>
   );
 }
