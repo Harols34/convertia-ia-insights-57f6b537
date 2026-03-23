@@ -7,6 +7,115 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+function buildLeadsContext(leads: any[]): string {
+  const totalLeads = leads.length;
+  const ventas = leads.filter((l: any) => l.es_venta === true).length;
+  const noVentas = leads.filter((l: any) => l.es_venta === false).length;
+  const conNegocio = leads.filter((l: any) => l.result_negocio && l.result_negocio !== "").length;
+  const conGestion = leads.filter((l: any) => l.result_prim_gestion && l.result_prim_gestion !== "").length;
+
+  const countBy = (arr: any[], key: string) => {
+    const m: Record<string, number> = {};
+    arr.forEach((i) => { if (i[key]) m[i[key]] = (m[i[key]] || 0) + 1; });
+    return m;
+  };
+
+  // Group leads by hour of creation for temporal analysis
+  const byHour: Record<string, number> = {};
+  const byDate: Record<string, number> = {};
+  leads.forEach((l: any) => {
+    if (l.fch_creacion) {
+      try {
+        const d = new Date(l.fch_creacion);
+        const hourKey = `${d.toISOString().split('T')[0]} ${String(d.getHours()).padStart(2, '0')}:00`;
+        byHour[hourKey] = (byHour[hourKey] || 0) + 1;
+        const dateKey = d.toISOString().split('T')[0];
+        byDate[dateKey] = (byDate[dateKey] || 0) + 1;
+      } catch {}
+    }
+  });
+
+  // Ventas por ciudad
+  const ventasPorCiudad: Record<string, number> = {};
+  const ventasPorCampana: Record<string, number> = {};
+  const ventasPorBpo: Record<string, number> = {};
+  const ventasPorAgente: Record<string, number> = {};
+  leads.filter((l: any) => l.es_venta === true).forEach((l: any) => {
+    if (l.ciudad) ventasPorCiudad[l.ciudad] = (ventasPorCiudad[l.ciudad] || 0) + 1;
+    if (l.campana_mkt) ventasPorCampana[l.campana_mkt] = (ventasPorCampana[l.campana_mkt] || 0) + 1;
+    if (l.bpo) ventasPorBpo[l.bpo] = (ventasPorBpo[l.bpo] || 0) + 1;
+    if (l.agente_negocio) ventasPorAgente[l.agente_negocio] = (ventasPorAgente[l.agente_negocio] || 0) + 1;
+  });
+
+  return `
+📊 DATOS REALES DE LA BASE DE DATOS — Tabla LEADS (${totalLeads} registros)
+
+=== KPIs PRINCIPALES ===
+- Total de leads: ${totalLeads}
+- **Ventas (es_venta=true): ${ventas}** (${totalLeads > 0 ? ((ventas/totalLeads)*100).toFixed(1) : 0}%)
+- No ventas (es_venta=false): ${noVentas} (${totalLeads > 0 ? ((noVentas/totalLeads)*100).toFixed(1) : 0}%)
+- Leads con gestión: ${conGestion} (${totalLeads > 0 ? ((conGestion/totalLeads)*100).toFixed(1) : 0}%)
+- Leads con negocio: ${conNegocio} (${totalLeads > 0 ? ((conNegocio/totalLeads)*100).toFixed(1) : 0}%)
+
+=== DISTRIBUCIONES GENERALES ===
+Por cliente: ${JSON.stringify(countBy(leads, "cliente"))}
+Por campaña MKT: ${JSON.stringify(countBy(leads, "campana_mkt"))}
+Por BPO: ${JSON.stringify(countBy(leads, "bpo"))}
+Resultados de negocio: ${JSON.stringify(countBy(leads, "result_negocio"))}
+Resultados primera gestión: ${JSON.stringify(countBy(leads, "result_prim_gestion"))}
+Resultados última gestión: ${JSON.stringify(countBy(leads, "result_ultim_gestion"))}
+Por ciudad: ${JSON.stringify(countBy(leads, "ciudad"))}
+Por categoría MKT: ${JSON.stringify(countBy(leads, "categoria_mkt"))}
+Por tipo de llamada: ${JSON.stringify(countBy(leads, "tipo_llamada"))}
+Por keyword: ${JSON.stringify(countBy(leads, "keyword"))}
+Por agente negocio: ${JSON.stringify(countBy(leads, "agente_negocio"))}
+Por agente primera gestión: ${JSON.stringify(countBy(leads, "agente_prim_gestion"))}
+
+=== VENTAS POR DIMENSIÓN ===
+Ventas por ciudad: ${JSON.stringify(ventasPorCiudad)}
+Ventas por campaña MKT: ${JSON.stringify(ventasPorCampana)}
+Ventas por BPO: ${JSON.stringify(ventasPorBpo)}
+Ventas por agente negocio: ${JSON.stringify(ventasPorAgente)}
+
+=== DISTRIBUCIÓN TEMPORAL ===
+Leads por fecha: ${JSON.stringify(byDate)}
+Leads por hora (últimas entradas): ${JSON.stringify(Object.fromEntries(Object.entries(byHour).slice(-48)))}
+
+=== COLUMNAS DISPONIBLES ===
+cliente, id_lead, id_llave, campana_inconcert, campana_mkt, categoria_mkt, tipo_llamada, fch_creacion, fch_prim_resultado_marcadora, prim_resultado_marcadora, fch_prim_gestion, agente_prim_gestion, result_prim_gestion, fch_ultim_gestion, agente_ultim_gestion, result_ultim_gestion, fch_negocio, agente_negocio, result_negocio, ciudad, email, keyword, bpo, es_venta
+
+=== MUESTRA DE REGISTROS (primeros 10) ===
+${JSON.stringify(leads.slice(0, 10), null, 2)}`;
+}
+
+const DASHDINAMICS_EXTRA = `
+
+=== INSTRUCCIONES PARA GRÁFICOS DINÁMICOS ===
+Cuando el usuario pida un gráfico, dashboard o visualización, DEBES incluir un bloque JSON de ECharts envuelto en etiquetas <CHART_CONFIG> y </CHART_CONFIG>.
+El JSON debe ser una configuración válida de ECharts (Apache ECharts). Ejemplo:
+
+<CHART_CONFIG>
+{
+  "title": { "text": "Ventas por Ciudad", "left": "center", "textStyle": { "color": "#e0e0e0" } },
+  "tooltip": { "trigger": "axis" },
+  "xAxis": { "type": "category", "data": ["Bogotá", "Medellín", "Cali"], "axisLabel": { "color": "#aaa", "rotate": 30 } },
+  "yAxis": { "type": "value", "axisLabel": { "color": "#aaa" }, "splitLine": { "lineStyle": { "color": "#333" } } },
+  "series": [{ "name": "Ventas", "type": "bar", "data": [45, 30, 20], "itemStyle": { "color": "#008080", "borderRadius": [4,4,0,0] } }]
+}
+</CHART_CONFIG>
+
+Reglas para gráficos:
+- USA SIEMPRE los datos reales proporcionados arriba, NUNCA inventes números.
+- Usa colores como #008080, #e74c3c, #f39c12, #3498db, #2ecc71, #9b59b6.
+- Para gráficos de pastel usa "type": "pie" con "data": [{"name":"...", "value": N}].
+- Para líneas usa "type": "line".
+- Para barras horizontales usa yAxis type category y xAxis type value.
+- Incluye "tooltip" siempre.
+- Puedes generar MÚLTIPLES gráficos en una sola respuesta.
+- Siempre explica el gráfico con texto markdown antes y/o después del bloque.
+- El fondo siempre es transparente (no pongas backgroundColor).
+`;
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -44,7 +153,7 @@ serve(async (req) => {
     const { data: tenantId } = await adminClient.rpc("get_user_tenant", { _user_id: userId });
     let n8nFallbackReason = "";
 
-    // ── n8n webhook mode: proxy the call server-side to avoid CORS ──
+    // ── n8n webhook mode ──
     if (webhookUrl) {
       try {
         const lastUserMsg = messages[messages.length - 1]?.content || "";
@@ -84,13 +193,15 @@ serve(async (req) => {
       }
     }
 
-    // ── AI mode: build system prompt with real data context ──
+    // ── Build system prompt ──
     let systemPrompt = `Eres un asistente analítico BI (Business Intelligence) avanzado de la plataforma Converti-IA Analytics.
 Responde siempre en español. Eres experto en análisis de datos de marketing, leads, campañas y gestión comercial.
 Cuando presentes datos, usa formato markdown con tablas, listas y negritas para mayor claridad.
-Basa TODAS tus respuestas en los datos reales proporcionados abajo. Nunca inventes datos.`;
+Basa TODAS tus respuestas en los datos reales proporcionados abajo. Nunca inventes datos.
+Si te piden "ventas", filtra por es_venta=true. Si te piden leads por hora, usa la distribución temporal.
+Si te piden datos por ciudad, campaña, BPO, agente, etc., usa las distribuciones correspondientes.
+Siempre da números exactos basados en los datos.`;
 
-    // If a bot is specified, use its system prompt
     if (botId) {
       const { data: bot } = await adminClient
         .from("bots")
@@ -100,62 +211,26 @@ Basa TODAS tus respuestas en los datos reales proporcionados abajo. Nunca invent
       if (bot?.system_prompt) systemPrompt = bot.system_prompt;
     }
 
-    // Inject real leads data context
+    // Add chart generation instructions for dashdinamics mode
+    if (mode === "dashdinamics") {
+      systemPrompt += DASHDINAMICS_EXTRA;
+    }
+
+    // Inject real data
     if (tenantId) {
       const { data: leads, error: leadsErr } = await adminClient
         .from("leads")
         .select("*")
         .eq("tenant_id", tenantId)
-        .limit(500);
+        .limit(1000);
 
       if (!leadsErr && leads && leads.length > 0) {
-        const countBy = (arr: any[], key: string) => {
-          const m: Record<string, number> = {};
-          arr.forEach((i) => { if (i[key]) m[i[key]] = (m[i[key]] || 0) + 1; });
-          return m;
-        };
+        systemPrompt += "\n\n" + buildLeadsContext(leads);
 
-        const totalLeads = leads.length;
-        const ventas = leads.filter((l: any) => l.es_venta === true).length;
-        const noVentas = leads.filter((l: any) => l.es_venta === false).length;
-        const conNegocio = leads.filter((l: any) => l.result_negocio && l.result_negocio !== "").length;
-        const conGestion = leads.filter((l: any) => l.result_prim_gestion && l.result_prim_gestion !== "").length;
-
-        systemPrompt += `
-
-📊 DATOS REALES DE LA BASE DE DATOS — Tabla LEADS (${totalLeads} registros)
-
-=== KPIs PRINCIPALES ===
-- Total de leads: ${totalLeads}
-- **Ventas (es_venta=true, tienen id_llave): ${ventas}** (${((ventas/totalLeads)*100).toFixed(1)}%)
-- No ventas (es_venta=false): ${noVentas} (${((noVentas/totalLeads)*100).toFixed(1)}%)
-- Leads con gestión: ${conGestion} (${((conGestion/totalLeads)*100).toFixed(1)}%)
-- Leads con negocio: ${conNegocio} (${((conNegocio/totalLeads)*100).toFixed(1)}%)
-
-=== DISTRIBUCIONES ===
-Por cliente: ${JSON.stringify(countBy(leads, "cliente"))}
-Por campaña MKT: ${JSON.stringify(countBy(leads, "campana_mkt"))}
-Por BPO: ${JSON.stringify(countBy(leads, "bpo"))}
-Resultados de negocio: ${JSON.stringify(countBy(leads, "result_negocio"))}
-Resultados primera gestión: ${JSON.stringify(countBy(leads, "result_prim_gestion"))}
-Resultados última gestión: ${JSON.stringify(countBy(leads, "result_ultim_gestion"))}
-Por ciudad: ${JSON.stringify(countBy(leads, "ciudad"))}
-Por categoría MKT: ${JSON.stringify(countBy(leads, "categoria_mkt"))}
-Por tipo de llamada: ${JSON.stringify(countBy(leads, "tipo_llamada"))}
-Por keyword: ${JSON.stringify(countBy(leads, "keyword"))}
-Por agente negocio: ${JSON.stringify(countBy(leads, "agente_negocio"))}
-Por agente primera gestión: ${JSON.stringify(countBy(leads, "agente_prim_gestion"))}
-
-=== COLUMNAS DISPONIBLES ===
-cliente, id_lead, id_llave, campana_inconcert, campana_mkt, categoria_mkt, tipo_llamada, fch_creacion, fch_prim_resultado_marcadora, prim_resultado_marcadora, fch_prim_gestion, agente_prim_gestion, result_prim_gestion, fch_ultim_gestion, agente_ultim_gestion, result_ultim_gestion, fch_negocio, agente_negocio, result_negocio, ciudad, email, keyword, bpo, es_venta
-
-=== MUESTRA DE REGISTROS (10 primeros) ===
-${JSON.stringify(leads.slice(0, 10), null, 2)}
-
-IMPORTANTE: Usa SIEMPRE estos datos reales para responder. Si preguntan cuántas ventas hay, la respuesta es ${ventas}. Nunca digas que no tienes acceso a datos.`;
+        systemPrompt += `\n\nIMPORTANTE: Usa SIEMPRE estos datos reales para responder. Si preguntan cuántas ventas hay, la respuesta es ${leads.filter((l: any) => l.es_venta === true).length}. Nunca digas que no tienes acceso a datos.`;
 
         if (n8nFallbackReason) {
-          systemPrompt += `\n\nAVISO TÉCNICO: El webhook de n8n falló y estás respondiendo con fallback de IA usando los datos reales de la base de datos. Error n8n: ${n8nFallbackReason}`;
+          systemPrompt += `\n\nAVISO: Webhook n8n falló (${n8nFallbackReason}), respondiendo con IA + datos reales.`;
         }
       } else {
         systemPrompt += `\n\nNo hay datos de leads disponibles para este tenant aún.`;
