@@ -317,12 +317,20 @@ export default function CuentasPage() {
                           <Button size="icon" variant="ghost" onClick={() => openEdit(t)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          <Button
+                         <Button
                             size="icon"
                             variant="ghost"
                             onClick={() => toggleMutation.mutate({ id: t.id, is_active: !t.is_active })}
                           >
-                            {t.is_active ? <ToggleRight className="h-4 w-4 text-emerald-500" /> : <ToggleLeft className="h-4 w-4 text-red-500" />}
+                             {t.is_active ? <ToggleRight className="h-4 w-4 text-emerald-500" /> : <ToggleLeft className="h-4 w-4 text-red-500" />}
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="text-destructive"
+                            onClick={() => { if (window.confirm(`¿Eliminar definitivamente la cuenta "${t.name}"? Esta acción no se puede deshacer.`)) deleteMutation.mutate(t.id); }}
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </TableCell>
