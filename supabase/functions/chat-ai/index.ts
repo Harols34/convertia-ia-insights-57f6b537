@@ -8,31 +8,7 @@ const corsHeaders = {
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
-// TIMEZONE AUTO-DETECTION
-// Compara fch_prim_resultado_marcadora (UTC con +00)
-// contra prim_resultado_marcadora (misma hora en local, sin tz)
-// → devuelve offset en horas, ej: -4 para Chile verano
-// ═════════════════════════════════════════════════════════════════════════════
-function detectTimezoneOffset(leads: any[]): number {
-  for (const r of leads) {
-    const utcStr = r.fch_prim_resultado_marcadora; // "2026-03-19 16:19:44+00"
-    const localStr = r.prim_resultado_marcadora; // "2026-03-19 12:19:44"
-    if (!utcStr || !localStr) continue;
-    try {
-      const utcH = new Date(utcStr.replace(" ", "T")).getUTCHours();
-      const localH = parseInt(localStr.split(" ")[1]?.split(":")[0] ?? "-1", 10);
-      if (isNaN(utcH) || isNaN(localH) || localH < 0) continue;
-      const offset = localH - utcH;
-      if (offset >= -12 && offset <= 14) return offset;
-    } catch {
-      continue;
-    }
-  }
-  return 0;
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// TYPES & DATE HELPERS
+// TYPES
 // ═════════════════════════════════════════════════════════════════════════════
 type Stat = { leads: number; ventas: number; conv: string };
 type Dict<T> = Record<string, T>;
@@ -43,45 +19,62 @@ function statLine(l: number, v: number): Stat {
   return { leads: l, ventas: v, conv: l > 0 ? ((v / l) * 100).toFixed(1) + "%" : "0.0%" };
 }
 
-// tzOffset inyectado globalmente antes de buildLeadsContext
-let TZ_OFFSET = 0;
+// ═════════════════════════════════════════════════════════════════════════════
+// DATE HELPERS — extrae directo del string, SIN conversión de zona horaria
+// La BD ya guarda la hora correcta; no se suma ni resta nada.
+// ═════════════════════════════════════════════════════════════════════════════
 
-/** ms locales de un timestamp UTC string */
-function localMs(ts: string | null): number | null {
-  if (!ts) return null;
+/**
+ * Extrae "HH:00" directo del string timestamp.
+ * "2026-03-19 16:20:56+00" → "16:00"
+ * "2026-03-19T09:15:31+00:00" → "09:00"
+ */
+function deriveHour(ts: string | null): string {
+  if (!ts) return "";
   try {
-    return new Date(ts.replace(" ", "T")).getTime() + TZ_OFFSET * 3600000;
+    const timePart = ts.replace("T", " ").split(" ")[1];
+    const h = parseInt(timePart.split(":")[0], 10);
+    return isNaN(h) ? "" : String(h).padStart(2, "0") + ":00";
   } catch {
-    return null;
+    return "";
   }
 }
 
-/** Hora local "HH:00" desde fch_creacion (UTC) + offset */
-function deriveHour(ts: string | null): string {
-  const ms = localMs(ts);
-  if (ms === null) return "";
-  return String(new Date(ms).getUTCHours()).padStart(2, "0") + ":00";
-}
-
-/** Día de semana local */
-function deriveDay(ts: string | null): string {
-  const ms = localMs(ts);
-  if (ms === null) return "";
-  return ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][new Date(ms).getUTCDay()];
-}
-
-/** Fecha local "YYYY-MM-DD" */
+/**
+ * Extrae "YYYY-MM-DD" directo del string.
+ * "2026-03-19 16:20:56+00" → "2026-03-19"
+ */
 function deriveDate(ts: string | null): string {
-  const ms = localMs(ts);
-  if (ms === null) return "";
-  return new Date(ms).toISOString().split("T")[0];
+  if (!ts) return "";
+  try {
+    return ts.replace("T", " ").split(" ")[0];
+  } catch {
+    return "";
+  }
 }
 
-/** Tramo horario local */
+/**
+ * Día de semana usando la fecha del string sin conversión de zona.
+ * Parsea "YYYY-MM-DD" como fecha local (T00:00:00 sin zona).
+ */
+function deriveDay(ts: string | null): string {
+  if (!ts) return "";
+  try {
+    const datePart = ts.replace("T", " ").split(" ")[0];
+    const d = new Date(datePart + "T00:00:00");
+    return ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][d.getDay()];
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Tramo horario basado en la hora extraída del string.
+ */
 function deriveTramo(ts: string | null): string {
-  const ms = localMs(ts);
-  if (ms === null) return "";
-  const h = new Date(ms).getUTCHours();
+  const hStr = deriveHour(ts);
+  if (!hStr) return "";
+  const h = parseInt(hStr, 10);
   if (h >= 8 && h < 12) return "Mañana (08-12)";
   if (h >= 12 && h < 15) return "Mediodía (12-15)";
   if (h >= 15 && h < 19) return "Tarde (15-19)";
@@ -91,7 +84,7 @@ function deriveTramo(ts: string | null): string {
 
 /**
  * Diferencia en minutos entre dos timestamps.
- * Retorna null si alguno falta o el resultado es negativo/irreal.
+ * Aquí sí usamos Date() porque solo nos importa la diferencia, no la hora local.
  */
 function diffMinutes(tsStart: string | null, tsEnd: string | null): number | null {
   if (!tsStart || !tsEnd) return null;
@@ -105,23 +98,20 @@ function diffMinutes(tsStart: string | null, tsEnd: string | null): number | nul
   }
 }
 
-/** Selector de campo derivado */
+/** Selector de campo derivado para cross-tabs */
 function val(r: any, key: string): string {
-  // Temporales desde fch_creacion (base de todo)
   if (key === "hora_creacion") return deriveHour(r.fch_creacion);
+  if (key === "hora_negocio") return deriveHour(r.fch_negocio);
   if (key === "dia_semana") return deriveDay(r.fch_creacion);
   if (key === "fecha") return deriveDate(r.fch_creacion);
-  if (key === "tramo_horario") return deriveTramo(r.fch_creacion);
-  // Temporal desde fch_negocio (cuándo se cerró el negocio)
-  if (key === "hora_negocio") return deriveHour(r.fch_negocio);
   if (key === "fecha_negocio") return deriveDate(r.fch_negocio);
-  // Campo normal
+  if (key === "tramo_horario") return deriveTramo(r.fch_creacion);
   return String(r[key] ?? "").trim();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CROSS-TABS 1-D y 2-D
-// ─────────────────────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// CROSS-TABS
+// ═════════════════════════════════════════════════════════════════════════════
 function crossTab1D(leads: any[], ventas: any[], key: string): Dict<Stat> {
   const lm: Dict<number> = {},
     vm: Dict<number> = {};
@@ -136,10 +126,13 @@ function crossTab1D(leads: any[], ventas: any[], key: string): Dict<Stat> {
   const keys = new Set([...Object.keys(lm), ...Object.keys(vm)]);
   const out: Dict<Stat> = {};
   keys.forEach((k) => (out[k] = statLine(lm[k] || 0, vm[k] || 0)));
+  // Orden especial para campos temporales
   if (key === "hora_creacion" || key === "hora_negocio")
     return Object.fromEntries(Object.entries(out).sort((a, b) => a[0].localeCompare(b[0])));
   if (key === "dia_semana")
     return Object.fromEntries(Object.entries(out).sort((a, b) => DIAS_ORDER.indexOf(a[0]) - DIAS_ORDER.indexOf(b[0])));
+  if (key === "fecha" || key === "fecha_negocio")
+    return Object.fromEntries(Object.entries(out).sort((a, b) => a[0].localeCompare(b[0])));
   return Object.fromEntries(Object.entries(out).sort((a, b) => b[1].leads - a[1].leads));
 }
 
@@ -157,8 +150,10 @@ function crossTab2D(leads: any[], ventas: any[], key1: string, key2: string, top
     });
   push(leads, false);
   push(ventas, true);
+
   const totals: Dict<number> = {};
   Object.entries(acc).forEach(([k1, inner]) => (totals[k1] = Object.values(inner).reduce((s, x) => s + x.l, 0)));
+
   const out: Dict<Dict<Stat>> = {};
   Object.entries(acc)
     .sort((a, b) => (totals[b[0]] || 0) - (totals[a[0]] || 0))
@@ -172,15 +167,15 @@ function crossTab2D(leads: any[], ventas: any[], key1: string, key2: string, top
         entries = entries.sort((a, b) => a[0].localeCompare(b[0]));
       else if (key2 === "dia_semana")
         entries = entries.sort((a, b) => DIAS_ORDER.indexOf(a[0]) - DIAS_ORDER.indexOf(b[0]));
+      else if (key2 === "fecha" || key2 === "fecha_negocio") entries = entries.sort((a, b) => a[0].localeCompare(b[0]));
       entries.forEach(([k2, { l, v }]) => (out[k1][k2] = statLine(l, v)));
     });
   return out;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// MÉTRICAS DE TIEMPO  (el núcleo nuevo)
+// MÉTRICAS DE TIEMPO
 // ═════════════════════════════════════════════════════════════════════════════
-
 interface TimeStat {
   n: number;
   avg_min: number | null;
@@ -193,10 +188,9 @@ interface TimeStat {
 function timeStat(arr: number[]): TimeStat {
   if (!arr.length) return { n: 0, avg_min: null, med_min: null, p90_min: null, min_min: null, max_min: null };
   const s = [...arr].sort((a, b) => a - b);
-  const avg = Math.round(arr.reduce((x, y) => x + y, 0) / arr.length);
   return {
     n: arr.length,
-    avg_min: avg,
+    avg_min: Math.round(arr.reduce((x, y) => x + y, 0) / arr.length),
     med_min: s[Math.floor(s.length / 2)],
     p90_min: s[Math.floor(s.length * 0.9)],
     min_min: s[0],
@@ -205,75 +199,56 @@ function timeStat(arr: number[]): TimeStat {
 }
 
 function calcTimeMetrics(leads: any[]) {
-  // Arrays de tiempos por categoría
-  const tRespuesta: number[] = []; // fch_prim_gestion - fch_creacion
-  const tCiclo: number[] = []; // fch_negocio      - fch_creacion
-  const tEntreMgmt: number[] = []; // fch_ultim_gestion- fch_prim_gestion
-  const tCierreVenta: number[] = []; // fch_negocio - fch_creacion (solo ventas)
+  const tRespuesta: number[] = [];
+  const tCiclo: number[] = [];
+  const tEntreMgmt: number[] = [];
+  const tCicloVenta: number[] = [];
 
-  // Por agente
-  const byAgente: Dict<{ resp: number[]; ciclo: number[]; ventas_ciclo: number[] }> = {};
-  // Por campaña
+  const byAgente: Dict<{ resp: number[]; ciclo: number[]; ciclo_venta: number[] }> = {};
   const byCampana: Dict<{ resp: number[]; ciclo: number[] }> = {};
-  // Por tipo llamada
   const byTipo: Dict<{ resp: number[]; ciclo: number[] }> = {};
-  // Por hora de creación
-  const byHoraRespuesta: Dict<number[]> = {};
+  const byHoraResp: Dict<number[]> = {};
 
   let sinPrimGestion = 0,
-    sinNegocio = 0,
-    conGestion = 0;
+    conGestion = 0,
+    sinNegocio = 0;
 
   leads.forEach((r) => {
-    const tCreacion = r.fch_creacion ? new Date(r.fch_creacion.replace(" ", "T")).getTime() : null;
-    const tPrimGest = r.fch_prim_gestion ? new Date(r.fch_prim_gestion.replace(" ", "T")).getTime() : null;
-    const tUltimGest = r.fch_ultim_gestion ? new Date(r.fch_ultim_gestion.replace(" ", "T")).getTime() : null;
-    const tNegocio = r.fch_negocio ? new Date(r.fch_negocio.replace(" ", "T")).getTime() : null;
+    const resp = diffMinutes(r.fch_creacion, r.fch_prim_gestion);
+    const ciclo = diffMinutes(r.fch_creacion, r.fch_negocio);
+    const entre = diffMinutes(r.fch_prim_gestion, r.fch_ultim_gestion);
 
-    if (!tPrimGest) {
+    if (!r.fch_prim_gestion) {
       sinPrimGestion++;
     } else {
       conGestion++;
-      // Tiempo de respuesta (primer contacto)
-      if (tCreacion && tPrimGest >= tCreacion) {
-        const min = Math.round((tPrimGest - tCreacion) / 60000);
-        if (min < 1440) {
-          tRespuesta.push(min);
-          const hora = deriveHour(r.fch_creacion);
-          if (hora) {
-            if (!byHoraRespuesta[hora]) byHoraRespuesta[hora] = [];
-            byHoraRespuesta[hora].push(min);
-          }
-        }
-      }
-      // Tiempo entre gestiones
-      if (tUltimGest && tPrimGest && tUltimGest >= tPrimGest) {
-        const min = Math.round((tUltimGest - tPrimGest) / 60000);
-        if (min < 43200) tEntreMgmt.push(min);
-      }
+    }
+    if (!r.fch_negocio) {
+      sinNegocio++;
     }
 
-    if (!tNegocio) {
-      sinNegocio++;
-    } else if (tCreacion && tNegocio >= tCreacion) {
-      // Ciclo total (creación → negocio)
-      const min = Math.round((tNegocio - tCreacion) / 60000);
-      if (min < 43200) {
-        tCiclo.push(min);
-        if (r.es_venta === true) tCierreVenta.push(min);
+    if (resp !== null) {
+      tRespuesta.push(resp);
+      const h = deriveHour(r.fch_creacion);
+      if (h) {
+        if (!byHoraResp[h]) byHoraResp[h] = [];
+        byHoraResp[h].push(resp);
       }
     }
+    if (ciclo !== null) {
+      tCiclo.push(ciclo);
+      if (r.es_venta === true) tCicloVenta.push(ciclo);
+    }
+    if (entre !== null) tEntreMgmt.push(entre);
 
     // Por agente
     const ag = r.agente_negocio || r.agente_prim_gestion || "";
     if (ag) {
-      if (!byAgente[ag]) byAgente[ag] = { resp: [], ciclo: [], ventas_ciclo: [] };
-      const resp = diffMinutes(r.fch_creacion, r.fch_prim_gestion);
-      const ciclo = diffMinutes(r.fch_creacion, r.fch_negocio);
+      if (!byAgente[ag]) byAgente[ag] = { resp: [], ciclo: [], ciclo_venta: [] };
       if (resp !== null) byAgente[ag].resp.push(resp);
       if (ciclo !== null) {
         byAgente[ag].ciclo.push(ciclo);
-        if (r.es_venta === true) byAgente[ag].ventas_ciclo.push(ciclo);
+        if (r.es_venta === true) byAgente[ag].ciclo_venta.push(ciclo);
       }
     }
 
@@ -281,8 +256,6 @@ function calcTimeMetrics(leads: any[]) {
     const cp = r.campana_mkt || "";
     if (cp) {
       if (!byCampana[cp]) byCampana[cp] = { resp: [], ciclo: [] };
-      const resp = diffMinutes(r.fch_creacion, r.fch_prim_gestion);
-      const ciclo = diffMinutes(r.fch_creacion, r.fch_negocio);
       if (resp !== null) byCampana[cp].resp.push(resp);
       if (ciclo !== null) byCampana[cp].ciclo.push(ciclo);
     }
@@ -291,16 +264,14 @@ function calcTimeMetrics(leads: any[]) {
     const tp = r.tipo_llamada || "";
     if (tp) {
       if (!byTipo[tp]) byTipo[tp] = { resp: [], ciclo: [] };
-      const resp = diffMinutes(r.fch_creacion, r.fch_prim_gestion);
-      const ciclo = diffMinutes(r.fch_creacion, r.fch_negocio);
       if (resp !== null) byTipo[tp].resp.push(resp);
       if (ciclo !== null) byTipo[tp].ciclo.push(ciclo);
     }
   });
 
-  // Promedio de tiempo de respuesta por hora
+  // Tiempo de respuesta promedio por hora de creación
   const avgRespByHora: Dict<{ avg_min: number | null; n: number }> = {};
-  Object.entries(byHoraRespuesta)
+  Object.entries(byHoraResp)
     .sort((a, b) => a[0].localeCompare(b[0]))
     .forEach(([h, arr]) => {
       avgRespByHora[h] = {
@@ -317,8 +288,6 @@ function calcTimeMetrics(leads: any[]) {
       sin_negocio: sinNegocio,
       tasa_contacto: leads.length > 0 ? ((conGestion / leads.length) * 100).toFixed(1) + "%" : "0%",
     },
-
-    // Tiempos globales
     tiempo_respuesta_global: {
       descripcion: "fch_prim_gestion - fch_creacion (minutos)",
       ...timeStat(tRespuesta),
@@ -332,18 +301,17 @@ function calcTimeMetrics(leads: any[]) {
       ...timeStat(tEntreMgmt),
     },
     tiempo_ciclo_ventas: {
-      descripcion: "fch_negocio - fch_creacion solo para leads con es_venta=true (minutos)",
-      ...timeStat(tCierreVenta),
+      descripcion: "fch_negocio - fch_creacion solo es_venta=true (minutos)",
+      ...timeStat(tCicloVenta),
     },
-
-    // Por dimensión
+    tiempo_respuesta_promedio_por_hora: avgRespByHora,
     tiempo_por_agente: Object.fromEntries(
-      Object.entries(byAgente).map(([ag, { resp, ciclo, ventas_ciclo }]) => [
+      Object.entries(byAgente).map(([ag, { resp, ciclo, ciclo_venta }]) => [
         ag,
         {
           tiempo_respuesta: timeStat(resp),
           tiempo_ciclo: timeStat(ciclo),
-          tiempo_ciclo_ventas: timeStat(ventas_ciclo),
+          tiempo_ciclo_ventas: timeStat(ciclo_venta),
         },
       ]),
     ),
@@ -365,7 +333,6 @@ function calcTimeMetrics(leads: any[]) {
         },
       ]),
     ),
-    tiempo_respuesta_promedio_por_hora: avgRespByHora,
   };
 }
 
@@ -379,7 +346,6 @@ function calcFunnel(leads: any[]) {
   const c3 = leads.filter((r) => r.fch_negocio).length;
   const ventas = leads.filter((r) => r.es_venta === true).length;
 
-  // Qué primer resultado lleva a venta
   const primToNeg: Dict<Dict<number>> = {};
   leads.forEach((r) => {
     const p = r.result_prim_gestion || "Sin gestión";
@@ -388,7 +354,6 @@ function calcFunnel(leads: any[]) {
     primToNeg[p][n] = (primToNeg[p][n] || 0) + 1;
   });
 
-  // Leads sin gestión por hora (abandono)
   const abandonByHora: Dict<number> = {};
   leads
     .filter((r) => !r.fch_prim_gestion)
@@ -414,7 +379,7 @@ function calcFunnel(leads: any[]) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// PRODUCTIVIDAD POR AGENTE
+// PRODUCTIVIDAD
 // ═════════════════════════════════════════════════════════════════════════════
 function calcProductividad(leads: any[]) {
   const prod: Dict<any> = {};
@@ -470,10 +435,10 @@ function applyFilters(leads: any[], f: Filters): any[] {
       if (f.fecha_hasta && d > f.fecha_hasta) return false;
     }
     if (f.hora_desde !== undefined || f.hora_hasta !== undefined) {
-      const h = deriveHour(r.fch_creacion);
-      const hN = h ? parseInt(h, 10) : -1;
-      if (f.hora_desde !== undefined && hN < f.hora_desde) return false;
-      if (f.hora_hasta !== undefined && hN > f.hora_hasta) return false;
+      const hStr = deriveHour(r.fch_creacion);
+      const h = hStr ? parseInt(hStr, 10) : -1;
+      if (f.hora_desde !== undefined && h < f.hora_desde) return false;
+      if (f.hora_hasta !== undefined && h > f.hora_hasta) return false;
     }
     return true;
   });
@@ -482,9 +447,7 @@ function applyFilters(leads: any[], f: Filters): any[] {
 // ═════════════════════════════════════════════════════════════════════════════
 // CONTEXT BUILDER
 // ═════════════════════════════════════════════════════════════════════════════
-function buildLeadsContext(leads: any[], activeFilters?: Filters, tzOffset = 0): string {
-  TZ_OFFSET = tzOffset; // inyectar globalmente
-
+function buildLeadsContext(leads: any[], activeFilters?: Filters): string {
   const ventas = leads.filter((r) => r.es_venta === true);
   const total = leads.length;
   const nV = ventas.length;
@@ -495,9 +458,14 @@ function buildLeadsContext(leads: any[], activeFilters?: Filters, tzOffset = 0):
       ? `\n⚠️ FILTROS ACTIVOS: ${JSON.stringify(activeFilters)}\nDatos ya filtrados.`
       : "";
 
-  // ── 1-D ─────────────────────────────────────────────────────────────────
+  // ── 1-D ──────────────────────────────────────────────────────────────────
   const d1 = {
-    // Dimensiones de negocio
+    hora_creacion: crossTab1D(leads, ventas, "hora_creacion"),
+    hora_negocio: crossTab1D(leads, ventas, "hora_negocio"),
+    tramo_horario: crossTab1D(leads, ventas, "tramo_horario"),
+    dia_semana: crossTab1D(leads, ventas, "dia_semana"),
+    fecha: crossTab1D(leads, ventas, "fecha"),
+    fecha_negocio: crossTab1D(leads, ventas, "fecha_negocio"),
     tipo_llamada: crossTab1D(leads, ventas, "tipo_llamada"),
     campana_inconcert: crossTab1D(leads, ventas, "campana_inconcert"),
     campana_mkt: crossTab1D(leads, ventas, "campana_mkt"),
@@ -511,17 +479,9 @@ function buildLeadsContext(leads: any[], activeFilters?: Filters, tzOffset = 0):
     result_ultim_gestion: crossTab1D(leads, ventas, "result_ultim_gestion"),
     bpo: crossTab1D(leads, ventas, "bpo"),
     keyword: crossTab1D(leads, ventas, "keyword"),
-    // Temporales desde fch_creacion (base)
-    hora_creacion: crossTab1D(leads, ventas, "hora_creacion"),
-    tramo_horario: crossTab1D(leads, ventas, "tramo_horario"),
-    dia_semana: crossTab1D(leads, ventas, "dia_semana"),
-    fecha: crossTab1D(leads, ventas, "fecha"),
-    // Temporales desde fch_negocio (cuándo se cerró)
-    hora_negocio: crossTab1D(leads, ventas, "hora_negocio"),
-    fecha_negocio: crossTab1D(leads, ventas, "fecha_negocio"),
   };
 
-  // ── 2-D negocio ──────────────────────────────────────────────────────────
+  // ── 2-D negocio ───────────────────────────────────────────────────────────
   const d2n = {
     agente_negocio_x_ciudad: crossTab2D(leads, ventas, "agente_negocio", "ciudad"),
     agente_negocio_x_tipo_llamada: crossTab2D(leads, ventas, "agente_negocio", "tipo_llamada"),
@@ -555,7 +515,7 @@ function buildLeadsContext(leads: any[], activeFilters?: Filters, tzOffset = 0):
     categoria_mkt_x_ciudad: crossTab2D(leads, ventas, "categoria_mkt", "ciudad"),
   };
 
-  // ── 2-D temporal (hora_creacion como base) ───────────────────────────────
+  // ── 2-D temporal ──────────────────────────────────────────────────────────
   const d2h = {
     hora_creacion_x_tipo_llamada: crossTab2D(leads, ventas, "hora_creacion", "tipo_llamada"),
     hora_creacion_x_campana_mkt: crossTab2D(leads, ventas, "hora_creacion", "campana_mkt"),
@@ -574,7 +534,6 @@ function buildLeadsContext(leads: any[], activeFilters?: Filters, tzOffset = 0):
     tramo_horario_x_campana_mkt: crossTab2D(leads, ventas, "tramo_horario", "campana_mkt"),
     tramo_horario_x_agente_negocio: crossTab2D(leads, ventas, "tramo_horario", "agente_negocio"),
     tramo_horario_x_ciudad: crossTab2D(leads, ventas, "tramo_horario", "ciudad"),
-    // Hora de negocio (cuándo se cerró la venta)
     hora_negocio_x_agente_negocio: crossTab2D(leads, ventas, "hora_negocio", "agente_negocio"),
     hora_negocio_x_campana_mkt: crossTab2D(leads, ventas, "hora_negocio", "campana_mkt"),
     hora_negocio_x_tipo_llamada: crossTab2D(leads, ventas, "hora_negocio", "tipo_llamada"),
@@ -598,7 +557,7 @@ function buildLeadsContext(leads: any[], activeFilters?: Filters, tzOffset = 0):
     fecha_x_result_negocio: crossTab2D(leads, ventas, "fecha", "result_negocio"),
   };
 
-  // ── Métricas avanzadas ───────────────────────────────────────────────────
+  // ── Métricas avanzadas ────────────────────────────────────────────────────
   const timeMetrics = calcTimeMetrics(leads);
   const funnel = calcFunnel(leads);
   const productividad = calcProductividad(leads);
@@ -621,44 +580,47 @@ function buildLeadsContext(leads: any[], activeFilters?: Filters, tzOffset = 0):
 
   return `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DATOS REALES — tabla LEADS  (${total} registros)
-Timezone offset detectado: UTC${tzOffset >= 0 ? "+" : ""}${tzOffset}h${filterNote}
+DATOS REALES — tabla LEADS  (${total} registros)${filterNote}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KPIs: leads=${total} | ventas=${nV} | no_ventas=${total - nV} | conv=${convG}%
 
 MODELO DE FECHAS:
-- fch_creacion     → cuándo llegó el lead (BASE de todo análisis temporal)
-- fch_prim_gestion → primer contacto del agente
-- fch_ultim_gestion→ última gestión realizada
-- fch_negocio      → cuándo se cerró el negocio (venta o no)
-- Tiempo de respuesta = fch_prim_gestion - fch_creacion
-- Tiempo ciclo total  = fch_negocio - fch_creacion
-- hora_creacion/dia_semana/fecha → derivados de fch_creacion en hora local
-- hora_negocio/fecha_negocio     → derivados de fch_negocio en hora local
+- fch_creacion      = cuándo llegó el lead → BASE de todo análisis temporal
+- fch_prim_gestion  = primer contacto del agente
+- fch_ultim_gestion = última gestión realizada
+- fch_negocio       = cuándo se cerró el negocio (venta o no)
+- hora/dia/fecha se extraen directo del string de la BD sin conversión
+- Tiempo respuesta  = fch_prim_gestion - fch_creacion (minutos)
+- Tiempo ciclo      = fch_negocio      - fch_creacion (minutos)
 
 VALORES PARA FILTROS:
 ${JSON.stringify(filterOptions)}
 
 MAPEO PREGUNTAS → BLOQUES:
-- leads/ventas por hora            → [hora_creacion] (1D)
-- ventas cerradas por hora         → [hora_negocio] (1D, campo ventas)
-- agente X en qué hora trabaja     → [agente_negocio × hora_creacion]["X"]
-- campaña X por hora               → [campana_mkt × hora_creacion]["X"]
-- tiempo de respuesta              → metricas_tiempo.tiempo_respuesta_global
-- tiempo respuesta por agente      → metricas_tiempo.tiempo_por_agente["X"].tiempo_respuesta
-- ciclo total                      → metricas_tiempo.tiempo_ciclo_global
-- ciclo ventas                     → metricas_tiempo.tiempo_ciclo_ventas
-- funnel completo                  → funnel.etapas
-- abandono sin gestión por hora    → funnel.abandono_sin_gestion_por_hora
-SIEMPRE usa números exactos del bloque. NUNCA inventes.
+- leads/ventas por hora de llegada    → [hora_creacion] 1D
+- ventas por hora que se cerraron     → [hora_negocio] 1D (campo ventas)
+- por tramo                           → [tramo_horario] 1D
+- por día semana                      → [dia_semana] 1D
+- tendencia diaria                    → [fecha] 1D
+- agente X en qué hora trabaja        → [agente_negocio × hora_creacion]["X"]
+- agente X en qué ciudades vende      → [agente_negocio × ciudad]["X"]
+- campaña X por tipo llamada          → [campana_mkt × tipo_llamada]["X"]
+- hora X qué campaña genera           → [hora_creacion × campana_mkt]["HH:00"]
+- tiempo de respuesta global          → metricas_tiempo.tiempo_respuesta_global
+- tiempo respuesta por agente         → metricas_tiempo.tiempo_por_agente["X"].tiempo_respuesta
+- tiempo ciclo por campaña            → metricas_tiempo.tiempo_por_campana["X"].tiempo_ciclo
+- ciclo de ventas                     → metricas_tiempo.tiempo_ciclo_ventas
+- funnel completo                     → funnel.etapas
+- abandono sin gestión por hora       → funnel.abandono_sin_gestion_por_hora
+- productividad agente                → productividad_agentes["X"]
+SIEMPRE extrae números exactos del bloque. NUNCA inventes.
 
-═══ CROSS-TABS 1-D ═══
-NOTA: Todos los campos hora/día/fecha están en hora local (UTC${tzOffset >= 0 ? "+" : ""}${tzOffset}h)
+═══ CROSS-TABS 1-D  { valor: { leads, ventas, conv } } ═══
 
-[hora_creacion]  ← leads y ventas por hora de creación del lead
+[hora_creacion]  ← hora extraída de fch_creacion tal cual está en BD
 ${JSON.stringify(d1.hora_creacion)}
 
-[hora_negocio]  ← ventas por hora en que se cerró el negocio
+[hora_negocio]  ← hora extraída de fch_negocio tal cual está en BD
 ${JSON.stringify(d1.hora_negocio)}
 
 [tramo_horario]
@@ -774,7 +736,7 @@ ${JSON.stringify(d2n.categoria_mkt_x_campana_mkt)}
 [categoria_mkt × ciudad]
 ${JSON.stringify(d2n.categoria_mkt_x_ciudad)}
 
-═══ PIVOTES 2-D — HORA_CREACION × DIMENSIONES ═══
+═══ PIVOTES 2-D — HORA × DIMENSIONES ═══
 [hora_creacion × tipo_llamada]
 ${JSON.stringify(d2h.hora_creacion_x_tipo_llamada)}
 [hora_creacion × campana_mkt]
@@ -845,12 +807,11 @@ ${JSON.stringify(d2f.fecha_x_agente_negocio)}
 ${JSON.stringify(d2f.fecha_x_result_negocio)}
 
 ═══ MÉTRICAS DE TIEMPO (minutos) ═══
-DEFINICIONES:
-- tiempo_respuesta  = fch_prim_gestion  - fch_creacion
-- tiempo_ciclo      = fch_negocio       - fch_creacion
-- tiempo_ciclo_venta= fch_negocio       - fch_creacion (solo es_venta=true)
-- entre_gestiones   = fch_ultim_gestion - fch_prim_gestion
-Campos: avg_min, med_min, p90_min, min_min, max_min, n
+tiempo_respuesta  = fch_prim_gestion  - fch_creacion
+tiempo_ciclo      = fch_negocio       - fch_creacion
+tiempo_ciclo_venta= fch_negocio       - fch_creacion (solo es_venta=true)
+entre_gestiones   = fch_ultim_gestion - fch_prim_gestion
+campos: n, avg_min, med_min, p90_min, min_min, max_min
 ${JSON.stringify(timeMetrics, null, 2)}
 
 ═══ FUNNEL DE CONVERSIÓN ═══
@@ -864,24 +825,23 @@ ${JSON.stringify(productividad, null, 2)}
 // ═════════════════════════════════════════════════════════════════════════════
 // SYSTEM PROMPTS
 // ═════════════════════════════════════════════════════════════════════════════
-
 const ANALYTICS_SYSTEM = `Eres un asistente analítico BI senior de Converti-IA Analytics.
 
 MODELO DE DATOS — FECHAS:
 - fch_creacion      = cuándo llegó el lead → BASE de todo análisis temporal
-- fch_prim_gestion  = primer contacto
+- fch_prim_gestion  = primer contacto del agente
 - fch_ultim_gestion = última gestión
 - fch_negocio       = cierre del negocio (venta o no)
+- hora/día/fecha se usan TAL CUAL están en la BD, sin conversión de zona
 - Tiempo de respuesta = fch_prim_gestion - fch_creacion (minutos)
 - Tiempo ciclo total  = fch_negocio - fch_creacion (minutos)
-- hora_creacion/dia/fecha → derivados de fch_creacion en hora LOCAL
 
 REGLAS:
-1. Solo datos del contexto. NUNCA inventes.
+1. Solo datos del contexto. NUNCA inventes cifras.
 2. 1 dimensión → CROSS-TABS 1-D. 2 dimensiones → PIVOTE 2-D.
-3. Tiempos → bloque MÉTRICAS DE TIEMPO.
-4. Para "¿cuánto tardó X en responder?" → tiempo_por_agente["X"].tiempo_respuesta.avg_min
-5. Para "¿cuánto dura el ciclo de venta?" → tiempo_ciclo_ventas.avg_min
+3. Tiempos → MÉTRICAS DE TIEMPO. Funnel → FUNNEL. Productividad → PRODUCTIVIDAD.
+4. Para "¿cuánto tarda en responder el agente X?" → tiempo_por_agente["X"].tiempo_respuesta.avg_min
+5. Para "¿cuánto dura el ciclo de una venta?" → tiempo_ciclo_ventas.avg_min
 6. Si el usuario corrige un número, acéptalo.
 7. Responde en español con markdown. Tablas para datos tabulares.`;
 
@@ -889,38 +849,38 @@ const DASHDINAMICS_SYSTEM = `Eres el motor de inteligencia de DashDinamics.
 Responde SIEMPRE con un único objeto JSON válido. Sin texto fuera del JSON.
 
 MODELO DE DATOS — FECHAS:
-- fch_creacion  = base temporal (hora_creacion, dia_semana, fecha están en hora local)
-- fch_negocio   = cierre (hora_negocio, fecha_negocio)
+- fch_creacion  = base temporal → hora_creacion, dia_semana, fecha son de fch_creacion
+- fch_negocio   = cierre        → hora_negocio, fecha_negocio son de fch_negocio
+- Las horas están TAL CUAL en la BD, sin conversión de zona horaria
 - Tiempo respuesta = fch_prim_gestion - fch_creacion
 - Tiempo ciclo     = fch_negocio - fch_creacion
 
 REGLAS CRÍTICAS DE DATOS:
 1. Solo números del contexto. NUNCA inventes.
-2. 1 dimensión → bloque [nombre] de CROSS-TABS 1-D
-3. 2 dimensiones → bloque [dim1 × dim2] de PIVOTES 2-D
-4. Tiempo/velocidad → MÉTRICAS DE TIEMPO
+2. 1 dimensión  → CROSS-TABS 1-D bloque [nombre]
+3. 2 dimensiones → PIVOTES 2-D bloque [dim1 × dim2]
+4. Tiempos/velocidad → MÉTRICAS DE TIEMPO
 5. Conv(%) = campo "conv". No recalcular.
 6. Horas: eje X ordenado 00:00→23:00 SIEMPRE.
-7. Días: ordenar Lunes→Domingo SIEMPRE.
+7. Días:  eje X ordenado Lunes→Domingo SIEMPRE.
 
 REGLAS ECHARTS — TOOLTIP (CRÍTICO):
-- SIEMPRE: "tooltip": { "trigger": "axis", "axisPointer": { "type": "cross" } }
+- SIEMPRE: "tooltip": { "trigger": "axis", "axisPointer": { "type": "cross", "crossStyle": { "color": "#999" } } }
 - SIEMPRE: "legend": { "data": ["Leads","Ventas","Efectividad (%)"], "bottom": 0 }
 - SIEMPRE nombrar series con "name"
 - Eje dual: yAxis[0]=Cantidad, yAxis[1]=Efectividad(%)
-- Serie efectividad: yAxisIndex:1, type:"line", smooth:true
+- Serie efectividad: yAxisIndex:1, type:"line", smooth:true, symbol:"circle", symbolSize:6
 
 MODOS: dashboard | chart_picker | clarification | recommendation | filter_result
 
-CHART_PICKER — úsalo cuando el usuario NO especifica el tipo de gráfico.
-Ofrece 3-5 opciones según el tipo de dato:
-- Temporal (horas/días) → combo barras+línea, área, solo líneas, tabla calor
+CHART_PICKER — usar cuando el usuario NO especifica tipo de gráfico:
+- Temporal (horas/días)         → combo barras+línea, área, líneas, tabla
 - Categórico (agentes/campañas) → barras horizontales, barras verticales, donut
-- Comparativo (leads vs ventas) → barras agrupadas, stackedBar
-- Distribución → pie/donut
-- Tiempo/velocidad → barras horizontales por agente, scatter
+- Comparativo                   → barras agrupadas, stackedBar
+- Tiempo/velocidad              → barras horizontales, scatter
+Incluir 3-5 opciones con name, description, best_for, preview_config.
 
-FILTER_RESULT — úsalo cuando apliquen filtros. Incluye applied_filters y filter_options.
+FILTER_RESULT — usar cuando apliquen filtros. Incluir applied_filters y filter_options.
 
 ESTRUCTURA JSON:
 
@@ -932,55 +892,58 @@ dashboard / filter_result:
   "applied_filters": {},
   "filter_options": { ...del contexto... },
   "dashboard": {
-    "title":"...","subtitle":"...","time_range":"...",
-    "kpis":[{"label":"...","value":"...","change":"...","trend":"up|down|neutral","icon":"..."}],
-    "charts":[{
-      "id":"...","title":"...","type":"...",
-      "config":{
-        "tooltip":{"trigger":"axis","axisPointer":{"type":"cross","crossStyle":{"color":"#999"}}},
-        "legend":{"data":["Leads","Ventas","Efectividad (%)"],"bottom":0},
-        "xAxis":[{"type":"category","data":[...],"axisLabel":{"color":"#aaa"}}],
-        "yAxis":[
-          {"type":"value","name":"Cantidad","axisLabel":{"color":"#aaa"}},
-          {"type":"value","name":"Efectividad (%)","axisLabel":{"color":"#aaa","formatter":"{value}%"},"splitLine":{"show":false}}
+    "title": "...", "subtitle": "...", "time_range": "...",
+    "kpis": [{ "label":"...","value":"...","change":"...","trend":"up|down|neutral","icon":"TrendingUp|Users|Target|DollarSign|BarChart|Activity" }],
+    "charts": [{
+      "id": "...", "title": "...", "type": "...",
+      "config": {
+        "tooltip": { "trigger":"axis","axisPointer":{"type":"cross","crossStyle":{"color":"#999"}} },
+        "legend": { "data":["Leads","Ventas","Efectividad (%)"],"bottom":0 },
+        "xAxis": [{ "type":"category","data":[...],"axisLabel":{"color":"#aaa"} }],
+        "yAxis": [
+          { "type":"value","name":"Cantidad","axisLabel":{"color":"#aaa"} },
+          { "type":"value","name":"Efectividad (%)","axisLabel":{"color":"#aaa","formatter":"{value}%"},"splitLine":{"show":false} }
         ],
-        "series":[
-          {"name":"Leads","type":"bar","data":[...],"yAxisIndex":0,"itemStyle":{"color":"#3498db"}},
-          {"name":"Ventas","type":"bar","data":[...],"yAxisIndex":0,"itemStyle":{"color":"#2ecc71"}},
-          {"name":"Efectividad (%)","type":"line","data":[...],"yAxisIndex":1,"smooth":true,"itemStyle":{"color":"#e74c3c"},"symbol":"circle","symbolSize":6}
+        "series": [
+          { "name":"Leads",          "type":"bar",  "data":[...],"yAxisIndex":0,"itemStyle":{"color":"#3498db"} },
+          { "name":"Ventas",         "type":"bar",  "data":[...],"yAxisIndex":0,"itemStyle":{"color":"#2ecc71"} },
+          { "name":"Efectividad (%)", "type":"line","data":[...],"yAxisIndex":1,"smooth":true,"itemStyle":{"color":"#e74c3c"},"symbol":"circle","symbolSize":6 }
         ]
       }
     }],
-    "insights":[{"type":"success|warning|info|alert","title":"...","description":"..."}],
-    "recommended_next_steps":["..."],
-    "tables":[{"title":"...","headers":["..."],"rows":[["..."]]}]
+    "insights": [{ "type":"success|warning|info|alert","title":"...","description":"..." }],
+    "recommended_next_steps": ["..."],
+    "tables": [{ "title":"...","headers":["..."],"rows":[["..."]] }]
   }
 }
 
 chart_picker:
 {
-  "response_mode":"chart_picker",
-  "assistant_message":"...",
-  "decision_goal":"...",
-  "analysis_context":{"dimension":"...","metrics":["leads","ventas","conv"],"data_type":"temporal|categorical|comparative"},
-  "chart_options":[{
-    "id":"combo_bar_line","name":"Barras + Línea (recomendado)","description":"...","best_for":"...","preview_config":{"type":"combo","series_names":["Leads","Ventas","Efectividad (%)"],"colors":["#3498db","#2ecc71","#e74c3c"]}
+  "response_mode": "chart_picker",
+  "assistant_message": "...",
+  "decision_goal": "...",
+  "analysis_context": { "dimension":"...","metrics":["leads","ventas","conv"],"data_type":"temporal|categorical|comparative" },
+  "chart_options": [{
+    "id":"...", "name":"...", "description":"...", "best_for":"...",
+    "preview_config": { "type":"...","series_names":["..."],"colors":["..."] }
   }],
-  "instruction_for_user":"Elige el tipo de gráfico y lo construyo con tus datos reales."
+  "instruction_for_user": "Elige el tipo de gráfico y lo construyo con tus datos reales."
 }
 
 clarification:
-{"response_mode":"clarification","assistant_message":"...","decision_goal":null,"clarifying_questions":[{"id":"q1","question":"...","type":"single_select","options":["..."]}]}
+{ "response_mode":"clarification","assistant_message":"...","decision_goal":null,
+  "clarifying_questions":[{"id":"q1","question":"...","type":"single_select","options":["..."]}] }
 
 recommendation:
-{"response_mode":"recommendation","assistant_message":"...","decision_goal":null,"recommendations":[{"id":"r1","title":"...","description":"...","icon":"BarChart|TrendingUp|Target|Users|Activity","action_label":"Generar este dashboard"}]}
+{ "response_mode":"recommendation","assistant_message":"...","decision_goal":null,
+  "recommendations":[{"id":"r1","title":"...","description":"...","icon":"BarChart|TrendingUp|Target|Users|Activity","action_label":"Generar este dashboard"}] }
 
 ROUTING:
-- Sin tipo gráfico especificado → chart_picker
-- Con tipo gráfico O eligiendo de chart_picker → dashboard
-- Con filtros → filter_result
-- Falta info → clarification
-- Muy amplio → recommendation`;
+- Sin tipo gráfico especificado          → chart_picker
+- Con tipo gráfico O eligiendo opción    → dashboard
+- Con filtros del usuario                → filter_result
+- Falta dimensión/período               → clarification (máx 2 preguntas)
+- Solicitud muy amplia                   → recommendation`;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // MAIN HANDLER
@@ -1059,19 +1022,13 @@ serve(async (req) => {
         .limit(5000);
 
       if (!leadsErr && rawLeads?.length) {
-        // 1. Detectar timezone una sola vez sobre los datos crudos
-        const tzOffset = detectTimezoneOffset(rawLeads);
-
-        // 2. Aplicar filtros (usan TZ_OFFSET internamente via deriveHour/Date)
-        TZ_OFFSET = tzOffset;
         const filteredLeads = applyFilters(rawLeads, activeFilters);
         const nV = filteredLeads.filter((r: any) => r.es_venta).length;
 
-        // 3. Construir contexto con filtros aplicados
-        systemPrompt += "\n\n" + buildLeadsContext(filteredLeads, activeFilters, tzOffset);
-        systemPrompt += `\n\nCONFIRMACIÓN: ventas=${nV} leads=${filteredLeads.length} tz=UTC${tzOffset >= 0 ? "+" : ""}${tzOffset}.`;
+        systemPrompt += "\n\n" + buildLeadsContext(filteredLeads, activeFilters);
+        systemPrompt += `\n\nCONFIRMACIÓN: ventas=${nV} leads=${filteredLeads.length}${Object.keys(activeFilters).length > 0 ? " (FILTRADOS)" : ""}.`;
 
-        // 4. Pasar filter_options completos (sobre rawLeads, no filtrados)
+        // filter_options completos (sobre rawLeads para el dropdown)
         const allFilterOptions = {
           agentes: [...new Set(rawLeads.map((r: any) => r.agente_negocio).filter(Boolean))].sort(),
           campanas_mkt: [...new Set(rawLeads.map((r: any) => r.campana_mkt).filter(Boolean))].sort(),
@@ -1133,7 +1090,9 @@ serve(async (req) => {
       } catch {
         return new Response(
           JSON.stringify({ reply: { response_mode: "dashboard", assistant_message: content, dashboard: null } }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
         );
       }
     }
