@@ -113,6 +113,18 @@ export default function CuentasPage() {
     onError: (e: any) => toast.error(e.message || "Error al cambiar estado"),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("tenants").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      toast.success("Cuenta eliminada definitivamente");
+    },
+    onError: (e: any) => toast.error(e.message || "Error al eliminar cuenta"),
+  });
+
   const bulkMutation = useMutation({
     mutationFn: async (rows: TenantForm[]) => {
       const inserts = rows.map((r) => ({
@@ -317,12 +329,20 @@ export default function CuentasPage() {
                           <Button size="icon" variant="ghost" onClick={() => openEdit(t)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          <Button
+                         <Button
                             size="icon"
                             variant="ghost"
                             onClick={() => toggleMutation.mutate({ id: t.id, is_active: !t.is_active })}
                           >
-                            {t.is_active ? <ToggleRight className="h-4 w-4 text-emerald-500" /> : <ToggleLeft className="h-4 w-4 text-red-500" />}
+                             {t.is_active ? <ToggleRight className="h-4 w-4 text-emerald-500" /> : <ToggleLeft className="h-4 w-4 text-red-500" />}
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="text-destructive"
+                            onClick={() => { if (window.confirm(`¿Eliminar definitivamente la cuenta "${t.name}"? Esta acción no se puede deshacer.`)) deleteMutation.mutate(t.id); }}
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </TableCell>

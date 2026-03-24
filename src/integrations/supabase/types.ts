@@ -244,12 +244,51 @@ export type Database = {
           },
         ]
       }
+      dashboard_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          message_type: string
+          role: string
+          session_id: string
+          structured: Json | null
+        }
+        Insert: {
+          content?: string
+          created_at?: string
+          id?: string
+          message_type?: string
+          role: string
+          session_id: string
+          structured?: Json | null
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          message_type?: string
+          role?: string
+          session_id?: string
+          structured?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dashboard_messages_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "dashboard_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dashboard_sessions: {
         Row: {
           created_at: string
           id: string
           prompt: string
           result: Json | null
+          status: string | null
           tenant_id: string
           title: string | null
           user_id: string | null
@@ -259,6 +298,7 @@ export type Database = {
           id?: string
           prompt: string
           result?: Json | null
+          status?: string | null
           tenant_id: string
           title?: string | null
           user_id?: string | null
@@ -268,6 +308,7 @@ export type Database = {
           id?: string
           prompt?: string
           result?: Json | null
+          status?: string | null
           tenant_id?: string
           title?: string | null
           user_id?: string | null
@@ -574,6 +615,145 @@ export type Database = {
           },
         ]
       }
+      support_tickets: {
+        Row: {
+          assigned_to: string | null
+          created_at: string
+          description: string
+          id: string
+          priority: string
+          status: string
+          tenant_id: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          created_at?: string
+          description?: string
+          id?: string
+          priority?: string
+          status?: string
+          tenant_id: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          assigned_to?: string | null
+          created_at?: string
+          description?: string
+          id?: string
+          priority?: string
+          status?: string
+          tenant_id?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_tickets_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      system_settings: {
+        Row: {
+          category: string | null
+          id: string
+          key: string
+          tenant_id: string | null
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          category?: string | null
+          id?: string
+          key: string
+          tenant_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Update: {
+          category?: string | null
+          id?: string
+          key?: string
+          tenant_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "system_settings_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenant_data_sources: {
+        Row: {
+          allow_chatbots: boolean | null
+          allow_cross_analysis: boolean | null
+          allow_dashboards: boolean | null
+          allow_joins: boolean | null
+          allow_reports: boolean | null
+          category: string | null
+          created_at: string
+          description: string | null
+          display_name: string
+          id: string
+          is_active: boolean | null
+          priority: number | null
+          restrictions: Json | null
+          table_name: string
+          updated_at: string
+        }
+        Insert: {
+          allow_chatbots?: boolean | null
+          allow_cross_analysis?: boolean | null
+          allow_dashboards?: boolean | null
+          allow_joins?: boolean | null
+          allow_reports?: boolean | null
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          display_name: string
+          id?: string
+          is_active?: boolean | null
+          priority?: number | null
+          restrictions?: Json | null
+          table_name: string
+          updated_at?: string
+        }
+        Update: {
+          allow_chatbots?: boolean | null
+          allow_cross_analysis?: boolean | null
+          allow_dashboards?: boolean | null
+          allow_joins?: boolean | null
+          allow_reports?: boolean | null
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          display_name?: string
+          id?: string
+          is_active?: boolean | null
+          priority?: number | null
+          restrictions?: Json | null
+          table_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       tenants: {
         Row: {
           created_at: string
@@ -616,6 +796,41 @@ export type Database = {
         }
         Relationships: []
       }
+      ticket_comments: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          is_internal: boolean | null
+          ticket_id: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          is_internal?: boolean | null
+          ticket_id: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          is_internal?: boolean | null
+          ticket_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticket_comments_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "support_tickets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_custom_roles: {
         Row: {
           custom_role_id: string
@@ -638,6 +853,38 @@ export type Database = {
             columns: ["custom_role_id"]
             isOneToOne: false
             referencedRelation: "custom_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_permissions: {
+        Row: {
+          created_at: string
+          granted: boolean
+          id: string
+          permission_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          granted?: boolean
+          id?: string
+          permission_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          granted?: boolean
+          id?: string
+          permission_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_permissions_permission_id_fkey"
+            columns: ["permission_id"]
+            isOneToOne: false
+            referencedRelation: "permissions"
             referencedColumns: ["id"]
           },
         ]

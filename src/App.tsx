@@ -9,7 +9,6 @@ import LoginPage from "./pages/LoginPage.tsx";
 import RecoverPage from "./pages/RecoverPage.tsx";
 import AppLayout from "./layouts/AppLayout.tsx";
 import DashboardPage from "./pages/app/DashboardPage.tsx";
-import DashboardsIAPage from "./pages/app/DashboardsIAPage.tsx";
 import DashDinamicsPage from "./pages/app/DashDinamicsPage.tsx";
 import ChartDetailPage from "./pages/app/ChartDetailPage.tsx";
 import AnalyticsPage from "./pages/app/AnalyticsPage.tsx";
@@ -40,7 +39,6 @@ const App = () => (
             <Route path="/recuperar" element={<RecoverPage />} />
             <Route path="/app" element={<AppLayout />}>
               <Route index element={<DashboardPage />} />
-              <Route path="dashboards-ia" element={<DashboardsIAPage />} />
               <Route path="dashdinamics" element={<DashDinamicsPage />} />
               <Route path="dashdinamics/detail" element={<ChartDetailPage />} />
               <Route path="analytics" element={<AnalyticsPage />} />
