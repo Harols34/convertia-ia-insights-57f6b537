@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Bot, User, Loader2, Trash2, BarChart3, Sparkles, Save, History } from "lucide-react";
+import { Send, Bot, User, Loader2, Trash2, BarChart3, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -27,7 +27,6 @@ function generateId() {
 export default function DashDinamicsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const userId = user?.id ?? "anonymous";
 
   const [messages, setMessages] = useState<DashMessage[]>([]);
   const [input, setInput] = useState("");
@@ -35,7 +34,7 @@ export default function DashDinamicsPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Load history from Supabase on mount
+  // Load latest session on mount
   useEffect(() => {
     if (!user) return;
     loadLatestSession();
@@ -55,44 +54,80 @@ export default function DashDinamicsPage() {
       .select("*")
       .eq("user_id", user.id)
       .eq("tenant_id", tenantId)
+      .eq("status", "active")
       .order("created_at", { ascending: false })
       .limit(1);
 
     if (sessions && sessions.length > 0) {
       const session = sessions[0];
-      const result = session.result as any;
-      if (result?.messages && Array.isArray(result.messages)) {
-        setMessages(result.messages);
-        setSessionId(session.id);
+      setSessionId(session.id);
+
+      // Load individual messages from dashboard_messages
+      const { data: msgs } = await supabase
+        .from("dashboard_messages")
+        .select("*")
+        .eq("session_id", session.id)
+        .order("created_at", { ascending: true });
+
+      if (msgs && msgs.length > 0) {
+        const loaded: DashMessage[] = msgs.map((m: any) => ({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          structured: m.structured || undefined,
+          ts: new Date(m.created_at).getTime(),
+        }));
+        setMessages(loaded);
       }
     }
   };
 
-  const saveSession = async (msgs: DashMessage[]) => {
-    if (!user || msgs.length === 0) return;
+  const ensureSession = async (): Promise<string | null> => {
+    if (sessionId) return sessionId;
+    if (!user) return null;
+
     const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
-    if (!tenantId) return;
+    if (!tenantId) return null;
 
-    const firstUserMsg = msgs.find((m) => m.role === "user");
-    const title = firstUserMsg?.content?.slice(0, 80) || "Sin título";
-    const prompt = firstUserMsg?.content || "Sin prompt";
-
-    if (sessionId) {
-      await supabase.from("dashboard_sessions").update({
-        result: { messages: msgs } as any,
-        title,
-        prompt,
-      }).eq("id", sessionId);
-    } else {
-      const { data } = await supabase.from("dashboard_sessions").insert({
+    const { data, error } = await supabase
+      .from("dashboard_sessions")
+      .insert({
         tenant_id: tenantId,
         user_id: user.id,
-        prompt,
-        title,
-        result: { messages: msgs } as any,
-      }).select("id").single();
-      if (data) setSessionId(data.id);
-    }
+        prompt: "Nueva sesión DashDinamics",
+        title: "Nueva sesión",
+        status: "active",
+        result: {} as any,
+      })
+      .select("id")
+      .single();
+
+    if (error || !data) return null;
+    setSessionId(data.id);
+    return data.id;
+  };
+
+  const persistMessage = async (
+    sid: string,
+    role: string,
+    content: string,
+    messageType: string,
+    structured?: any
+  ) => {
+    await supabase.from("dashboard_messages").insert({
+      session_id: sid,
+      role,
+      content,
+      message_type: messageType,
+      structured: structured || null,
+    });
+  };
+
+  const updateSessionTitle = async (sid: string, title: string) => {
+    await supabase
+      .from("dashboard_sessions")
+      .update({ title, prompt: title } as any)
+      .eq("id", sid);
   };
 
   const handleSend = useCallback(async (text?: string) => {
@@ -100,10 +135,24 @@ export default function DashDinamicsPage() {
     if (!trimmed || isLoading) return;
     if (!text) setInput("");
 
+    const sid = await ensureSession();
+    if (!sid) {
+      toast({ title: "Error", description: "No se pudo crear la sesión", variant: "destructive" });
+      return;
+    }
+
+    // Update session title with first message
+    if (messages.length === 0) {
+      updateSessionTitle(sid, trimmed.slice(0, 80));
+    }
+
     const userMsg: DashMessage = { id: generateId(), role: "user", content: trimmed, ts: Date.now() };
     const allMsgs = [...messages, userMsg];
     setMessages(allMsgs);
     setIsLoading(true);
+
+    // Persist user message
+    await persistMessage(sid, "user", trimmed, "user_message");
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -137,11 +186,16 @@ export default function DashDinamicsPage() {
         ts: Date.now(),
       };
 
-      const newMsgs = [...allMsgs, assistantMsg];
-      setMessages(newMsgs);
+      setMessages(prev => [...prev, assistantMsg]);
 
-      // Auto-save to Supabase
-      await saveSession(newMsgs);
+      // Persist assistant message with full structured data
+      await persistMessage(
+        sid,
+        "assistant",
+        structured.assistant_message || "",
+        structured.response_mode || "dashboard",
+        structured
+      );
     } catch (e: any) {
       console.error("DashDinamics error:", e);
       const errMsg: DashMessage = {
@@ -151,15 +205,13 @@ export default function DashDinamicsPage() {
         ts: Date.now(),
       };
       setMessages(prev => [...prev, errMsg]);
+
+      // Persist error
+      await persistMessage(sid, "assistant", `⚠️ Error: ${e.message}`, "error");
     } finally {
       setIsLoading(false);
     }
   }, [input, isLoading, messages, sessionId, user]);
-
-  const clearHistory = async () => {
-    setMessages([]);
-    setSessionId(null);
-  };
 
   const startNewSession = () => {
     setMessages([]);
@@ -168,7 +220,6 @@ export default function DashDinamicsPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)]">
-      {/* Header */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center glow-sm">
@@ -183,17 +234,15 @@ export default function DashDinamicsPage() {
           <Button variant="outline" size="sm" onClick={startNewSession}>
             <Sparkles className="h-3.5 w-3.5 mr-1.5" /> Nueva sesión
           </Button>
-          <Button variant="outline" size="sm" onClick={clearHistory} disabled={messages.length === 0}>
+          <Button variant="outline" size="sm" onClick={startNewSession} disabled={messages.length === 0}>
             <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Limpiar
           </Button>
         </div>
       </div>
 
-      {/* Main area */}
       <div className="flex-1 border border-border rounded-xl bg-card/30 overflow-hidden flex flex-col">
         <ScrollArea className="flex-1 p-4" ref={scrollRef}>
           <div className="space-y-4 min-h-0">
-            {/* Empty state */}
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                 <div className="w-16 h-16 rounded-2xl gradient-primary flex items-center justify-center mb-4 glow-primary">
@@ -220,7 +269,6 @@ export default function DashDinamicsPage() {
               </div>
             )}
 
-            {/* Messages */}
             <AnimatePresence initial={false}>
               {messages.map((msg) => (
                 <motion.div
@@ -257,7 +305,6 @@ export default function DashDinamicsPage() {
               ))}
             </AnimatePresence>
 
-            {/* Loading */}
             {isLoading && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
                 <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -272,7 +319,6 @@ export default function DashDinamicsPage() {
           </div>
         </ScrollArea>
 
-        {/* Input */}
         <div className="p-3 border-t border-border bg-card/50">
           <div className="flex gap-2">
             <Textarea
