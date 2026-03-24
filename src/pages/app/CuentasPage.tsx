@@ -113,6 +113,18 @@ export default function CuentasPage() {
     onError: (e: any) => toast.error(e.message || "Error al cambiar estado"),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("tenants").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      toast.success("Cuenta eliminada definitivamente");
+    },
+    onError: (e: any) => toast.error(e.message || "Error al eliminar cuenta"),
+  });
+
   const bulkMutation = useMutation({
     mutationFn: async (rows: TenantForm[]) => {
       const inserts = rows.map((r) => ({
