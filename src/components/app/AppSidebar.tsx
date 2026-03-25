@@ -1,7 +1,7 @@
 import {
   BarChart3, MessageSquare, FileBarChart, Download,
   Bot, Plug, Users, ShieldCheck, ScrollText, Settings, HelpCircle,
-  LayoutDashboard, Building2, Sparkles
+  LayoutDashboard, Building2, Sparkles, SlidersHorizontal
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -16,9 +16,9 @@ const menuGroups = [
   {
     label: "Análisis",
     items: [
-      { title: "Dashboard Ejecutivo", url: "/app", icon: LayoutDashboard },
-      { title: "DashDinamics", url: "/app/dashdinamics", icon: Sparkles },
-      { title: "Analytics Conversacional", url: "/app/analytics", icon: MessageSquare },
+      { title: "Dashboard", url: "/app", icon: LayoutDashboard },
+      { title: "Dashboard IA", url: "/app/dashdinamics", icon: Sparkles },
+      { title: "Dashboard Dinámicos", url: "/app/analytics", icon: SlidersHorizontal },
       { title: "Reportes", url: "/app/reportes", icon: FileBarChart },
       { title: "Exportaciones", url: "/app/exportaciones", icon: Download },
     ],

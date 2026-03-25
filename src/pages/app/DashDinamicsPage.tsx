@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Bot, User, Loader2, Trash2, BarChart3, Sparkles } from "lucide-react";
+import { Send, Bot, User, Loader2, Trash2, Sparkles, Search, Clock, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/use-auth";
 import { motion, AnimatePresence } from "framer-motion";
@@ -24,6 +25,12 @@ function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+interface SessionSummary {
+  id: string;
+  title: string;
+  created_at: string;
+}
+
 export default function DashDinamicsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -34,22 +41,36 @@ export default function DashDinamicsPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Load latest session on mount
+  // Session search
+  const [showHistory, setShowHistory] = useState(false);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+
+  // Auto-scroll to bottom
+  const scrollToBottom = useCallback(() => {
+    setTimeout(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    }, 50);
+  }, []);
+
   useEffect(() => {
     if (!user) return;
     loadLatestSession();
   }, [user?.id]);
 
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
 
   const loadLatestSession = async () => {
     if (!user) return;
     const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
     if (!tenantId) return;
 
-    const { data: sessions } = await supabase
+    const { data: sessionsData } = await supabase
       .from("dashboard_sessions")
       .select("*")
       .eq("user_id", user.id)
@@ -58,28 +79,65 @@ export default function DashDinamicsPage() {
       .order("created_at", { ascending: false })
       .limit(1);
 
-    if (sessions && sessions.length > 0) {
-      const session = sessions[0];
+    if (sessionsData && sessionsData.length > 0) {
+      const session = sessionsData[0];
       setSessionId(session.id);
-
-      // Load individual messages from dashboard_messages
-      const { data: msgs } = await supabase
-        .from("dashboard_messages")
-        .select("*")
-        .eq("session_id", session.id)
-        .order("created_at", { ascending: true });
-
-      if (msgs && msgs.length > 0) {
-        const loaded: DashMessage[] = msgs.map((m: any) => ({
-          id: m.id,
-          role: m.role as "user" | "assistant",
-          content: m.content,
-          structured: m.structured || undefined,
-          ts: new Date(m.created_at).getTime(),
-        }));
-        setMessages(loaded);
-      }
+      await loadSessionMessages(session.id);
     }
+  };
+
+  const loadSessionMessages = async (sid: string) => {
+    const { data: msgs } = await supabase
+      .from("dashboard_messages")
+      .select("*")
+      .eq("session_id", sid)
+      .order("created_at", { ascending: true });
+
+    if (msgs && msgs.length > 0) {
+      const loaded: DashMessage[] = msgs.map((m: any) => ({
+        id: m.id,
+        role: m.role as "user" | "assistant",
+        content: m.content,
+        structured: m.structured || undefined,
+        ts: new Date(m.created_at).getTime(),
+      }));
+      setMessages(loaded);
+    } else {
+      setMessages([]);
+    }
+  };
+
+  const loadSessions = async () => {
+    if (!user) return;
+    setSessionsLoading(true);
+    const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
+    if (!tenantId) { setSessionsLoading(false); return; }
+
+    let query = supabase
+      .from("dashboard_sessions")
+      .select("id, title, created_at")
+      .eq("user_id", user.id)
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (searchQuery.trim()) {
+      query = query.ilike("title", `%${searchQuery.trim()}%`);
+    }
+
+    const { data } = await query;
+    setSessions((data as SessionSummary[]) || []);
+    setSessionsLoading(false);
+  };
+
+  useEffect(() => {
+    if (showHistory) loadSessions();
+  }, [showHistory, searchQuery]);
+
+  const openSession = async (session: SessionSummary) => {
+    setSessionId(session.id);
+    await loadSessionMessages(session.id);
+    setShowHistory(false);
   };
 
   const ensureSession = async (): Promise<string | null> => {
@@ -94,7 +152,7 @@ export default function DashDinamicsPage() {
       .insert({
         tenant_id: tenantId,
         user_id: user.id,
-        prompt: "Nueva sesión DashDinamics",
+        prompt: "Nueva sesión Dashboard IA",
         title: "Nueva sesión",
         status: "active",
         result: {} as any,
@@ -107,27 +165,14 @@ export default function DashDinamicsPage() {
     return data.id;
   };
 
-  const persistMessage = async (
-    sid: string,
-    role: string,
-    content: string,
-    messageType: string,
-    structured?: any
-  ) => {
+  const persistMessage = async (sid: string, role: string, content: string, messageType: string, structured?: any) => {
     await supabase.from("dashboard_messages").insert({
-      session_id: sid,
-      role,
-      content,
-      message_type: messageType,
-      structured: structured || null,
+      session_id: sid, role, content, message_type: messageType, structured: structured || null,
     });
   };
 
   const updateSessionTitle = async (sid: string, title: string) => {
-    await supabase
-      .from("dashboard_sessions")
-      .update({ title, prompt: title } as any)
-      .eq("id", sid);
+    await supabase.from("dashboard_sessions").update({ title, prompt: title } as any).eq("id", sid);
   };
 
   const handleSend = useCallback(async (text?: string) => {
@@ -141,17 +186,13 @@ export default function DashDinamicsPage() {
       return;
     }
 
-    // Update session title with first message
-    if (messages.length === 0) {
-      updateSessionTitle(sid, trimmed.slice(0, 80));
-    }
+    if (messages.length === 0) updateSessionTitle(sid, trimmed.slice(0, 80));
 
     const userMsg: DashMessage = { id: generateId(), role: "user", content: trimmed, ts: Date.now() };
     const allMsgs = [...messages, userMsg];
     setMessages(allMsgs);
     setIsLoading(true);
 
-    // Persist user message
     await persistMessage(sid, "user", trimmed, "user_message");
 
     try {
@@ -159,10 +200,7 @@ export default function DashDinamicsPage() {
 
       const resp = await fetch(CHAT_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({
           messages: allMsgs.map(m => ({ role: m.role, content: m.content })),
           mode: "dashdinamics",
@@ -187,26 +225,11 @@ export default function DashDinamicsPage() {
       };
 
       setMessages(prev => [...prev, assistantMsg]);
-
-      // Persist assistant message with full structured data
-      await persistMessage(
-        sid,
-        "assistant",
-        structured.assistant_message || "",
-        structured.response_mode || "dashboard",
-        structured
-      );
+      await persistMessage(sid, "assistant", structured.assistant_message || "", structured.response_mode || "dashboard", structured);
     } catch (e: any) {
       console.error("DashDinamics error:", e);
-      const errMsg: DashMessage = {
-        id: generateId(),
-        role: "assistant",
-        content: `⚠️ Error: ${e.message}`,
-        ts: Date.now(),
-      };
+      const errMsg: DashMessage = { id: generateId(), role: "assistant", content: `⚠️ Error: ${e.message}`, ts: Date.now() };
       setMessages(prev => [...prev, errMsg]);
-
-      // Persist error
       await persistMessage(sid, "assistant", `⚠️ Error: ${e.message}`, "error");
     } finally {
       setIsLoading(false);
@@ -223,22 +246,78 @@ export default function DashDinamicsPage() {
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center glow-sm">
-            <BarChart3 className="h-5 w-5 text-primary-foreground" />
+            <Sparkles className="h-5 w-5 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-xl font-display font-bold">DashDinamics</h1>
+            <h1 className="text-xl font-display font-bold tracking-tight">Dashboard IA</h1>
             <p className="text-xs text-muted-foreground">Genera dashboards estratégicos con lenguaje natural</p>
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={startNewSession}>
-            <Sparkles className="h-3.5 w-3.5 mr-1.5" /> Nueva sesión
+          <Button variant="outline" size="sm" onClick={() => setShowHistory(!showHistory)} className="gap-1.5">
+            <Clock className="h-3.5 w-3.5" /> Historial
           </Button>
-          <Button variant="outline" size="sm" onClick={startNewSession} disabled={messages.length === 0}>
-            <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Limpiar
+          <Button variant="outline" size="sm" onClick={startNewSession} className="gap-1.5">
+            <Sparkles className="h-3.5 w-3.5" /> Nueva sesión
+          </Button>
+          <Button variant="outline" size="sm" onClick={startNewSession} disabled={messages.length === 0} className="gap-1.5">
+            <Trash2 className="h-3.5 w-3.5" /> Limpiar
           </Button>
         </div>
       </div>
+
+      {/* Session history panel */}
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mb-4 overflow-hidden"
+          >
+            <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar sesiones por título..."
+                  className="h-9 text-sm"
+                />
+                <Button variant="ghost" size="sm" onClick={() => setShowHistory(false)}>
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <ScrollArea className="max-h-[240px]">
+                {sessionsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : sessions.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">No se encontraron sesiones</p>
+                ) : (
+                  <div className="space-y-1">
+                    {sessions.map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => openSession(s)}
+                        className={`w-full text-left p-3 rounded-lg hover:bg-muted/80 transition-colors flex items-center justify-between group ${
+                          sessionId === s.id ? "bg-primary/5 border border-primary/20" : ""
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{s.title || "Sin título"}</p>
+                          <p className="text-[11px] text-muted-foreground">{new Date(s.created_at).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="flex-1 border border-border rounded-xl bg-card/30 overflow-hidden flex flex-col">
         <ScrollArea className="flex-1 p-4" ref={scrollRef}>
@@ -279,14 +358,14 @@ export default function DashDinamicsPage() {
                   className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   {msg.role === "assistant" && (
-                    <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 mt-1">
+                    <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 mt-1">
                       <Bot className="h-4 w-4 text-primary" />
                     </div>
                   )}
                   <div className={`rounded-xl text-sm ${
                     msg.role === "user"
                       ? "max-w-[70%] bg-primary text-primary-foreground px-4 py-3"
-                      : "max-w-[95%] bg-card border border-border p-4"
+                      : "max-w-[95%] bg-card border border-border p-5"
                   }`}>
                     {msg.role === "user" ? (
                       <p className="whitespace-pre-wrap">{msg.content}</p>
@@ -297,7 +376,7 @@ export default function DashDinamicsPage() {
                     )}
                   </div>
                   {msg.role === "user" && (
-                    <div className="w-7 h-7 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0 mt-1">
+                    <div className="w-8 h-8 rounded-xl bg-secondary flex items-center justify-center flex-shrink-0 mt-1">
                       <User className="h-4 w-4 text-secondary-foreground" />
                     </div>
                   )}
@@ -307,10 +386,10 @@ export default function DashDinamicsPage() {
 
             {isLoading && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
-                <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
                   <Bot className="h-4 w-4 text-primary" />
                 </div>
-                <div className="bg-card border border-border rounded-xl px-4 py-3 flex items-center gap-2">
+                <div className="bg-card border border-border rounded-xl px-5 py-4 flex items-center gap-3">
                   <Loader2 className="h-4 w-4 animate-spin text-primary" />
                   <span className="text-xs text-muted-foreground">Construyendo dashboard...</span>
                 </div>
@@ -319,19 +398,19 @@ export default function DashDinamicsPage() {
           </div>
         </ScrollArea>
 
-        <div className="p-3 border-t border-border bg-card/50">
-          <div className="flex gap-2">
+        <div className="p-4 border-t border-border bg-card/50">
+          <div className="flex gap-3">
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ej: ¿Cuáles campañas convierten mejor? / Dame un resumen ejecutivo..."
-              className="min-h-[44px] max-h-[120px] resize-none bg-background"
+              className="min-h-[56px] max-h-[140px] resize-none bg-background text-sm"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
               }}
             />
-            <Button onClick={() => handleSend()} disabled={!input.trim() || isLoading} size="icon" className="flex-shrink-0 h-[44px] w-[44px]">
-              <Send className="h-4 w-4" />
+            <Button onClick={() => handleSend()} disabled={!input.trim() || isLoading} size="icon" className="flex-shrink-0 h-14 w-14 rounded-xl">
+              <Send className="h-5 w-5" />
             </Button>
           </div>
         </div>
