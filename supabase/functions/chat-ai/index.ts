@@ -233,10 +233,12 @@ async function executeTool(admin: any, tid: string, name: string, args: any, af:
 // SYSTEM PROMPTS — anti-hallucination reforzado
 // ═══════════════════════════════════════════════════════════════════════════
 const ANTI_HALLUCINATION = `
-REGLA ABSOLUTA: Cada número que uses DEBE venir de RESULTADO_BD_REAL. Si un RESULTADO dice "filas=N, total_leads=M", entonces la suma de leads en tu respuesta DEBE ser M.
-- Si la herramienta retorna ERROR_BD o 0 filas → responde "No hay datos para estos filtros" — NUNCA inventes.
-- Si ves leads=350, ventas=62 en el resultado → tu tabla/gráfico DEBE mostrar exactamente 350 y 62, NO 150 o 120.
-- VERIFICACIÓN: suma mentalmente los leads de tu tabla. Si no coincide con total_leads del RESULTADO, estás inventando. CORRIGE.`;
+REGLA ABSOLUTA: Cada número DEBE venir de RESULTADO_BD_REAL.
+- Si RESULTADO dice "total_leads=M" → usa M directamente. NUNCA sumes filas manualmente.
+- Si retorna ERROR o 0 filas → responde "No hay datos" — NUNCA inventes.
+- PROHIBIDO escribir operaciones aritméticas como "199+446+397+...=". Usa get_kpis para totales.
+- PROHIBIDO repetir secuencias de números (8,8,8,8... o similar). Si detectas que estás repitiendo, PARA y da el total directo.
+- Sé CONCISO. Máximo 500 palabras por respuesta.`;
 
 function buildAnalyticsSys(dims: any, kpis: any, af: Filters): string {
   return `Eres asistente BI de Converti-IA Analytics.
@@ -256,7 +258,16 @@ EJEMPLOS:
 - "resultados agente prim gestion Y" → agg_1d(dimension="result_prim_gestion", filters={"agente_prim_gestion":"Y"})
 - "form del 24 feb" → agg_1d(dimension="fecha", fecha_desde="2026-02-24", fecha_hasta="2026-02-24", filters={"tipo_llamada":"form"})
 - "ventas por campaña tipo Entrante" → agg_1d(dimension="campana_mkt", filters={"tipo_llamada":"Entrante"})
+- "cuántos leads de Melipilla" → get_kpis(filters={"ciudad":"Melipilla"})
+- "total leads de marzo" → get_kpis(fecha_desde="2026-03-01", fecha_hasta="2026-03-31")
+- "total leads del agente X" → get_kpis(filters={"agente_negocio":"X"})
 ${ANTI_HALLUCINATION}
+
+REGLAS CRÍTICAS ADICIONALES:
+- Para TOTALES o CONTEOS usa get_kpis con filtros. NUNCA sumes manualmente filas de agg_1d.
+- NUNCA hagas operaciones aritméticas escribiendo la suma paso a paso (199+446+397+...). Usa get_kpis.
+- Mantén respuestas CONCISAS. No repitas datos innecesariamente.
+- Si te piden "total del mes" → llama get_kpis con fecha_desde y fecha_hasta, NO listes todos los días.
 
 FORMATO: español, markdown. Tablas con headers:
 | Col | Leads | Ventas | Conv% |
@@ -271,6 +282,7 @@ KPIs: ${JSON.stringify(kpis, null, 0)}
 FILTROS: ${JSON.stringify(af)}
 
 HERRAMIENTAS: aceptan "filters" y "date_field". LLAMA PRIMERO, luego JSON.
+Para TOTALES usa get_kpis(filters={...}), NUNCA sumes filas manualmente.
 ${ANTI_HALLUCINATION}
 
 ECHARTS: tooltip:{"trigger":"axis","axisPointer":{"type":"cross"}} | legend:{"data":[...],"bottom":0} | Colores: Leads="#3498db" Ventas="#2ecc71" Efectividad="#e74c3c"
@@ -381,10 +393,17 @@ async function runAnalytics(
     );
     all.push(...res);
   }
+  // Final streaming - con instrucción anti-loop
+  all.push({
+    role: "system",
+    content:
+      "Responde de forma CONCISA. Para totales usa el número de total_leads del RESULTADO_BD. NUNCA sumes manualmente. NUNCA repitas secuencias de números. Máximo 500 palabras.",
+  });
+
   const fr = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "gpt-4o-mini", messages: all, stream: true, temperature: 0.1, max_tokens: 2048 }),
+    body: JSON.stringify({ model: "gpt-4o-mini", messages: all, stream: true, temperature: 0.1, max_tokens: 1024 }),
   });
   if (!fr.ok) throw new Error(`Stream ${fr.status}`);
   return fr.body!;
