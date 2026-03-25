@@ -117,10 +117,116 @@ const TOOLS = [
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TOOL EXECUTION — null explícito para Supabase, resultados verificados
+// TOOL EXECUTION — con filtros forzados extraídos del mensaje del usuario
 // ═══════════════════════════════════════════════════════════════════════════
-function buildFilters(args: any, af: Filters): object | null {
+
+// Extrae filtros REALES del mensaje del usuario comparando contra dimensiones de la BD
+function extractFiltersFromMessage(userMsg: string, dims: any): Record<string, string> {
+  if (!userMsg || !dims) return {};
+  const msg = userMsg.toLowerCase();
+  const found: Record<string, string> = {};
+
+  // Ciudades
+  if (dims.ciudades && Array.isArray(dims.ciudades)) {
+    for (const c of dims.ciudades) {
+      if (c && c.length > 2 && msg.includes(c.toLowerCase())) {
+        found.ciudad = c;
+        break;
+      }
+    }
+  }
+  // Campañas mkt
+  if (dims.campanas_mkt && Array.isArray(dims.campanas_mkt)) {
+    for (const c of dims.campanas_mkt) {
+      if (c && msg.includes(c.toLowerCase())) {
+        found.campana_mkt = c;
+        break;
+      }
+    }
+  }
+  // Campañas inconcert
+  if (dims.campanas_inconcert && Array.isArray(dims.campanas_inconcert)) {
+    for (const c of dims.campanas_inconcert) {
+      if (c && msg.includes(c.toLowerCase())) {
+        found.campana_inconcert = c;
+        break;
+      }
+    }
+  }
+  // Tipos de llamada
+  if (dims.tipos_llamada && Array.isArray(dims.tipos_llamada)) {
+    for (const t of dims.tipos_llamada) {
+      if (t && msg.includes(t.toLowerCase())) {
+        found.tipo_llamada = t;
+        break;
+      }
+    }
+  }
+  // Categorías mkt
+  if (dims.categorias_mkt && Array.isArray(dims.categorias_mkt)) {
+    for (const c of dims.categorias_mkt) {
+      if (c && c.length > 3 && msg.includes(c.toLowerCase())) {
+        found.categoria_mkt = c;
+        break;
+      }
+    }
+  }
+  // Agentes (todos los tipos)
+  for (const [dimKey, filterKey] of [
+    ["agentes_negocio", "agente_negocio"],
+    ["agentes_prim_gestion", "agente_prim_gestion"],
+    ["agentes_ultim_gestion", "agente_ultim_gestion"],
+  ] as const) {
+    if (dims[dimKey] && Array.isArray(dims[dimKey])) {
+      for (const a of dims[dimKey]) {
+        if (a && msg.includes(a.toLowerCase())) {
+          found[filterKey] = a;
+          break;
+        }
+      }
+    }
+  }
+  // Resultados negocio
+  if (dims.resultados_negocio && Array.isArray(dims.resultados_negocio)) {
+    for (const r of dims.resultados_negocio) {
+      if (r && r.length > 3 && msg.includes(r.toLowerCase())) {
+        found.result_negocio = r;
+        break;
+      }
+    }
+  }
+  // Resultados primera gestión
+  if (dims.resultados_prim_gestion && Array.isArray(dims.resultados_prim_gestion)) {
+    for (const r of dims.resultados_prim_gestion) {
+      if (r && r.length > 3 && msg.includes(r.toLowerCase())) {
+        found.result_prim_gestion = r;
+        break;
+      }
+    }
+  }
+  // Resultado marcadora
+  if (dims.prim_resultado_marcadora && Array.isArray(dims.prim_resultado_marcadora)) {
+    for (const r of dims.prim_resultado_marcadora) {
+      if (r && msg.includes(r.toLowerCase())) {
+        found.prim_resultado_marcadora = r;
+        break;
+      }
+    }
+  }
+
+  return found;
+}
+
+// Combina: filtros forzados (del mensaje) + filtros del modelo (args.filters) + filtros frontend
+function buildFilters(args: any, af: Filters, forcedFilters: Record<string, string> = {}): object | null {
   const m: Record<string, string> = {};
+
+  // 1. Filtros forzados (extraídos del mensaje del usuario) — MÁXIMA prioridad
+  for (const [k, v] of Object.entries(forcedFilters)) {
+    if (v) m[k] = v;
+  }
+
+  // 2. Filtros del frontend
   if (af.campana_mkt) m.campana_mkt = af.campana_mkt;
   if (af.agente) m.agente_negocio = af.agente;
   if (af.tipo_llamada) m.tipo_llamada = af.tipo_llamada;
@@ -129,20 +235,32 @@ function buildFilters(args: any, af: Filters): object | null {
   if (af.campana_inconcert) m.campana_inconcert = af.campana_inconcert;
   if (af.bpo) m.bpo = af.bpo;
   if (af.result_negocio) m.result_negocio = af.result_negocio;
+
+  // 3. Filtros del modelo (si los pasa bien, genial; si no, los forzados ya están)
   if (args.filters && typeof args.filters === "object") {
     for (const [k, v] of Object.entries(args.filters)) {
       if (v) m[k] = String(v);
     }
   }
-  return Object.keys(m).length > 0 ? m : null; // null, NO undefined
+
+  return Object.keys(m).length > 0 ? m : null;
 }
 
-async function executeTool(admin: any, tid: string, name: string, args: any, af: Filters): Promise<string> {
-  // SIEMPRE pasar null explícito para params opcionales (Supabase PostgREST)
+async function executeTool(
+  admin: any,
+  tid: string,
+  name: string,
+  args: any,
+  af: Filters,
+  forcedFilters: Record<string, string> = {},
+): Promise<string> {
   const fd = args.fecha_desde || af.fecha_desde || null;
   const fh = args.fecha_hasta || af.fecha_hasta || null;
-  const df = args.date_field || null; // null → SQL usa DEFAULT 'fch_creacion'
-  const fi = buildFilters(args, af);
+  const df = args.date_field || null;
+  const fi = buildFilters(args, af, forcedFilters);
+
+  // Log para verificar que los filtros se aplican
+  console.log(`[EXEC] ${name} filters=${JSON.stringify(fi)} forced=${JSON.stringify(forcedFilters)}`);
 
   try {
     let data: any, error: any;
@@ -316,79 +434,17 @@ clarification: {"response_mode":"clarification","assistant_message":"...","clari
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FILTER EXTRACTOR — inyecta recordatorio de filtros basado en el mensaje
-// ═══════════════════════════════════════════════════════════════════════════
-function buildFilterReminder(userMsg: string, dims: any): string {
-  if (!userMsg || !dims) return "";
-  const msg = userMsg.toLowerCase();
-  const hints: string[] = [];
-
-  // Buscar ciudades mencionadas
-  if (dims.ciudades && Array.isArray(dims.ciudades)) {
-    for (const c of dims.ciudades) {
-      if (msg.includes(c.toLowerCase())) {
-        hints.push(`DETECTADO: ciudad "${c}" → usa filters={"ciudad":"${c}"}`);
-      }
-    }
-  }
-
-  // Buscar campañas mencionadas
-  if (dims.campanas_mkt && Array.isArray(dims.campanas_mkt)) {
-    for (const c of dims.campanas_mkt) {
-      if (msg.includes(c.toLowerCase())) {
-        hints.push(`DETECTADO: campaña "${c}" → usa filters={"campana_mkt":"${c}"}`);
-      }
-    }
-  }
-
-  // Buscar campañas inconcert
-  if (dims.campanas_inconcert && Array.isArray(dims.campanas_inconcert)) {
-    for (const c of dims.campanas_inconcert) {
-      if (msg.includes(c.toLowerCase())) {
-        hints.push(`DETECTADO: campaña inconcert "${c}" → usa filters={"campana_inconcert":"${c}"}`);
-      }
-    }
-  }
-
-  // Buscar tipos de llamada
-  if (dims.tipos_llamada && Array.isArray(dims.tipos_llamada)) {
-    for (const t of dims.tipos_llamada) {
-      if (msg.includes(t.toLowerCase())) {
-        hints.push(`DETECTADO: tipo llamada "${t}" → usa filters={"tipo_llamada":"${t}"}`);
-      }
-    }
-  }
-
-  // Buscar agentes
-  const agentFields = ["agentes_negocio", "agentes_prim_gestion", "agentes_ultim_gestion"];
-  for (const field of agentFields) {
-    if (dims[field] && Array.isArray(dims[field])) {
-      for (const a of dims[field]) {
-        if (msg.includes(a.toLowerCase())) {
-          const col = field.replace("agentes_", "agente_");
-          hints.push(`DETECTADO: agente "${a}" → usa filters={"${col}":"${a}"}`);
-        }
-      }
-    }
-  }
-
-  // Buscar resultados
-  if (dims.resultados_negocio && Array.isArray(dims.resultados_negocio)) {
-    for (const r of dims.resultados_negocio) {
-      if (r.length > 3 && msg.includes(r.toLowerCase())) {
-        hints.push(`DETECTADO: resultado "${r}" → usa filters={"result_negocio":"${r}"}`);
-      }
-    }
-  }
-
-  if (hints.length === 0) return "";
-  return `\n⚠️ FILTROS OBLIGATORIOS para esta consulta:\n${hints.join("\n")}\nDebes incluir estos filtros en CADA llamada a herramientas.`;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // DASH: tools → JSON forzado
 // ═══════════════════════════════════════════════════════════════════════════
-async function runDash(key: string, sys: string, msgs: any[], admin: any, tid: string, af: Filters) {
+async function runDash(
+  key: string,
+  sys: string,
+  msgs: any[],
+  admin: any,
+  tid: string,
+  af: Filters,
+  ff: Record<string, string> = {},
+) {
   const all = [{ role: "system", content: sys }, ...msgs];
   for (let i = 0; i < 5; i++) {
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -412,7 +468,7 @@ async function runDash(key: string, sys: string, msgs: any[], admin: any, tid: s
       msg.tool_calls.map(async (tc: any) => {
         const a = JSON.parse(tc.function.arguments || "{}");
         console.log(`[D] ${tc.function.name}(${JSON.stringify(a)})`);
-        const r = await executeTool(admin, tid, tc.function.name, a, af);
+        const r = await executeTool(admin, tid, tc.function.name, a, af, ff);
         console.log(`[D] → ${r.substring(0, 150)}`);
         return { role: "tool", tool_call_id: tc.id, content: r };
       }),
@@ -451,6 +507,7 @@ async function runAnalytics(
   admin: any,
   tid: string,
   af: Filters,
+  ff: Record<string, string> = {},
 ): Promise<ReadableStream | string> {
   const all = [{ role: "system", content: sys }, ...msgs];
   for (let i = 0; i < 5; i++) {
@@ -478,7 +535,7 @@ async function runAnalytics(
       msg.tool_calls.map(async (tc: any) => {
         const a = JSON.parse(tc.function.arguments || "{}");
         console.log(`[A] ${tc.function.name}(${JSON.stringify(a)})`);
-        const r = await executeTool(admin, tid, tc.function.name, a, af);
+        const r = await executeTool(admin, tid, tc.function.name, a, af, ff);
         console.log(`[A] → ${r.substring(0, 150)}`);
         return { role: "tool", tool_call_id: tc.id, content: r };
       }),
@@ -657,6 +714,7 @@ serve(async (req) => {
       });
 
     let sys: string;
+    let forcedFilters: Record<string, string> = {};
     if (tid) {
       const [dr, kr] = await Promise.all([
         admin.rpc("get_leads_dimensions", { _tenant_id: tid }),
@@ -675,12 +733,13 @@ serve(async (req) => {
       console.log(`Meta OK: dims=${JSON.stringify(dims).length}c kpis=${JSON.stringify(kpis).length}c`);
       sys = mode === "dashdinamics" ? buildDashSys(dims, kpis, af) : buildAnalyticsSys(dims, kpis, af);
 
-      // Inyectar recordatorio de filtros basado en el último mensaje del usuario
+      // Extraer filtros FORZADOS del mensaje del usuario
       const lastUserMsg = messages.filter((m: any) => m.role === "user").pop()?.content || "";
-      const filterReminder = buildFilterReminder(lastUserMsg, dims);
-      if (filterReminder) {
-        sys += filterReminder;
-        console.log(`Filter reminder injected: ${filterReminder.substring(0, 100)}`);
+      forcedFilters = extractFiltersFromMessage(lastUserMsg, dims);
+      if (Object.keys(forcedFilters).length > 0) {
+        console.log(`FORCED FILTERS from message: ${JSON.stringify(forcedFilters)}`);
+        // También agregar al system prompt como recordatorio
+        sys += `\n⚠️ FILTROS DETECTADOS EN EL MENSAJE: ${JSON.stringify(forcedFilters)}. DEBES incluir estos en cada llamada a herramientas.`;
       }
 
       if (botId) {
@@ -695,7 +754,7 @@ serve(async (req) => {
 
     if (mode === "dashdinamics") {
       try {
-        const msg = await runDash(key, sys, messages, admin, tid, af);
+        const msg = await runDash(key, sys, messages, admin, tid, af, forcedFilters);
         const c = msg?.content || "{}";
         console.log(`[D] Raw JSON: ${c.substring(0, 300)}`);
         try {
@@ -721,7 +780,7 @@ serve(async (req) => {
     }
 
     try {
-      const res = await runAnalytics(key, sys, messages, admin, tid, af);
+      const res = await runAnalytics(key, sys, messages, admin, tid, af, forcedFilters);
       if (typeof res === "string") {
         const sse = `data: ${JSON.stringify({ choices: [{ delta: { content: res } }] })}\n\ndata: [DONE]\n\n`;
         return new Response(sse, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
