@@ -912,6 +912,41 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _build_filters_where: { Args: { _f: Json }; Returns: string }
+      _date_field_expr: { Args: { _d: string }; Returns: string }
+      execute_leads_query: {
+        Args: { _query: string; _tenant_id: string }
+        Returns: Json
+      }
+      generar_analitica_dinamica: {
+        Args: {
+          _agente_negocio?: string
+          _agrupador: string
+          _campana_mkt?: string
+          _fecha_desde?: string
+          _fecha_hasta?: string
+          _tenant_id: string
+        }
+        Returns: {
+          dimension: string
+          tasa_conversion: number
+          tiempo_ciclo_min: number
+          tiempo_resp_min: number
+          total_leads: number
+          total_ventas: number
+        }[]
+      }
+      get_leads_dimensions: { Args: { _tenant_id: string }; Returns: Json }
+      get_leads_kpis: {
+        Args: {
+          _date_field?: string
+          _fecha_desde?: string
+          _fecha_hasta?: string
+          _filters?: Json
+          _tenant_id: string
+        }
+        Returns: Json
+      }
       get_user_tenant: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
@@ -919,6 +954,52 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      leads_agg_1d: {
+        Args: {
+          _date_field?: string
+          _dimension: string
+          _fecha_desde?: string
+          _fecha_hasta?: string
+          _filters?: Json
+          _limit?: number
+          _tenant_id: string
+        }
+        Returns: Json
+      }
+      leads_agg_2d: {
+        Args: {
+          _date_field?: string
+          _dim1: string
+          _dim2: string
+          _fecha_desde?: string
+          _fecha_hasta?: string
+          _filters?: Json
+          _tenant_id: string
+          _top_n?: number
+        }
+        Returns: Json
+      }
+      leads_funnel: {
+        Args: {
+          _date_field?: string
+          _fecha_desde?: string
+          _fecha_hasta?: string
+          _filters?: Json
+          _tenant_id: string
+        }
+        Returns: Json
+      }
+      leads_time_metrics: {
+        Args: {
+          _date_field?: string
+          _fecha_desde?: string
+          _fecha_hasta?: string
+          _filters?: Json
+          _group_by?: string
+          _tenant_id: string
+        }
+        Returns: Json
       }
     }
     Enums: {

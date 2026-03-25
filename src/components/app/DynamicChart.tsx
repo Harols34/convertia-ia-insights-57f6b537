@@ -12,10 +12,14 @@ interface DynamicChartProps {
 export function DynamicChart({ config, allowExpand = true, height = 280 }: DynamicChartProps) {
   const navigate = useNavigate();
 
+  if (!config || typeof config !== "object") {
+    return <div className="flex items-center justify-center text-xs text-muted-foreground h-20">Sin datos de gráfico</div>;
+  }
+
   const option = {
     ...config,
     backgroundColor: "transparent",
-    grid: { left: "3%", right: "4%", bottom: "3%", containLabel: true, ...(config.grid as object || {}) },
+    grid: { left: "3%", right: "4%", bottom: "3%", containLabel: true, ...((config.grid as object) || {}) },
   };
 
   return (
