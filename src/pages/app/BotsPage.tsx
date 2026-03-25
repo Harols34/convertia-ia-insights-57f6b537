@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
-import { Bot, Plus, MessageSquare, Settings2, Trash2, Power, PowerOff, Loader2, Link2, Send, User } from "lucide-react";
+import { Bot, Plus, MessageSquare, Settings2, Trash2, Power, PowerOff, Loader2, Send, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import ReactMarkdown from "react-markdown";
 
 interface BotRow {
   id: string; name: string; channel: string; system_prompt: string;
@@ -32,12 +33,21 @@ export default function BotsPage() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   const [form, setForm] = useState({
     name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.",
     model: "gpt-4o-mini", n8n_workflow_id: "", n8n_webhook_url: "",
     dataSources: ["leads"] as string[], responseMode: "prompt" as "prompt" | "n8n",
   });
   const { toast } = useToast();
+
+  const scrollToBottom = useCallback(() => {
+    setTimeout(() => {
+      if (chatScrollRef.current) {
+        chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+      }
+    }, 50);
+  }, []);
 
   const fetchBots = async () => {
     const { data } = await supabase.from("bots").select("*").order("created_at", { ascending: false });
@@ -46,6 +56,7 @@ export default function BotsPage() {
   };
 
   useEffect(() => { fetchBots(); }, []);
+  useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
 
   const getBotConfig = (bot: BotRow) => {
     const cfg = bot.config as any;
@@ -53,7 +64,6 @@ export default function BotsPage() {
     return { dataSource: cfg?.dataSources?.[0] || "leads", webhookUrl: mode === "n8n" ? (cfg?.n8n_webhook_url || null) : null, responseMode: mode };
   };
 
-  // Load or create conversation for bot+user
   const openChat = async (bot: BotRow) => {
     setActiveBot(bot);
     setMessages([]);
@@ -63,7 +73,6 @@ export default function BotsPage() {
     if (!user) return;
     const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
 
-    // Find existing conversation
     const { data: convs } = await supabase
       .from("bot_conversations")
       .select("id")
@@ -87,7 +96,6 @@ export default function BotsPage() {
     }
     setConversationId(convId);
 
-    // Load messages
     const { data: msgs } = await supabase
       .from("bot_messages")
       .select("*")
@@ -105,7 +113,6 @@ export default function BotsPage() {
     setChatInput("");
     setChatLoading(true);
 
-    // Save user message to DB
     const { data: savedUser } = await supabase.from("bot_messages")
       .insert({ conversation_id: conversationId, role: "user", content: text })
       .select("id, role, content, created_at").single();
@@ -133,7 +140,6 @@ export default function BotsPage() {
           const data = await resp.json();
           reply = data.reply || data.error || "Sin respuesta";
         } else if (resp.body) {
-          // Stream
           let acc = "";
           const reader = resp.body.getReader();
           const decoder = new TextDecoder();
@@ -158,7 +164,6 @@ export default function BotsPage() {
         }
       }
 
-      // Save assistant message to DB
       const { data: savedAss } = await supabase.from("bot_messages")
         .insert({ conversation_id: conversationId, role: "assistant", content: reply })
         .select("id, role, content, created_at").single();
@@ -210,7 +215,7 @@ export default function BotsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-display font-bold">Chatbots / AI Agents</h1>
+          <h1 className="text-2xl font-display font-bold tracking-tight">Chatbots / AI Agents</h1>
           <p className="text-sm text-muted-foreground mt-1">Administra agentes inteligentes para tus canales</p>
         </div>
         <Button onClick={() => { setEditBot(null); setForm({ name: "", channel: "web", system_prompt: "Eres un asistente inteligente de análisis de datos.", model: "gpt-4o-mini", n8n_workflow_id: "", n8n_webhook_url: "", dataSources: ["leads"], responseMode: "prompt" }); setShowForm(true); }}>
@@ -218,7 +223,7 @@ export default function BotsPage() {
         </Button>
       </div>
 
-      <div className="grid lg:grid-cols-[1fr_1fr] gap-6">
+      <div className="grid lg:grid-cols-[1fr_1.2fr] gap-6">
         <div className="space-y-3">
           {bots.length === 0 ? (
             <div className="rounded-xl border border-border bg-card p-12 text-center">
@@ -233,7 +238,7 @@ export default function BotsPage() {
                 onClick={() => openChat(bot)}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0"><Bot className="h-4 w-4 text-primary" /></div>
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0"><Bot className="h-5 w-5 text-primary" /></div>
                     <div className="min-w-0">
                       <p className="font-medium text-sm truncate">{bot.name}</p>
                       <div className="flex gap-2 mt-1 flex-wrap">
@@ -259,40 +264,80 @@ export default function BotsPage() {
           })}
         </div>
 
-        {/* Chat area with DB persistence */}
-        <div className="h-[600px] border border-border rounded-xl bg-card/30 overflow-hidden flex flex-col">
+        {/* Chat area */}
+        <div className="h-[650px] border border-border rounded-xl bg-card/30 overflow-hidden flex flex-col">
           {activeBot ? (
             <>
-              <div className="p-3 border-b border-border bg-card/50 flex items-center gap-2">
-                <Bot className="h-4 w-4 text-primary" />
-                <span className="text-sm font-medium">{activeBot.name}</span>
-                <Badge variant="secondary" className="text-[10px] ml-auto">{messages.length} msgs</Badge>
+              <div className="p-4 border-b border-border bg-card/50 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Bot className="h-4.5 w-4.5 text-primary" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-semibold">{activeBot.name}</span>
+                  <p className="text-[11px] text-muted-foreground">Agente IA activo</p>
+                </div>
+                <Badge variant="secondary" className="text-[10px]">{messages.length} msgs</Badge>
               </div>
-              <ScrollArea className="flex-1 p-4">
-                <div className="space-y-3">
+              <ScrollArea className="flex-1 p-4" ref={chatScrollRef}>
+                <div className="space-y-4">
+                  {messages.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                      <Bot className="h-10 w-10 mb-3 opacity-30" />
+                      <p className="text-sm">Inicia una conversación con {activeBot.name}</p>
+                    </div>
+                  )}
                   {messages.map((msg) => (
-                    <div key={msg.id} className={`flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                      {msg.role === "assistant" && <div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0 mt-1"><Bot className="h-3 w-3 text-primary" /></div>}
-                      <div className={`rounded-lg text-sm px-3 py-2 max-w-[80%] ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                    <div key={msg.id} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                      {msg.role === "assistant" && (
+                        <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 mt-1">
+                          <Bot className="h-4 w-4 text-primary" />
+                        </div>
+                      )}
+                      <div className={`rounded-xl text-sm px-4 py-3 max-w-[80%] ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                        {msg.role === "assistant" ? (
+                          <div className="prose prose-sm dark:prose-invert max-w-none [&>p]:mb-2">
+                            <ReactMarkdown>{msg.content}</ReactMarkdown>
+                          </div>
+                        ) : (
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        )}
                       </div>
-                      {msg.role === "user" && <div className="w-6 h-6 rounded-md bg-secondary flex items-center justify-center flex-shrink-0 mt-1"><User className="h-3 w-3" /></div>}
+                      {msg.role === "user" && (
+                        <div className="w-8 h-8 rounded-xl bg-secondary flex items-center justify-center flex-shrink-0 mt-1">
+                          <User className="h-4 w-4 text-secondary-foreground" />
+                        </div>
+                      )}
                     </div>
                   ))}
-                  {chatLoading && <div className="flex gap-2"><div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center"><Bot className="h-3 w-3 text-primary" /></div><div className="bg-muted rounded-lg px-3 py-2"><Loader2 className="h-4 w-4 animate-spin" /></div></div>}
+                  {chatLoading && (
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center"><Bot className="h-4 w-4 text-primary" /></div>
+                      <div className="bg-muted rounded-xl px-4 py-3"><Loader2 className="h-4 w-4 animate-spin" /></div>
+                    </div>
+                  )}
                 </div>
               </ScrollArea>
-              <div className="p-3 border-t border-border bg-card/50 flex gap-2">
-                <Input value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder={`Escribe a ${activeBot.name}...`}
-                  onKeyDown={(e) => { if (e.key === "Enter") sendMessage(); }} />
-                <Button size="icon" onClick={sendMessage} disabled={!chatInput.trim() || chatLoading}><Send className="h-4 w-4" /></Button>
+              <div className="p-4 border-t border-border bg-card/50">
+                <div className="flex gap-3">
+                  <Textarea
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder={`Escribe tu pregunta a ${activeBot.name}...`}
+                    className="min-h-[56px] max-h-[120px] resize-none bg-background text-sm"
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                  />
+                  <Button size="icon" onClick={sendMessage} disabled={!chatInput.trim() || chatLoading} className="h-14 w-14 rounded-xl flex-shrink-0">
+                    <Send className="h-5 w-5" />
+                  </Button>
+                </div>
               </div>
             </>
           ) : (
             <div className="h-full flex items-center justify-center">
               <div className="text-center text-muted-foreground">
                 <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                <p className="text-sm">Selecciona un bot para chatear</p>
+                <p className="text-sm font-medium">Selecciona un bot para chatear</p>
+                <p className="text-xs mt-1">Elige un agente de la lista para comenzar</p>
               </div>
             </div>
           )}
