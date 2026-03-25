@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
-import { Plug, Plus, Database, Check, X, Pencil, BarChart3, FileBarChart, Bot, GitBranch, Layers, Search } from "lucide-react";
+import { Plus, Database, Check, X, Pencil, BarChart3, Bot, Search, Columns3, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +14,11 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
+import { DataSourcePivotPanel } from "@/components/integraciones/DataSourcePivotPanel";
+import { parseHiddenColumnsFromRestrictions } from "@/lib/tenant-data-source-utils";
 
 interface DataSourceForm {
   table_name: string;
@@ -28,12 +32,23 @@ interface DataSourceForm {
   allow_joins: boolean;
   allow_cross_analysis: boolean;
   priority: number;
+  /** Guardado en restrictions.hidden_columns */
+  hidden_columns: string[];
 }
 
 const emptyForm: DataSourceForm = {
-  table_name: "", display_name: "", description: "", category: "general",
-  is_active: false, allow_dashboards: false, allow_reports: false,
-  allow_chatbots: false, allow_joins: false, allow_cross_analysis: false, priority: 0,
+  table_name: "",
+  display_name: "",
+  description: "",
+  category: "general",
+  is_active: false,
+  allow_dashboards: false,
+  allow_reports: false,
+  allow_chatbots: false,
+  allow_joins: false,
+  allow_cross_analysis: false,
+  priority: 0,
+  hidden_columns: [],
 };
 
 const categories = ["general", "comercial", "financiero", "marketing", "operaciones", "rrhh"];
@@ -44,6 +59,11 @@ export default function IntegracionesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<DataSourceForm>(emptyForm);
+  const [pivotOpen, setPivotOpen] = useState<{
+    table_name: string;
+    display_name: string;
+    restrictions: unknown;
+  } | null>(null);
 
   const { data: sources, isLoading } = useQuery({
     queryKey: ["data-sources"],
@@ -58,9 +78,16 @@ export default function IntegracionesPage() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (f: DataSourceForm & { id?: string }) => {
-      const payload = { ...f };
-      delete (payload as any).id;
+    mutationFn: async (f: DataSourceForm) => {
+      const sourcesList = (queryClient.getQueryData(["data-sources"]) as typeof sources) ?? [];
+      const prevRow = editingId ? sourcesList?.find((s) => s.id === editingId) : null;
+      const prevRestrict =
+        prevRow?.restrictions && typeof prevRow.restrictions === "object"
+          ? { ...(prevRow.restrictions as Record<string, unknown>) }
+          : {};
+      const restrictions = { ...prevRestrict, hidden_columns: f.hidden_columns };
+      const { hidden_columns: _h, ...rest } = f;
+      const payload = { ...rest, restrictions };
       if (editingId) {
         const { error } = await supabase.from("tenant_data_sources").update(payload).eq("id", editingId);
         if (error) throw error;
@@ -71,6 +98,8 @@ export default function IntegracionesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["data-sources"] });
+      queryClient.invalidateQueries({ queryKey: ["data-sources-dashboards"] });
+      queryClient.invalidateQueries({ queryKey: ["tenant-data-sources-hidden-by-table"] });
       toast.success(editingId ? "Fuente actualizada" : "Fuente registrada");
       setShowForm(false);
       setEditingId(null);
@@ -90,12 +119,18 @@ export default function IntegracionesPage() {
   const openEdit = (src: any) => {
     setEditingId(src.id);
     setForm({
-      table_name: src.table_name, display_name: src.display_name,
-      description: src.description || "", category: src.category || "general",
-      is_active: src.is_active, allow_dashboards: src.allow_dashboards,
-      allow_reports: src.allow_reports, allow_chatbots: src.allow_chatbots,
-      allow_joins: src.allow_joins, allow_cross_analysis: src.allow_cross_analysis,
+      table_name: src.table_name,
+      display_name: src.display_name,
+      description: src.description || "",
+      category: src.category || "general",
+      is_active: src.is_active,
+      allow_dashboards: src.allow_dashboards,
+      allow_reports: src.allow_reports,
+      allow_chatbots: src.allow_chatbots,
+      allow_joins: src.allow_joins,
+      allow_cross_analysis: src.allow_cross_analysis,
       priority: src.priority || 0,
+      hidden_columns: parseHiddenColumnsFromRestrictions(src.restrictions),
     });
     setShowForm(true);
   };
@@ -107,8 +142,31 @@ export default function IntegracionesPage() {
 
   const activeCount = sources?.filter(s => s.is_active).length ?? 0;
 
+  const tableNameForCols = form.table_name.trim();
+  const { data: rawCols, isError: rawColsError, isFetching: rawColsFetching } = useQuery({
+    queryKey: ["admin-raw-cols", tableNameForCols],
+    enabled: showForm && tableNameForCols.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("admin_list_raw_table_columns", {
+        p_table_name: tableNameForCols,
+      });
+      if (error) throw error;
+      return data as { column_name: string; data_type: string; udt_name: string }[];
+    },
+  });
+
+  const toggleHiddenColumn = (col: string) => {
+    setForm((prev) => ({
+      ...prev,
+      hidden_columns: prev.hidden_columns.includes(col)
+        ? prev.hidden_columns.filter((c) => c !== col)
+        : [...prev.hidden_columns, col],
+    }));
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="flex gap-0 items-stretch min-h-[calc(100vh-6rem)]">
+      <div className={`space-y-6 flex-1 min-w-0 ${pivotOpen ? "pr-2" : ""}`}>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold">Integraciones – Fuentes de Datos</h1>
@@ -197,9 +255,27 @@ export default function IntegracionesPage() {
                         </TableCell>
                       ))}
                       <TableCell className="text-right">
-                        <Button size="icon" variant="ghost" onClick={() => openEdit(src)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
+                        <div className="flex justify-end gap-1">
+                          {src.allow_dashboards && (
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              title="Dashboard dinámico (datos reales)"
+                              onClick={() =>
+                                setPivotOpen({
+                                  table_name: src.table_name,
+                                  display_name: src.display_name,
+                                  restrictions: src.restrictions,
+                                })
+                              }
+                            >
+                              <Columns3 className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <Button size="icon" variant="ghost" onClick={() => openEdit(src)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -218,7 +294,7 @@ export default function IntegracionesPage() {
       </motion.div>
 
       <Dialog open={showForm} onOpenChange={(o) => { if (!o) { setShowForm(false); setEditingId(null); } }}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? "Editar fuente de datos" : "Registrar nueva tabla"}</DialogTitle>
             <DialogDescription>Define las propiedades y permisos de la tabla</DialogDescription>
@@ -268,6 +344,45 @@ export default function IntegracionesPage() {
                 </div>
               ))}
             </div>
+
+            <div className="rounded-lg border border-border p-3 space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <EyeOff className="h-4 w-4 shrink-0" />
+                Columnas ocultas para el usuario
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Marca las columnas que no deben mostrarse en listas, pivotes ni gráficos para usuarios finales. Los administradores pueden seguir configurándolas aquí.
+              </p>
+              {!tableNameForCols ? (
+                <p className="text-xs text-muted-foreground">Indica el nombre de tabla para cargar la lista de columnas.</p>
+              ) : rawColsFetching ? (
+                <Skeleton className="h-32 w-full" />
+              ) : rawColsError ? (
+                <p className="text-xs text-destructive">
+                  No se pudieron cargar las columnas. Comprueba que la tabla exista en <span className="font-mono">public</span> y que tu rol tenga permiso de administrador.
+                </p>
+              ) : !rawCols?.length ? (
+                <p className="text-xs text-muted-foreground">No hay columnas o la tabla no existe.</p>
+              ) : (
+                <ScrollArea className="h-48 rounded-md border border-border/60">
+                  <div className="p-2 space-y-2 pr-4">
+                    {rawCols.map((c) => (
+                      <label
+                        key={c.column_name}
+                        className="flex items-center gap-2 text-sm cursor-pointer rounded-md px-1 py-0.5 hover:bg-muted/50"
+                      >
+                        <Checkbox
+                          checked={form.hidden_columns.includes(c.column_name)}
+                          onCheckedChange={() => toggleHiddenColumn(c.column_name)}
+                        />
+                        <span className="font-mono text-xs">{c.column_name}</span>
+                        <span className="text-[10px] text-muted-foreground truncate">{c.data_type}</span>
+                      </label>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowForm(false); setEditingId(null); }}>Cancelar</Button>
@@ -277,6 +392,15 @@ export default function IntegracionesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
+      {pivotOpen && (
+        <DataSourcePivotPanel
+          tableName={pivotOpen.table_name}
+          displayName={pivotOpen.display_name}
+          hiddenDataColumns={parseHiddenColumnsFromRestrictions(pivotOpen.restrictions)}
+          onClose={() => setPivotOpen(null)}
+        />
+      )}
     </div>
   );
 }

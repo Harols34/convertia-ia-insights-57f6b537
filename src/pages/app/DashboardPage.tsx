@@ -1,11 +1,25 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
-import { TrendingUp, Users, MessageSquare, BarChart3, ArrowUpRight, Loader2, Filter, Calendar } from "lucide-react";
+import { Filter, Calendar, ChevronDown, X, LayoutDashboard } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { LeadsBarChart, LeadsPieChart } from "@/components/app/LeadsChart";
+import { useLeadsData } from "@/contexts/LeadsDataContext";
+import { ExecutiveDashboardBody } from "@/components/dashboard/ExecutiveDashboardBody";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  LEADS_DASHBOARD_FILTER_COLUMNS,
+  applyLeadsDashboardFilters,
+  defaultLeadsDashboardFilters,
+  formatFilterChipValue,
+  uniqueValuesForColumn,
+  type LeadRow,
+  type LeadsDashboardFilters,
+} from "@/lib/dashboard-leads";
 
 interface LeadStats {
   total: number;
@@ -20,217 +34,353 @@ interface LeadStats {
   porCiudad: { name: string; value: number }[];
   porResultNegocio: { name: string; value: number }[];
   porResultPrimGestion: { name: string; value: number }[];
-  filterOptions: { clientes: string[]; campanas: string[]; ciudades: string[] };
 }
 
-function countBy(arr: any[], key: string): { name: string; value: number }[] {
+function countBy(arr: LeadRow[], key: keyof LeadRow): { name: string; value: number }[] {
   const map: Record<string, number> = {};
   arr.forEach((item) => {
     const val = item[key];
-    if (val) map[val] = (map[val] || 0) + 1;
+    const s = val == null || val === "" ? "" : String(val);
+    if (s) map[s] = (map[s] || 0) + 1;
   });
   return Object.entries(map)
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
 }
 
-function unique(arr: any[], key: string): string[] {
-  return [...new Set(arr.map(i => i[key]).filter(Boolean))].sort() as string[];
+function buildStats(leads: LeadRow[]): LeadStats | null {
+  if (!leads.length) return null;
+  const total = leads.length;
+  const conGestion = leads.filter((l) => l.result_prim_gestion && l.result_prim_gestion !== "").length;
+  const conNegocio = leads.filter((l) => l.result_negocio && l.result_negocio !== "").length;
+  const ventas = leads.filter((l) => l.es_venta).length;
+
+  return {
+    total,
+    conGestion,
+    conNegocio,
+    ventas,
+    tasaGestion: total > 0 ? ((conGestion / total) * 100).toFixed(1) : "0",
+    tasaNegocio: total > 0 ? ((conNegocio / total) * 100).toFixed(1) : "0",
+    tasaConversion: total > 0 ? ((ventas / total) * 100).toFixed(1) : "0",
+    porCliente: countBy(leads, "cliente"),
+    porCampanaMkt: countBy(leads, "campana_mkt"),
+    porCiudad: countBy(leads, "ciudad"),
+    porResultNegocio: countBy(leads, "result_negocio"),
+    porResultPrimGestion: countBy(leads, "result_prim_gestion"),
+  };
+}
+
+function DimensionMultiFilter({
+  col,
+  label,
+  allLeads,
+  selected,
+  onChange,
+}: {
+  col: keyof LeadRow;
+  label: string;
+  allLeads: LeadRow[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const options = useMemo(() => uniqueValuesForColumn(allLeads, col), [allLeads, col]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => formatFilterChipValue(o).toLowerCase().includes(q));
+  }, [options, search]);
+
+  const summary =
+    selected.length === 0
+      ? "Todos"
+      : selected.length === 1
+        ? formatFilterChipValue(selected[0])
+        : `${selected.length} valores`;
+
+  const toggle = (token: string, checked: boolean) => {
+    const set = new Set(selected);
+    if (checked) set.add(token);
+    else set.delete(token);
+    onChange([...set]);
+  };
+
+  const selectAllVisible = () => {
+    const merged = new Set([...selected, ...filtered]);
+    onChange([...merged]);
+  };
+
+  const clearColumn = () => onChange([]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="h-9 justify-between gap-2 min-w-[160px] max-w-[220px] text-xs font-normal">
+          <span className="truncate text-left">
+            <span className="text-muted-foreground mr-1">{label}:</span>
+            {summary}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-0" align="start">
+        <div className="p-2 border-b border-border space-y-2">
+          <Input
+            placeholder="Buscar…"
+            className="h-8 text-xs"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <div className="flex gap-1 flex-wrap">
+            <Button type="button" variant="secondary" size="sm" className="h-7 text-[10px]" onClick={selectAllVisible}>
+              + visibles
+            </Button>
+            <Button type="button" variant="ghost" size="sm" className="h-7 text-[10px]" onClick={clearColumn}>
+              Limpiar
+            </Button>
+          </div>
+        </div>
+        <ScrollArea className="h-[220px]">
+          <div className="p-2 space-y-1.5">
+            {filtered.length === 0 ? (
+              <p className="text-[10px] text-muted-foreground px-1">Sin coincidencias</p>
+            ) : (
+              filtered.map((token) => {
+                const id = `${String(col)}-${token}`;
+                const checked = selected.includes(token);
+                return (
+                  <label
+                    key={id}
+                    htmlFor={id}
+                    className="flex items-start gap-2 rounded-md px-1 py-1 hover:bg-muted/60 cursor-pointer"
+                  >
+                    <Checkbox
+                      id={id}
+                      checked={checked}
+                      onCheckedChange={(c) => toggle(token, c === true)}
+                      className="mt-0.5"
+                    />
+                    <span className="text-[11px] leading-snug break-all">{formatFilterChipValue(token)}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </ScrollArea>
+        {options.length >= 400 && (
+          <p className="text-[9px] text-muted-foreground px-2 py-1 border-t border-border">
+            Mostrando hasta 400 valores distintos en esta columna.
+          </p>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 export default function DashboardPage() {
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<LeadStats | null>(null);
-  const [activity, setActivity] = useState<any[]>([]);
-  const [filters, setFilters] = useState<{ cliente?: string; campana?: string; ciudad?: string; desde?: string; hasta?: string }>({});
+  const { allLeads, loading, error: loadError, initialLoadDone } = useLeadsData();
+  const [activity, setActivity] = useState<unknown[]>([]);
+  const [filters, setFilters] = useState<LeadsDashboardFilters>(defaultLeadsDashboardFilters);
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      let query = supabase.from("leads").select("*").order("created_at", { ascending: false }).limit(1000);
-      if (filters.cliente) query = query.eq("cliente", filters.cliente);
-      if (filters.campana) query = query.eq("campana_mkt", filters.campana);
-      if (filters.ciudad) query = query.eq("ciudad", filters.ciudad);
-      if (filters.desde) query = query.gte("fch_creacion", filters.desde);
-      if (filters.hasta) query = query.lte("fch_creacion", filters.hasta);
-
-      const { data: leads } = await query;
-
-      if (leads && leads.length > 0) {
-        const total = leads.length;
-        const conGestion = leads.filter((l) => l.result_prim_gestion && l.result_prim_gestion !== "").length;
-        const conNegocio = leads.filter((l) => l.result_negocio && l.result_negocio !== "").length;
-        const ventas = leads.filter((l) => l.es_venta).length;
-
-        setStats({
-          total, conGestion, conNegocio, ventas,
-          tasaGestion: total > 0 ? ((conGestion / total) * 100).toFixed(1) : "0",
-          tasaNegocio: total > 0 ? ((conNegocio / total) * 100).toFixed(1) : "0",
-          tasaConversion: total > 0 ? ((ventas / total) * 100).toFixed(1) : "0",
-          porCliente: countBy(leads, "cliente"),
-          porCampanaMkt: countBy(leads, "campana_mkt"),
-          porCiudad: countBy(leads, "ciudad"),
-          porResultNegocio: countBy(leads, "result_negocio"),
-          porResultPrimGestion: countBy(leads, "result_prim_gestion"),
-          filterOptions: {
-            clientes: unique(leads, "cliente"),
-            campanas: unique(leads, "campana_mkt"),
-            ciudades: unique(leads, "ciudad"),
-          },
-        });
-      } else {
-        setStats(null);
-      }
-
+    (async () => {
       const { data: logs } = await supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(5);
       setActivity(logs || []);
-      setLoading(false);
-    };
-    loadData();
+    })();
+  }, []);
+
+  const filteredLeads = useMemo(() => applyLeadsDashboardFilters(allLeads, filters), [allLeads, filters]);
+  const stats = useMemo(() => buildStats(filteredLeads), [filteredLeads]);
+
+  const setDimension = useCallback((col: keyof LeadRow, values: string[]) => {
+    setFilters((prev) => {
+      const dimensions = { ...prev.dimensions };
+      if (values.length === 0) delete dimensions[col];
+      else dimensions[col] = values;
+      return { ...prev, dimensions };
+    });
+  }, []);
+
+  const activeFilterCount = useMemo(() => {
+    let n = 0;
+    if (filters.desde || filters.hasta) n += 1;
+    if (filters.esVenta !== "all") n += 1;
+    for (const vals of Object.values(filters.dimensions)) {
+      if (vals?.length) n += 1;
+    }
+    return n;
   }, [filters]);
 
-  if (loading) {
+  const clearAllFilters = () => setFilters(defaultLeadsDashboardFilters());
+
+  if (loadError && initialLoadDone && allLeads.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-center">
+        <p className="text-sm text-destructive font-medium">No se pudieron cargar los datos del panel</p>
+        <p className="text-xs text-muted-foreground mt-1">{loadError}</p>
       </div>
     );
   }
 
-  const kpis = [
-    { label: "Total Leads", value: stats?.total?.toLocaleString() || "0", icon: Users, accent: "from-blue-500/20 to-blue-600/5", iconColor: "text-blue-500" },
-    { label: "Con Gestión", value: stats?.conGestion?.toLocaleString() || "0", icon: MessageSquare, accent: "from-emerald-500/20 to-emerald-600/5", iconColor: "text-emerald-500" },
-    { label: "Tasa Conversión", value: `${stats?.tasaConversion || 0}%`, icon: TrendingUp, accent: "from-violet-500/20 to-violet-600/5", iconColor: "text-violet-500" },
-    { label: "Tasa Negocio", value: `${stats?.tasaNegocio || 0}%`, icon: BarChart3, accent: "from-amber-500/20 to-amber-600/5", iconColor: "text-amber-500" },
-  ];
-
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-6 rounded-2xl border border-border bg-card/50 p-4 md:p-6 shadow-sm">
       <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-display font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Resumen ejecutivo de la operación</p>
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-50 to-violet-50 border border-teal-100 flex items-center justify-center shrink-0">
+            <LayoutDashboard className="h-5 w-5 text-teal-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-display font-bold tracking-tight text-foreground">Dashboard ejecutivo</h1>
+            <p className="text-muted-foreground text-sm mt-0.5 max-w-2xl">
+              {!initialLoadDone && loading ? (
+                <span className="text-muted-foreground/80">Preparando universo de trabajo…</span>
+              ) : (
+                <>
+                  Universo <strong className="text-foreground">{allLeads.length.toLocaleString("es")}</strong> leads
+                  (RLS).
+                </>
+              )}
+              {filteredLeads.length !== allLeads.length && (
+                <>
+                  {" "}
+                  Vista filtrada: <strong className="text-teal-700">{filteredLeads.length.toLocaleString("es")}</strong>.
+                </>
+              )}{" "}
+              BI interactivo: alterna tipos de gráfico, comparativas y dimensiones descubiertas automáticamente.
+            </p>
+          </div>
         </div>
-        <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="gap-2">
-          <Filter className="h-3.5 w-3.5" /> Filtros
-        </Button>
+        <div className="flex items-center gap-2">
+          {activeFilterCount > 0 && (
+            <Button variant="ghost" size="sm" className="text-xs gap-1 h-9" onClick={clearAllFilters}>
+              <X className="h-3.5 w-3.5" />
+              Quitar filtros ({activeFilterCount})
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="gap-2 h-9">
+            <Filter className="h-3.5 w-3.5" /> Filtros
+          </Button>
+        </div>
       </div>
 
-      {/* Filters bar */}
-      {showFilters && stats && (
-        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="flex flex-wrap gap-3 p-4 rounded-xl border border-border bg-card/50">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-            <Input type="date" value={filters.desde || ""} onChange={(e) => setFilters({ ...filters, desde: e.target.value || undefined })} className="h-9 w-[150px] text-xs" placeholder="Desde" />
-            <span className="text-xs text-muted-foreground">—</span>
-            <Input type="date" value={filters.hasta || ""} onChange={(e) => setFilters({ ...filters, hasta: e.target.value || undefined })} className="h-9 w-[150px] text-xs" placeholder="Hasta" />
+      {showFilters && (
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          className="space-y-4 p-4 rounded-2xl border border-border bg-muted/40 shadow-sm"
+        >
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <div className="space-y-0.5">
+                <Label className="text-[10px] text-muted-foreground">Fecha creación desde</Label>
+                <Input
+                  type="date"
+                  value={filters.desde || ""}
+                  onChange={(e) => setFilters({ ...filters, desde: e.target.value || undefined })}
+                  className="h-9 w-[150px] text-xs"
+                />
+              </div>
+              <div className="space-y-0.5">
+                <Label className="text-[10px] text-muted-foreground">hasta</Label>
+                <Input
+                  type="date"
+                  value={filters.hasta || ""}
+                  onChange={(e) => setFilters({ ...filters, hasta: e.target.value || undefined })}
+                  className="h-9 w-[150px] text-xs"
+                />
+              </div>
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px] text-muted-foreground">Es venta</Label>
+              <Select
+                value={filters.esVenta}
+                onValueChange={(v) => setFilters({ ...filters, esVenta: v as LeadsDashboardFilters["esVenta"] })}
+              >
+                <SelectTrigger className="w-[140px] h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="yes">Sí</SelectItem>
+                  <SelectItem value="no">No</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <Select value={filters.cliente || "all"} onValueChange={(v) => setFilters({ ...filters, cliente: v === "all" ? undefined : v })}>
-            <SelectTrigger className="w-[160px] h-9 text-xs"><SelectValue placeholder="Cliente" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los clientes</SelectItem>
-              {stats.filterOptions.clientes.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={filters.campana || "all"} onValueChange={(v) => setFilters({ ...filters, campana: v === "all" ? undefined : v })}>
-            <SelectTrigger className="w-[160px] h-9 text-xs"><SelectValue placeholder="Campaña" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas las campañas</SelectItem>
-              {stats.filterOptions.campanas.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={filters.ciudad || "all"} onValueChange={(v) => setFilters({ ...filters, ciudad: v === "all" ? undefined : v })}>
-            <SelectTrigger className="w-[140px] h-9 text-xs"><SelectValue placeholder="Ciudad" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas las ciudades</SelectItem>
-              {stats.filterOptions.ciudades.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          {(filters.cliente || filters.campana || filters.ciudad || filters.desde || filters.hasta) && (
-            <Button variant="ghost" size="sm" className="text-xs h-9" onClick={() => setFilters({})}>Limpiar</Button>
-          )}
+          <div>
+            <p className="text-[11px] font-medium text-muted-foreground mb-2">
+              Dimensiones (varios valores = OR dentro del campo; entre campos = AND)
+            </p>
+            <div className="flex flex-wrap gap-2 max-h-[280px] overflow-y-auto pr-1">
+              {LEADS_DASHBOARD_FILTER_COLUMNS.map(({ key, label }) => (
+                <DimensionMultiFilter
+                  key={String(key)}
+                  col={key}
+                  label={label}
+                  allLeads={allLeads}
+                  selected={filters.dimensions[key] ?? []}
+                  onChange={(next) => setDimension(key, next)}
+                />
+              ))}
+            </div>
+          </div>
         </motion.div>
       )}
 
-      {/* KPIs */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((kpi, i) => (
-          <motion.div
-            key={kpi.label}
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.08 }}
-            className={`relative overflow-hidden p-5 rounded-xl border border-border bg-card hover:shadow-lg transition-all group`}
-          >
-            <div className={`absolute inset-0 bg-gradient-to-br ${kpi.accent} opacity-60 group-hover:opacity-100 transition-opacity`} />
-            <div className="relative">
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-10 h-10 rounded-xl bg-background/80 backdrop-blur-sm flex items-center justify-center border border-border/50">
-                  <kpi.icon className={`h-5 w-5 ${kpi.iconColor}`} />
-                </div>
-                {stats && stats.total > 0 && (
-                  <div className="flex items-center gap-1 text-xs text-emerald-500 font-medium">
-                    <ArrowUpRight className="h-3 w-3" />
-                  </div>
-                )}
-              </div>
-              <p className="text-3xl font-display font-bold tracking-tight">{kpi.value}</p>
-              <p className="text-xs text-muted-foreground mt-1 font-medium">{kpi.label}</p>
-            </div>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Charts */}
-      {stats && stats.total > 0 && (
-        <>
-          <div className="grid md:grid-cols-2 gap-4">
-            <LeadsBarChart data={stats.porCampanaMkt} title="Leads por Campaña MKT" />
-            <LeadsPieChart data={stats.porCiudad} title="Distribución por Ciudad" />
-          </div>
-          <div className="grid md:grid-cols-2 gap-4">
-            <LeadsBarChart data={stats.porCliente} title="Leads por Cliente" />
-            <LeadsPieChart data={stats.porResultPrimGestion} title="Resultado Primera Gestión" />
-          </div>
-        </>
+      {stats && stats.total > 0 ? (
+        <ExecutiveDashboardBody
+          leads={filteredLeads}
+          onCrossFilter={(payload) => {
+            setFilters((prev) => ({
+              ...prev,
+              dimensions: { ...prev.dimensions, [payload.column]: [payload.token] },
+            }));
+          }}
+          onFilterByDate={(isoDay) => {
+            setFilters((prev) => ({ ...prev, desde: isoDay, hasta: isoDay }));
+          }}
+          onFilterByWeekRange={(desde, hasta) => {
+            setFilters((prev) => ({ ...prev, desde, hasta }));
+          }}
+        />
+      ) : (
+        <div className="rounded-2xl border border-border bg-muted/20 p-12 text-center">
+          <p className="text-muted-foreground text-sm">
+            {!initialLoadDone && loading
+              ? "Los gráficos aparecerán en cuanto terminemos de preparar el espacio de análisis."
+              : allLeads.length === 0
+                ? "No hay datos de leads disponibles aún"
+                : "Ningún lead cumple los filtros actuales"}
+          </p>
+        </div>
       )}
 
-      {!stats || stats.total === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-12 text-center">
-          <BarChart3 className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-40" />
-          <p className="text-muted-foreground text-sm">No hay datos de leads disponibles aún</p>
-        </div>
-      ) : null}
-
-      {/* Recent activity */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="p-5 border-b border-border">
-          <h2 className="font-display font-semibold">Actividad Reciente</h2>
+      <div className="rounded-2xl border border-border bg-card shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+        <div className="p-4 md:p-5 border-b border-border">
+          <h2 className="font-display font-semibold text-foreground">Actividad reciente</h2>
         </div>
         <div className="divide-y divide-border">
           {activity.length === 0 ? (
-            <div className="px-5 py-8 text-center text-sm text-muted-foreground">
-              No hay actividad reciente registrada
-            </div>
+            <div className="px-5 py-8 text-center text-sm text-muted-foreground">No hay actividad reciente registrada</div>
           ) : (
-            activity.map((item: any, i: number) => (
+            activity.map((item: { id: string; action: string; module?: string; created_at: string }, i) => (
               <motion.div
                 key={item.id}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 + i * 0.05 }}
+                transition={{ delay: 0.15 + i * 0.05 }}
                 className="px-5 py-3.5 flex items-center justify-between hover:bg-muted/50 transition-colors"
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{item.action}</p>
+                  <p className="text-sm font-medium truncate text-foreground">{item.action}</p>
                   <p className="text-xs text-muted-foreground truncate">{item.module || "Sistema"}</p>
                 </div>
-                <div className="text-right flex-shrink-0 ml-4">
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(item.created_at).toLocaleString("es")}
-                  </p>
+                <div className="text-right shrink-0 ml-4">
+                  <p className="text-xs text-muted-foreground">{new Date(item.created_at).toLocaleString("es")}</p>
                 </div>
               </motion.div>
             ))

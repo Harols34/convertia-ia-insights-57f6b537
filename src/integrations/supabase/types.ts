@@ -55,6 +55,88 @@ export type Database = {
           },
         ]
       }
+      analytics_board_widgets: {
+        Row: {
+          board_id: string
+          config: Json
+          created_at: string
+          id: string
+          layout: Json
+          sort_order: number
+          title: string | null
+          updated_at: string
+          widget_type: string
+        }
+        Insert: {
+          board_id: string
+          config?: Json
+          created_at?: string
+          id?: string
+          layout?: Json
+          sort_order?: number
+          title?: string | null
+          updated_at?: string
+          widget_type?: string
+        }
+        Update: {
+          board_id?: string
+          config?: Json
+          created_at?: string
+          id?: string
+          layout?: Json
+          sort_order?: number
+          title?: string | null
+          updated_at?: string
+          widget_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_board_widgets_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_user_boards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      analytics_user_boards: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+          tenant_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          tenant_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          tenant_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_user_boards_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bot_conversations: {
         Row: {
           bot_id: string
@@ -1000,6 +1082,22 @@ export type Database = {
           _tenant_id: string
         }
         Returns: Json
+      }
+      list_integration_table_columns: {
+        Args: { p_table_name: string }
+        Returns: {
+          column_name: string
+          data_type: string
+          udt_name: string
+        }[]
+      }
+      admin_list_raw_table_columns: {
+        Args: { p_table_name: string }
+        Returns: {
+          column_name: string
+          data_type: string
+          udt_name: string
+        }[]
       }
     }
     Enums: {
