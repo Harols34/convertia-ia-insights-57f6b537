@@ -7,9 +7,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ═════════════════════════════════════════════════════════════════════════════
-// TYPES
-// ═════════════════════════════════════════════════════════════════════════════
 interface Filters {
   agente?: string;
   campana_mkt?: string;
@@ -24,21 +21,23 @@ interface Filters {
   fecha_hasta?: string;
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// AVAILABLE TOOLS — las funciones que la IA puede llamar
-// ═════════════════════════════════════════════════════════════════════════════
+const FILTER_DESC = `Filtros WHERE como JSON. Campos: agente_negocio, agente_prim_gestion, agente_ultim_gestion, campana_mkt, campana_inconcert, tipo_llamada, ciudad, categoria_mkt, result_negocio, result_prim_gestion, result_ultim_gestion, prim_resultado_marcadora, bpo, cliente. Ejemplo: {"campana_mkt":"WOM_CL_ENTRANTES","tipo_llamada":"Entrante"}`;
+const DATE_DESC = `Campo fecha para rango: fch_creacion(default), fch_negocio, fch_prim_gestion, fch_ultim_gestion, fch_prim_resultado_marcadora`;
+const DIM_DESC = `Dimensiones: agente_negocio, agente_prim_gestion, agente_ultim_gestion, campana_mkt, campana_inconcert, tipo_llamada, ciudad, categoria_mkt, result_negocio, result_prim_gestion, result_ultim_gestion, prim_resultado_marcadora, bpo, hora, hora_negocio, fecha, fecha_negocio, dia_semana, tramo_horario`;
+
 const TOOLS = [
   {
     type: "function",
     function: {
       name: "get_kpis",
-      description:
-        "Obtener KPIs globales: total leads, ventas, conversión, tasa contacto, tiempos promedio. Usar siempre como primera consulta para dar contexto general.",
+      description: "KPIs globales: total leads, ventas, conversión, tiempos.",
       parameters: {
         type: "object",
         properties: {
-          fecha_desde: { type: "string", description: "Fecha inicio YYYY-MM-DD. Null para todo el rango." },
-          fecha_hasta: { type: "string", description: "Fecha fin YYYY-MM-DD. Null para todo el rango." },
+          fecha_desde: { type: "string", description: "YYYY-MM-DD" },
+          fecha_hasta: { type: "string", description: "YYYY-MM-DD" },
+          date_field: { type: "string", description: DATE_DESC },
+          filters: { type: "object", description: FILTER_DESC },
         },
       },
     },
@@ -47,15 +46,16 @@ const TOOLS = [
     type: "function",
     function: {
       name: "agg_1d",
-      description:
-        "Agregación por 1 dimensión: leads, ventas, conv% agrupados por la dimensión elegida. Dimensiones válidas: agente_negocio, campana_mkt, campana_inconcert, tipo_llamada, ciudad, categoria_mkt, result_negocio, result_prim_gestion, result_ultim_gestion, prim_resultado_marcadora, bpo, hora, hora_negocio, fecha, fecha_negocio, dia_semana, tramo_horario.",
+      description: `Agregación 1D: leads,ventas,conv% por dimensión. ${DIM_DESC}. Usa filters para filtrar, date_field para elegir fecha.`,
       parameters: {
         type: "object",
         properties: {
-          dimension: { type: "string", description: "Nombre de la dimensión." },
-          fecha_desde: { type: "string", description: "Filtro fecha inicio YYYY-MM-DD" },
-          fecha_hasta: { type: "string", description: "Filtro fecha fin YYYY-MM-DD" },
-          limit: { type: "integer", description: "Máximo de filas a retornar. Default 50." },
+          dimension: { type: "string", description: "Dimensión GROUP BY" },
+          fecha_desde: { type: "string" },
+          fecha_hasta: { type: "string" },
+          limit: { type: "integer", description: "Max filas, default 50" },
+          date_field: { type: "string", description: DATE_DESC },
+          filters: { type: "object", description: FILTER_DESC },
         },
         required: ["dimension"],
       },
@@ -65,16 +65,17 @@ const TOOLS = [
     type: "function",
     function: {
       name: "agg_2d",
-      description:
-        "Cruce de 2 dimensiones: leads, ventas, conv% por combinación de dim1 × dim2. Útil para comparar agentes por campaña, campañas por hora, etc.",
+      description: `Cruce 2D. ${DIM_DESC}`,
       parameters: {
         type: "object",
         properties: {
-          dim1: { type: "string", description: "Primera dimensión" },
-          dim2: { type: "string", description: "Segunda dimensión" },
+          dim1: { type: "string" },
+          dim2: { type: "string" },
           fecha_desde: { type: "string" },
           fecha_hasta: { type: "string" },
-          top_n: { type: "integer", description: "Top N por cada dimensión. Default 10." },
+          top_n: { type: "integer", description: "Default 10" },
+          date_field: { type: "string", description: DATE_DESC },
+          filters: { type: "object", description: FILTER_DESC },
         },
         required: ["dim1", "dim2"],
       },
@@ -84,14 +85,15 @@ const TOOLS = [
     type: "function",
     function: {
       name: "time_metrics",
-      description:
-        "Métricas de tiempo: respuesta (fch_prim_gestion - fch_creacion), ciclo (fch_negocio - fch_creacion). Puede agrupar por dimensión.",
+      description: "Métricas de tiempo: respuesta, ciclo, percentiles.",
       parameters: {
         type: "object",
         properties: {
-          group_by: { type: "string", description: "Dimensión para agrupar. Null para global." },
+          group_by: { type: "string", description: "Dimensión agrupar. Omitir=global" },
           fecha_desde: { type: "string" },
           fecha_hasta: { type: "string" },
+          date_field: { type: "string", description: DATE_DESC },
+          filters: { type: "object", description: FILTER_DESC },
         },
       },
     },
@@ -100,407 +102,407 @@ const TOOLS = [
     type: "function",
     function: {
       name: "funnel",
-      description: "Funnel de conversión: total → con gestión → con negocio → ventas, con tasas.",
+      description: "Funnel: total→gestión→negocio→ventas.",
       parameters: {
         type: "object",
         properties: {
           fecha_desde: { type: "string" },
           fecha_hasta: { type: "string" },
+          date_field: { type: "string", description: DATE_DESC },
+          filters: { type: "object", description: FILTER_DESC },
         },
       },
     },
   },
 ];
 
-// ═════════════════════════════════════════════════════════════════════════════
-// TOOL EXECUTION — ejecuta las funciones RPC en Supabase
-// ═════════════════════════════════════════════════════════════════════════════
-async function executeTool(
-  adminClient: any,
-  tenantId: string,
-  toolName: string,
-  args: any,
-  activeFilters: Filters,
-): Promise<string> {
-  // Merge active filters con args de la tool
-  const fDesde = args.fecha_desde || activeFilters.fecha_desde || null;
-  const fHasta = args.fecha_hasta || activeFilters.fecha_hasta || null;
+// ═══════════════════════════════════════════════════════════════════════════
+// TOOL EXECUTION — null explícito para Supabase, resultados verificados
+// ═══════════════════════════════════════════════════════════════════════════
+function buildFilters(args: any, af: Filters): object | null {
+  const m: Record<string, string> = {};
+  if (af.campana_mkt) m.campana_mkt = af.campana_mkt;
+  if (af.agente) m.agente_negocio = af.agente;
+  if (af.tipo_llamada) m.tipo_llamada = af.tipo_llamada;
+  if (af.ciudad) m.ciudad = af.ciudad;
+  if (af.categoria_mkt) m.categoria_mkt = af.categoria_mkt;
+  if (af.campana_inconcert) m.campana_inconcert = af.campana_inconcert;
+  if (af.bpo) m.bpo = af.bpo;
+  if (af.result_negocio) m.result_negocio = af.result_negocio;
+  if (args.filters && typeof args.filters === "object") {
+    for (const [k, v] of Object.entries(args.filters)) {
+      if (v) m[k] = String(v);
+    }
+  }
+  return Object.keys(m).length > 0 ? m : null; // null, NO undefined
+}
+
+async function executeTool(admin: any, tid: string, name: string, args: any, af: Filters): Promise<string> {
+  // SIEMPRE pasar null explícito para params opcionales (Supabase PostgREST)
+  const fd = args.fecha_desde || af.fecha_desde || null;
+  const fh = args.fecha_hasta || af.fecha_hasta || null;
+  const df = args.date_field || null; // null → SQL usa DEFAULT 'fch_creacion'
+  const fi = buildFilters(args, af);
 
   try {
-    let result: any;
+    let data: any, error: any;
 
-    switch (toolName) {
-      case "get_kpis": {
-        const { data, error } = await adminClient.rpc("get_leads_kpis", {
-          _tenant_id: tenantId,
-          _fecha_desde: fDesde,
-          _fecha_hasta: fHasta,
-        });
-        if (error) throw error;
-        result = data;
+    switch (name) {
+      case "get_kpis":
+        ({ data, error } = await admin.rpc("get_leads_kpis", {
+          _tenant_id: tid,
+          _fecha_desde: fd,
+          _fecha_hasta: fh,
+          _date_field: df,
+          _filters: fi,
+        }));
         break;
-      }
-
-      case "agg_1d": {
-        const { data, error } = await adminClient.rpc("leads_agg_1d", {
-          _tenant_id: tenantId,
+      case "agg_1d":
+        ({ data, error } = await admin.rpc("leads_agg_1d", {
+          _tenant_id: tid,
           _dimension: args.dimension,
-          _fecha_desde: fDesde,
-          _fecha_hasta: fHasta,
+          _fecha_desde: fd,
+          _fecha_hasta: fh,
           _limit: args.limit || 50,
-        });
-        if (error) throw error;
-        result = data;
+          _date_field: df,
+          _filters: fi,
+        }));
         break;
-      }
-
-      case "agg_2d": {
-        const { data, error } = await adminClient.rpc("leads_agg_2d", {
-          _tenant_id: tenantId,
+      case "agg_2d":
+        ({ data, error } = await admin.rpc("leads_agg_2d", {
+          _tenant_id: tid,
           _dim1: args.dim1,
           _dim2: args.dim2,
-          _fecha_desde: fDesde,
-          _fecha_hasta: fHasta,
+          _fecha_desde: fd,
+          _fecha_hasta: fh,
           _top_n: args.top_n || 10,
-        });
-        if (error) throw error;
-        result = data;
+          _date_field: df,
+          _filters: fi,
+        }));
         break;
-      }
-
-      case "time_metrics": {
-        const { data, error } = await adminClient.rpc("leads_time_metrics", {
-          _tenant_id: tenantId,
+      case "time_metrics":
+        ({ data, error } = await admin.rpc("leads_time_metrics", {
+          _tenant_id: tid,
           _group_by: args.group_by || null,
-          _fecha_desde: fDesde,
-          _fecha_hasta: fHasta,
-        });
-        if (error) throw error;
-        result = data;
+          _fecha_desde: fd,
+          _fecha_hasta: fh,
+          _date_field: df,
+          _filters: fi,
+        }));
         break;
-      }
-
-      case "funnel": {
-        const { data, error } = await adminClient.rpc("leads_funnel", {
-          _tenant_id: tenantId,
-          _fecha_desde: fDesde,
-          _fecha_hasta: fHasta,
-        });
-        if (error) throw error;
-        result = data;
+      case "funnel":
+        ({ data, error } = await admin.rpc("leads_funnel", {
+          _tenant_id: tid,
+          _fecha_desde: fd,
+          _fecha_hasta: fh,
+          _date_field: df,
+          _filters: fi,
+        }));
         break;
-      }
-
       default:
-        return JSON.stringify({ error: `Tool desconocida: ${toolName}` });
+        return `ERROR: herramienta "${name}" no existe`;
     }
 
-    return JSON.stringify(result, null, 0);
+    if (error) {
+      console.error(`RPC ${name} ERROR:`, JSON.stringify(error));
+      return `ERROR_BD: ${name} falló: ${error.message || error.code || JSON.stringify(error)}. NO inventes datos, reporta este error.`;
+    }
+
+    if (data === null || data === undefined || (Array.isArray(data) && data.length === 0)) {
+      console.log(`RPC ${name}: sin resultados`);
+      return `RESULTADO_BD: ${name} retornó 0 filas. No hay datos para estos filtros. NO inventes datos.`;
+    }
+
+    // Envolver resultado con metadata de verificación
+    const json = JSON.stringify(data, null, 0);
+    const rowCount = Array.isArray(data) ? data.length : 1;
+    const totalLeads = Array.isArray(data)
+      ? data.reduce((s: number, r: any) => s + (r.leads || 0), 0)
+      : data.total_leads || data.total || data.n || 0;
+
+    console.log(`RPC ${name}: ${rowCount} filas, ${totalLeads} leads total, ${json.length}c`);
+
+    return `RESULTADO_BD_REAL(${name}, filas=${rowCount}, total_leads=${totalLeads}):\n${json}\nFIN_RESULTADO. Usa EXACTAMENTE estos números.`;
   } catch (e) {
-    console.error(`Tool ${toolName} error:`, e);
-    return JSON.stringify({ error: `Error ejecutando ${toolName}: ${(e as Error).message}` });
+    console.error(`CRASH ${name}:`, e);
+    return `ERROR_SISTEMA: ${name} crasheó: ${(e as Error).message}. NO inventes datos.`;
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// SYSTEM PROMPTS — ahora LIGEROS, sin datos
-// ═════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// SYSTEM PROMPTS — anti-hallucination reforzado
+// ═══════════════════════════════════════════════════════════════════════════
+const ANTI_HALLUCINATION = `
+REGLA ABSOLUTA: Cada número que uses DEBE venir de RESULTADO_BD_REAL. Si un RESULTADO dice "filas=N, total_leads=M", entonces la suma de leads en tu respuesta DEBE ser M.
+- Si la herramienta retorna ERROR_BD o 0 filas → responde "No hay datos para estos filtros" — NUNCA inventes.
+- Si ves leads=350, ventas=62 en el resultado → tu tabla/gráfico DEBE mostrar exactamente 350 y 62, NO 150 o 120.
+- VERIFICACIÓN: suma mentalmente los leads de tu tabla. Si no coincide con total_leads del RESULTADO, estás inventando. CORRIGE.`;
 
-function buildAnalyticsSystem(dimensions: any, kpis: any, filters: Filters): string {
-  return `Eres un asistente analítico BI senior de Converti-IA Analytics.
+function buildAnalyticsSys(dims: any, kpis: any, af: Filters): string {
+  return `Eres asistente BI de Converti-IA Analytics.
 
-DATOS DISPONIBLES: tabla "leads" con las siguientes dimensiones y valores:
-${JSON.stringify(dimensions, null, 0)}
+DIMENSIONES: ${JSON.stringify(dims, null, 0)}
+KPIs: ${JSON.stringify(kpis, null, 0)}
+FILTROS FRONTEND: ${JSON.stringify(af)}
 
-KPIs ACTUALES (todo el rango de datos):
-${JSON.stringify(kpis, null, 0)}
+DATOS:
+- fch_creacion=llegada lead | fch_prim_gestion=1er contacto(agente_prim_gestion) | fch_ultim_gestion=última gestión(agente_ultim_gestion) | fch_negocio=cierre(agente_negocio) | fch_prim_resultado_marcadora=marcadora
+- es_venta=booleano | prim_resultado_marcadora=CONNECTED/FINISHED/etc
 
-FILTROS ACTIVOS: ${JSON.stringify(filters)}
+HERRAMIENTAS: todas aceptan "filters"(JSON multi-filtro) y "date_field"(qué fecha usar).
 
-MODELO DE DATOS:
-- fch_creacion = cuándo llegó el lead (BASE temporal)
-- fch_prim_gestion = primer contacto del agente
-- fch_ultim_gestion = última gestión
-- fch_negocio = cierre/resultado final
-- es_venta = booleano de si se cerró venta
-- Tiempo respuesta = fch_prim_gestion - fch_creacion
-- Tiempo ciclo = fch_negocio - fch_creacion
+EJEMPLOS:
+- "leads diarios agente X" → agg_1d(dimension="fecha", filters={"agente_negocio":"X"})
+- "resultados agente prim gestion Y" → agg_1d(dimension="result_prim_gestion", filters={"agente_prim_gestion":"Y"})
+- "form del 24 feb" → agg_1d(dimension="fecha", fecha_desde="2026-02-24", fecha_hasta="2026-02-24", filters={"tipo_llamada":"form"})
+- "ventas por campaña tipo Entrante" → agg_1d(dimension="campana_mkt", filters={"tipo_llamada":"Entrante"})
+${ANTI_HALLUCINATION}
 
-HERRAMIENTAS DISPONIBLES:
-Tienes acceso a funciones que consultan la BD directamente. USA SIEMPRE las herramientas para obtener datos — NUNCA inventes números.
-
-REGLAS:
-1. SIEMPRE usa las herramientas para cada dato que necesites. No asumas valores.
-2. Para "¿cuántos leads hoy?" → llama agg_1d(dimension="fecha") y busca la fecha.
-3. Para comparar agentes → llama agg_1d(dimension="agente_negocio").
-4. Para cruces → llama agg_2d con las 2 dimensiones.
-5. Para tiempos → llama time_metrics.
-6. Para funnel → llama funnel.
-7. Puedes llamar VARIAS herramientas en paralelo si necesitas múltiples datos.
-8. Responde en español con markdown. Tablas para datos tabulares.
-9. Si el usuario pide un dato que no cubre ninguna herramienta, indícalo.`;
+FORMATO: español, markdown. Tablas con headers:
+| Col | Leads | Ventas | Conv% |
+|-----|-------|--------|-------|`;
 }
 
-function buildDashSystem(dimensions: any, kpis: any, filters: Filters): string {
-  return `Eres el motor de inteligencia de DashDinamics.
-  
-DATOS DISPONIBLES (dimensiones y valores):
-${JSON.stringify(dimensions, null, 0)}
+function buildDashSys(dims: any, kpis: any, af: Filters): string {
+  return `Motor de DashDinamics.
 
-KPIs ACTUALES:
-${JSON.stringify(kpis, null, 0)}
+DIMENSIONES: ${JSON.stringify(dims, null, 0)}
+KPIs: ${JSON.stringify(kpis, null, 0)}
+FILTROS: ${JSON.stringify(af)}
 
-FILTROS ACTIVOS: ${JSON.stringify(filters)}
+HERRAMIENTAS: aceptan "filters" y "date_field". LLAMA PRIMERO, luego JSON.
+${ANTI_HALLUCINATION}
 
-HERRAMIENTAS: Tienes funciones para consultar la BD. SIEMPRE usa las herramientas para obtener datos reales.
+ECHARTS: tooltip:{"trigger":"axis","axisPointer":{"type":"cross"}} | legend:{"data":[...],"bottom":0} | Colores: Leads="#3498db" Ventas="#2ecc71" Efectividad="#e74c3c"
 
-REGLAS CRÍTICAS:
-1. SIEMPRE llama las herramientas necesarias ANTES de generar el JSON de respuesta.
-2. Usa los datos reales retornados por las herramientas, NUNCA inventes.
-3. Para gráficos temporales (hora, fecha, día), llama agg_1d con la dimensión correspondiente.
-4. Para comparativos, llama agg_1d o agg_2d según corresponda.
-5. Puedes llamar múltiples herramientas en paralelo.
-
-DESPUÉS de obtener los datos, responde con un ÚNICO objeto JSON válido.
-
-REGLAS ECHARTS — TOOLTIP:
-- SIEMPRE: "tooltip": { "trigger": "axis", "axisPointer": { "type": "cross" } }
-- SIEMPRE: "legend": { "data": [...nombres de series...], "bottom": 0 }
-- Eje dual: yAxis[0]=Cantidad, yAxis[1]=Efectividad(%)
-- Serie efectividad: yAxisIndex:1, type:"line", smooth:true
-
-MODOS: dashboard | chart_picker | clarification | recommendation | filter_result
-
-ESTRUCTURA JSON FINAL (después de tener datos de herramientas):
-
-dashboard / filter_result:
-{
-  "response_mode": "dashboard" | "filter_result",
-  "assistant_message": "...",
-  "decision_goal": "...",
-  "applied_filters": {},
-  "filter_options": {},
-  "dashboard": {
-    "title":"...","subtitle":"...","time_range":"...",
-    "kpis":[{"label":"...","value":"...","change":"...","trend":"up|down|neutral","icon":"..."}],
-    "charts":[{
-      "id":"...","title":"...","type":"...",
-      "config":{...ECharts config con datos REALES de las herramientas...}
-    }],
-    "insights":[{"type":"success|warning|info|alert","title":"...","description":"..."}],
-    "recommended_next_steps":["..."],
-    "tables":[{"title":"...","headers":["..."],"rows":[["..."]]}]
-  }
+RESPONDE SOLO JSON:
+dashboard: {"response_mode":"dashboard","assistant_message":"...","decision_goal":"...","dashboard":{"title":"...","subtitle":"...","time_range":"...","kpis":[{"label":"...","value":"...","trend":"up|down|neutral","icon":"TrendingUp|Users|Target"}],"charts":[{"id":"...","title":"...","type":"...","config":{...ECharts con datos REALES...}}],"insights":[{"type":"info","title":"...","description":"..."}],"tables":[{"title":"...","headers":[...],"rows":[[...]]}]}}
+chart_picker: {"response_mode":"chart_picker","assistant_message":"...","chart_options":[{"id":"...","name":"...","description":"..."}]}
+clarification: {"response_mode":"clarification","assistant_message":"...","clarifying_questions":[{"id":"q1","question":"...","options":["..."]}]}`;
 }
 
-chart_picker:
-{"response_mode":"chart_picker","assistant_message":"...","chart_options":[{"id":"...","name":"...","description":"...","best_for":"..."}],"instruction_for_user":"..."}
-
-clarification:
-{"response_mode":"clarification","assistant_message":"...","clarifying_questions":[{"id":"q1","question":"...","type":"single_select","options":["..."]}]}
-
-recommendation:
-{"response_mode":"recommendation","assistant_message":"...","recommendations":[{"id":"r1","title":"...","description":"...","action_label":"Generar este dashboard"}]}
-
-ROUTING:
-- Sin tipo gráfico → chart_picker
-- Con tipo gráfico → dashboard (DESPUÉS de llamar herramientas)
-- Falta info → clarification
-- Muy amplio → recommendation`;
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// TOOL CALL LOOP — ejecuta iterativamente las tool calls de OpenAI
-// ═════════════════════════════════════════════════════════════════════════════
-async function runWithTools(
-  apiKey: string,
-  systemPrompt: string,
-  messages: any[],
-  adminClient: any,
-  tenantId: string,
-  activeFilters: Filters,
-  mode: string,
-  maxIterations = 5,
-): Promise<any> {
-  const allMessages = [{ role: "system", content: systemPrompt }, ...messages];
-
-  for (let i = 0; i < maxIterations; i++) {
-    const requestBody: any = {
-      model: "gpt-4o-mini",
-      messages: allMessages,
-      tools: TOOLS,
-      tool_choice: i === 0 ? "auto" : "auto", // Let model decide
-      temperature: 0.15,
-      max_tokens: mode === "dashdinamics" ? 4096 : 2048,
-    };
-
-    if (mode === "dashdinamics" && i > 0) {
-      // En las iteraciones finales de dashdinamics, forzar JSON
-      // Solo cuando ya no necesite más tools
-    }
-
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!r.ok) {
-      const status = r.status;
-      const body = await r.text();
-      console.error(`OpenAI error ${status}:`, body);
-      throw new Error(`OpenAI error ${status}`);
-    }
-
-    const aiData = await r.json();
-    const choice = aiData.choices?.[0];
-
-    if (!choice) throw new Error("No choice in response");
-
-    const assistantMsg = choice.message;
-    allMessages.push(assistantMsg);
-
-    // Si no hay tool calls, terminamos
-    if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
-      return assistantMsg;
-    }
-
-    // Ejecutar todas las tool calls en paralelo
-    const toolResults = await Promise.all(
-      assistantMsg.tool_calls.map(async (tc: any) => {
-        const args = JSON.parse(tc.function.arguments || "{}");
-        console.log(`Executing tool: ${tc.function.name}`, args);
-        const result = await executeTool(adminClient, tenantId, tc.function.name, args, activeFilters);
-        console.log(`Tool ${tc.function.name} result length: ${result.length} chars`);
-        return {
-          role: "tool",
-          tool_call_id: tc.id,
-          content: result,
-        };
-      }),
-    );
-
-    // Agregar resultados al historial
-    allMessages.push(...toolResults);
-  }
-
-  // Si llegamos aquí, excedimos iteraciones — pedir respuesta final sin tools
-  const finalReq: any = {
-    model: "gpt-4o-mini",
-    messages: allMessages,
-    temperature: 0.15,
-    max_tokens: mode === "dashdinamics" ? 4096 : 2048,
-  };
-  if (mode === "dashdinamics") {
-    finalReq.response_format = { type: "json_object" };
-  }
-
-  const r = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(finalReq),
-  });
-
-  if (!r.ok) throw new Error(`OpenAI final error ${r.status}`);
-  const data = await r.json();
-  return data.choices?.[0]?.message;
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// STREAMING VERSION — para modo analytics
-// ═════════════════════════════════════════════════════════════════════════════
-async function runWithToolsStreaming(
-  apiKey: string,
-  systemPrompt: string,
-  messages: any[],
-  adminClient: any,
-  tenantId: string,
-  activeFilters: Filters,
-): Promise<ReadableStream | string> {
-  const allMessages = [{ role: "system", content: systemPrompt }, ...messages];
-
-  // Fase 1: Tool calls (no streaming)
+// ═══════════════════════════════════════════════════════════════════════════
+// DASH: tools → JSON forzado
+// ═══════════════════════════════════════════════════════════════════════════
+async function runDash(key: string, sys: string, msgs: any[], admin: any, tid: string, af: Filters) {
+  const all = [{ role: "system", content: sys }, ...msgs];
   for (let i = 0; i < 5; i++) {
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: allMessages,
+        messages: all,
         tools: TOOLS,
         tool_choice: "auto",
-        temperature: 0.15,
+        temperature: 0.1,
+        max_tokens: 4096,
+      }),
+    });
+    if (!r.ok) throw new Error(`OpenAI ${r.status}: ${await r.text()}`);
+    const msg = (await r.json()).choices?.[0]?.message;
+    if (!msg) throw new Error("No message");
+    all.push(msg);
+    if (!msg.tool_calls?.length) break;
+    const res = await Promise.all(
+      msg.tool_calls.map(async (tc: any) => {
+        const a = JSON.parse(tc.function.arguments || "{}");
+        console.log(`[D] ${tc.function.name}(${JSON.stringify(a)})`);
+        const r = await executeTool(admin, tid, tc.function.name, a, af);
+        console.log(`[D] → ${r.substring(0, 150)}`);
+        return { role: "tool", tool_call_id: tc.id, content: r };
+      }),
+    );
+    all.push(...res);
+  }
+  const fr = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [
+        ...all,
+        {
+          role: "user",
+          content:
+            'Genera JSON final. ESTRUCTURA OBLIGATORIA: {"response_mode":"dashboard","assistant_message":"...","dashboard":{"title":"...","charts":[...],"tables":[...],"kpis":[...],"insights":[...]}}. response_mode DEBE estar en la RAÍZ del JSON, NO dentro de dashboard. Usa EXACTAMENTE los números de RESULTADO_BD_REAL.',
+        },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.1,
+      max_tokens: 4096,
+    }),
+  });
+  if (!fr.ok) throw new Error(`OpenAI final ${fr.status}`);
+  return (await fr.json()).choices?.[0]?.message;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ANALYTICS: tools → stream
+// ═══════════════════════════════════════════════════════════════════════════
+async function runAnalytics(
+  key: string,
+  sys: string,
+  msgs: any[],
+  admin: any,
+  tid: string,
+  af: Filters,
+): Promise<ReadableStream | string> {
+  const all = [{ role: "system", content: sys }, ...msgs];
+  for (let i = 0; i < 5; i++) {
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: all,
+        tools: TOOLS,
+        tool_choice: "auto",
+        temperature: 0.1,
         max_tokens: 2048,
       }),
     });
-
-    if (!r.ok) throw new Error(`OpenAI error ${r.status}`);
-    const data = await r.json();
-    const msg = data.choices?.[0]?.message;
-    if (!msg) throw new Error("No message");
-
-    allMessages.push(msg);
-
+    if (!r.ok) throw new Error(`OpenAI ${r.status}`);
+    const msg = (await r.json()).choices?.[0]?.message;
+    if (!msg) throw new Error("No msg");
+    all.push(msg);
     if (!msg.tool_calls?.length) {
-      // No más tool calls — retornar contenido directamente
-      return msg.content || "";
+      if (msg.content) return msg.content;
+      break;
     }
-
-    // Ejecutar tools
-    const results = await Promise.all(
+    const res = await Promise.all(
       msg.tool_calls.map(async (tc: any) => {
-        const args = JSON.parse(tc.function.arguments || "{}");
-        console.log(`[stream] Executing: ${tc.function.name}`, args);
-        const result = await executeTool(adminClient, tenantId, tc.function.name, args, activeFilters);
-        return { role: "tool", tool_call_id: tc.id, content: result };
+        const a = JSON.parse(tc.function.arguments || "{}");
+        console.log(`[A] ${tc.function.name}(${JSON.stringify(a)})`);
+        const r = await executeTool(admin, tid, tc.function.name, a, af);
+        console.log(`[A] → ${r.substring(0, 150)}`);
+        return { role: "tool", tool_call_id: tc.id, content: r };
       }),
     );
-    allMessages.push(...results);
+    all.push(...res);
   }
-
-  // Fase 2: Respuesta final con streaming
-  const finalR = await fetch("https://api.openai.com/v1/chat/completions", {
+  const fr = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: allMessages,
-      stream: true,
-      temperature: 0.15,
-      max_tokens: 2048,
-    }),
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "gpt-4o-mini", messages: all, stream: true, temperature: 0.1, max_tokens: 2048 }),
   });
-
-  if (!finalR.ok) throw new Error(`OpenAI stream error ${finalR.status}`);
-  return finalR.body!;
+  if (!fr.ok) throw new Error(`Stream ${fr.status}`);
+  return fr.body!;
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// MAIN HANDLER
-// ═════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// JSON NORMALIZER — asegura que la estructura sea la que espera el frontend
+// ═══════════════════════════════════════════════════════════════════════════
+function normalizeDashResponse(raw: any): any {
+  // Caso 1: Ya tiene response_mode en raíz → estructura correcta
+  if (raw.response_mode) {
+    return raw;
+  }
+
+  // Caso 2: response_mode está dentro de dashboard → extraer
+  if (raw.dashboard?.response_mode) {
+    const inner = raw.dashboard;
+    const mode = inner.response_mode;
+    delete inner.response_mode;
+    return {
+      response_mode: mode,
+      assistant_message: inner.assistant_message || inner.message || "",
+      decision_goal: inner.decision_goal || null,
+      dashboard: inner,
+    };
+  }
+
+  // Caso 3: El JSON tiene una key raíz arbitraria con el dashboard dentro
+  // ej: {"comparativa_leads": {"title": "...", "charts": [...]}}
+  const keys = Object.keys(raw);
+  if (keys.length === 1 && typeof raw[keys[0]] === "object") {
+    const inner = raw[keys[0]];
+    // Si tiene charts o tables o kpis, es un dashboard
+    if (inner.charts || inner.tables || inner.kpis || inner.data) {
+      return {
+        response_mode: "dashboard",
+        assistant_message: inner.assistant_message || inner.description || inner.message || "",
+        decision_goal: inner.decision_goal || null,
+        dashboard: {
+          title: inner.title || keys[0],
+          subtitle: inner.subtitle || "",
+          time_range: inner.time_range || "",
+          kpis: inner.kpis || [],
+          charts: inner.charts || [],
+          insights: inner.insights || [],
+          tables: inner.tables || [],
+          recommended_next_steps: inner.recommended_next_steps || [],
+        },
+      };
+    }
+  }
+
+  // Caso 4: El JSON tiene charts/tables/kpis en raíz directamente
+  if (raw.charts || raw.tables || raw.kpis) {
+    return {
+      response_mode: "dashboard",
+      assistant_message: raw.assistant_message || raw.message || "",
+      decision_goal: raw.decision_goal || null,
+      dashboard: {
+        title: raw.title || "Dashboard",
+        subtitle: raw.subtitle || "",
+        time_range: raw.time_range || "",
+        kpis: raw.kpis || [],
+        charts: raw.charts || [],
+        insights: raw.insights || [],
+        tables: raw.tables || [],
+        recommended_next_steps: raw.recommended_next_steps || [],
+      },
+    };
+  }
+
+  // Caso 5: chart_options → chart_picker
+  if (raw.chart_options) {
+    return {
+      response_mode: "chart_picker",
+      assistant_message: raw.assistant_message || "",
+      chart_options: raw.chart_options,
+    };
+  }
+
+  // Caso 6: clarifying_questions → clarification
+  if (raw.clarifying_questions) {
+    return {
+      response_mode: "clarification",
+      assistant_message: raw.assistant_message || "",
+      clarifying_questions: raw.clarifying_questions,
+    };
+  }
+
+  // Fallback: envolver como mensaje
+  return {
+    response_mode: "dashboard",
+    assistant_message: raw.assistant_message || raw.message || JSON.stringify(raw).substring(0, 500),
+    dashboard: null,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MAIN
+// ═══════════════════════════════════════════════════════════════════════════
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer "))
+    const auth = req.headers.get("Authorization");
+    if (!auth?.startsWith("Bearer "))
       return new Response(JSON.stringify({ error: "No autorizado" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
 
-    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
+    const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: auth } },
     });
-
     const {
       data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-    if (userError || !user)
+      error: ue,
+    } = await sb.auth.getUser();
+    if (ue || !user)
       return new Response(JSON.stringify({ error: "Token inválido" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -508,188 +510,113 @@ serve(async (req) => {
 
     const body = await req.json();
     const { messages, mode, botId, webhookUrl } = body;
-    const activeFilters: Filters = body.filters ?? {};
+    const af: Filters = body.filters ?? {};
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data: tid } = await admin.rpc("get_user_tenant", { _user_id: user.id });
 
-    const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-
-    const { data: tenantId } = await adminClient.rpc("get_user_tenant", { _user_id: user.id });
-
-    // ── n8n webhook (sin cambios) ────────────────────────────────────────
     if (webhookUrl) {
       try {
-        const lastMsg = messages[messages.length - 1]?.content || "";
-        const resp = await fetch(webhookUrl, {
+        const last = messages[messages.length - 1]?.content || "";
+        const wr = await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: lastMsg, chatInput: lastMsg, sessionId: botId || "default", tenantId }),
+          body: JSON.stringify({ message: last, chatInput: last, sessionId: botId || "default", tenantId: tid }),
         });
-        if (!resp.ok) throw new Error(`Webhook ${resp.status}`);
-        const data = await resp.json();
+        if (!wr.ok) throw new Error(`Webhook ${wr.status}`);
+        const wd = await wr.json();
         const reply =
-          typeof data === "string"
-            ? data
-            : Array.isArray(data)
-              ? data[0]?.output || data[0]?.response || JSON.stringify(data[0])
-              : data.output || data.response || data.message || data.text || JSON.stringify(data);
+          typeof wd === "string"
+            ? wd
+            : Array.isArray(wd)
+              ? wd[0]?.output || wd[0]?.response || JSON.stringify(wd[0])
+              : wd.output || wd.response || wd.message || wd.text || JSON.stringify(wd);
         return new Response(JSON.stringify({ reply }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } catch (e) {
-        console.error("webhook fallback:", e);
+        console.error("webhook:", e);
       }
     }
 
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY)
+    const key = Deno.env.get("OPENAI_API_KEY");
+    if (!key)
       return new Response(JSON.stringify({ error: "OPENAI_API_KEY no configurada" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
 
-    // ── Obtener metadata ligera (NO toda la data) ────────────────────────
-    let systemPrompt: string;
-
-    if (tenantId) {
-      // Ejecutar en paralelo: dimensiones + KPIs (~2 queries ligeras)
-      const [dimResult, kpiResult] = await Promise.all([
-        adminClient.rpc("get_leads_dimensions", { _tenant_id: tenantId }),
-        adminClient.rpc("get_leads_kpis", {
-          _tenant_id: tenantId,
-          _fecha_desde: activeFilters.fecha_desde || null,
-          _fecha_hasta: activeFilters.fecha_hasta || null,
+    let sys: string;
+    if (tid) {
+      const [dr, kr] = await Promise.all([
+        admin.rpc("get_leads_dimensions", { _tenant_id: tid }),
+        admin.rpc("get_leads_kpis", {
+          _tenant_id: tid,
+          _fecha_desde: null,
+          _fecha_hasta: null,
+          _date_field: null,
+          _filters: null,
         }),
       ]);
-
-      const dimensions = dimResult.data || {};
-      const kpis = kpiResult.data || {};
-
-      console.log(
-        `Metadata loaded: dimensions=${JSON.stringify(dimensions).length} chars, kpis=${JSON.stringify(kpis).length} chars`,
-      );
-
-      if (mode === "dashdinamics") {
-        systemPrompt = buildDashSystem(dimensions, kpis, activeFilters);
-      } else {
-        systemPrompt = buildAnalyticsSystem(dimensions, kpis, activeFilters);
-      }
-
-      // Si hay un system prompt custom del bot, prepend
+      if (dr.error) console.error("dims err:", JSON.stringify(dr.error));
+      if (kr.error) console.error("kpis err:", JSON.stringify(kr.error));
+      const dims = dr.data || {};
+      const kpis = kr.data || {};
+      console.log(`Meta OK: dims=${JSON.stringify(dims).length}c kpis=${JSON.stringify(kpis).length}c`);
+      sys = mode === "dashdinamics" ? buildDashSys(dims, kpis, af) : buildAnalyticsSys(dims, kpis, af);
       if (botId) {
-        const { data: bot } = await adminClient.from("bots").select("system_prompt").eq("id", botId).single();
-        if (bot?.system_prompt) {
-          systemPrompt = bot.system_prompt + "\n\n" + systemPrompt;
-        }
+        const { data: bot } = await admin.from("bots").select("system_prompt").eq("id", botId).single();
+        if (bot?.system_prompt) sys = bot.system_prompt + "\n\n" + sys;
       }
     } else {
-      systemPrompt =
-        mode === "dashdinamics"
-          ? "No hay tenant_id. No se pueden consultar datos."
-          : "No hay tenant_id. No se pueden consultar datos.";
+      sys = "No hay tenant_id.";
     }
 
-    console.log(`System prompt: ${systemPrompt.length} chars (mode=${mode})`);
+    console.log(`Prompt: ${sys.length}c mode=${mode}`);
 
-    // ── DashDinamics: JSON con tools ─────────────────────────────────────
     if (mode === "dashdinamics") {
       try {
-        const result = await runWithTools(
-          OPENAI_API_KEY,
-          systemPrompt,
-          messages,
-          adminClient,
-          tenantId,
-          activeFilters,
-          "dashdinamics",
-        );
-
-        const content = result?.content || "{}";
-
+        const msg = await runDash(key, sys, messages, admin, tid, af);
+        const c = msg?.content || "{}";
+        console.log(`[D] Raw JSON: ${c.substring(0, 300)}`);
         try {
-          // Intentar parsear como JSON
-          const parsed = JSON.parse(content);
-          return new Response(JSON.stringify({ reply: parsed }), {
+          const parsed = JSON.parse(c);
+          const normalized = normalizeDashResponse(parsed);
+          console.log(`[D] Normalized mode: ${normalized.response_mode}, has dashboard: ${!!normalized.dashboard}`);
+          return new Response(JSON.stringify({ reply: normalized }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         } catch {
-          // Si no es JSON válido, envolver en estructura
           return new Response(
-            JSON.stringify({
-              reply: {
-                response_mode: "dashboard",
-                assistant_message: content,
-                dashboard: null,
-              },
-            }),
-            {
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            },
+            JSON.stringify({ reply: { response_mode: "dashboard", assistant_message: c, dashboard: null } }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
         }
       } catch (e) {
-        const errMsg = (e as Error).message;
-        console.error("DashDinamics error:", errMsg);
-        if (errMsg.includes("429"))
-          return new Response(JSON.stringify({ error: "Límite de solicitudes excedido" }), {
-            status: 429,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        if (errMsg.includes("402"))
-          return new Response(JSON.stringify({ error: "Créditos agotados" }), {
-            status: 402,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        if (errMsg.includes("400"))
-          return new Response(JSON.stringify({ error: "Error de contexto" }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        return new Response(JSON.stringify({ error: `Error IA: ${errMsg}` }), {
+        console.error("Dash err:", e);
+        return new Response(JSON.stringify({ error: (e as Error).message }), {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     }
 
-    // ── Analytics: tools + stream ────────────────────────────────────────
     try {
-      const result = await runWithToolsStreaming(
-        OPENAI_API_KEY,
-        systemPrompt,
-        messages,
-        adminClient,
-        tenantId,
-        activeFilters,
-      );
-
-      if (typeof result === "string") {
-        // La respuesta vino sin streaming (tool calls resolvieron todo)
-        // Convertir a SSE format para compatibilidad
-        const sseData = `data: ${JSON.stringify({ choices: [{ delta: { content: result } }] })}\n\ndata: [DONE]\n\n`;
-        return new Response(sseData, {
-          headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
-        });
+      const res = await runAnalytics(key, sys, messages, admin, tid, af);
+      if (typeof res === "string") {
+        const sse = `data: ${JSON.stringify({ choices: [{ delta: { content: res } }] })}\n\ndata: [DONE]\n\n`;
+        return new Response(sse, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
       }
-
-      // Streaming response
-      return new Response(result, {
-        headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
-      });
+      return new Response(res, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
     } catch (e) {
-      const errMsg = (e as Error).message;
-      console.error("Analytics error:", errMsg);
-      if (errMsg.includes("429"))
-        return new Response(JSON.stringify({ error: "Límite de solicitudes excedido" }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      return new Response(JSON.stringify({ error: `Error: ${errMsg}` }), {
+      console.error("Analytics err:", e);
+      return new Response(JSON.stringify({ error: (e as Error).message }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
   } catch (e) {
-    console.error("chat-ai error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Error desconocido" }), {
+    console.error("Fatal:", e);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
