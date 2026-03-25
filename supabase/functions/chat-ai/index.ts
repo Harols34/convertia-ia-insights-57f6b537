@@ -247,29 +247,39 @@ DIMENSIONES: ${JSON.stringify(dims, null, 0)}
 KPIs: ${JSON.stringify(kpis, null, 0)}
 FILTROS FRONTEND: ${JSON.stringify(af)}
 
-DATOS:
-- fch_creacion=llegada lead | fch_prim_gestion=1er contacto(agente_prim_gestion) | fch_ultim_gestion=última gestión(agente_ultim_gestion) | fch_negocio=cierre(agente_negocio) | fch_prim_resultado_marcadora=marcadora
-- es_venta=booleano | prim_resultado_marcadora=CONNECTED/FINISHED/etc
+MODELO: fch_creacion=llegada | fch_prim_gestion=1er contacto(agente_prim_gestion) | fch_ultim_gestion=última gestión(agente_ultim_gestion) | fch_negocio=cierre(agente_negocio)
 
-HERRAMIENTAS: todas aceptan "filters"(JSON multi-filtro) y "date_field"(qué fecha usar).
+═══ REGLA #1 — FILTROS (LA MÁS IMPORTANTE) ═══
+Cuando el usuario mencione CUALQUIER valor específico (ciudad, campaña, agente, tipo llamada, resultado, etc.), DEBES pasarlo en el parámetro "filters" de la herramienta. SIN EXCEPCIÓN.
 
-EJEMPLOS:
-- "leads diarios agente X" → agg_1d(dimension="fecha", filters={"agente_negocio":"X"})
-- "resultados agente prim gestion Y" → agg_1d(dimension="result_prim_gestion", filters={"agente_prim_gestion":"Y"})
-- "form del 24 feb" → agg_1d(dimension="fecha", fecha_desde="2026-02-24", fecha_hasta="2026-02-24", filters={"tipo_llamada":"form"})
+MAPEO OBLIGATORIO:
+- Usuario dice una CIUDAD (Santiago, Melipilla, etc.) → filters={"ciudad":"Santiago"}
+- Usuario dice una CAMPAÑA (WOM_01_EX, etc.) → filters={"campana_mkt":"WOM_01_EX"}
+- Usuario dice un AGENTE → filters={"agente_negocio":"wom_xxx"} o agente_prim_gestion o agente_ultim_gestion
+- Usuario dice TIPO LLAMADA (form, c2c, Entrante) → filters={"tipo_llamada":"form"}
+- Usuario dice RESULTADO → filters={"result_negocio":"SAC"}
+- Usuario dice CAMPAÑA INCONCERT → filters={"campana_inconcert":"xxx"}
+
+EJEMPLOS COMPLETOS:
+- "leads diarios de Santiago" → agg_1d(dimension="fecha", filters={"ciudad":"Santiago"})
+- "tabla de la ciudad santiago" → agg_1d(dimension="fecha", filters={"ciudad":"Santiago"})
+- "leads de Melipilla" → get_kpis(filters={"ciudad":"Melipilla"})
+- "resultados del agente wom_orga_age_0070" → agg_1d(dimension="fecha", filters={"agente_negocio":"wom_orga_age_0070"})
+- "tipo llamada form del 24 feb" → agg_1d(dimension="fecha", fecha_desde="2026-02-24", fecha_hasta="2026-02-24", filters={"tipo_llamada":"form"})
 - "ventas por campaña tipo Entrante" → agg_1d(dimension="campana_mkt", filters={"tipo_llamada":"Entrante"})
-- "cuántos leads de Melipilla" → get_kpis(filters={"ciudad":"Melipilla"})
 - "total leads de marzo" → get_kpis(fecha_desde="2026-03-01", fecha_hasta="2026-03-31")
-- "total leads del agente X" → get_kpis(filters={"agente_negocio":"X"})
+
+ERROR COMÚN QUE DEBES EVITAR:
+❌ MALO: usuario dice "de Santiago" y tú llamas agg_1d(dimension="fecha") SIN filters → devuelve TODOS los leads
+✅ BUENO: agg_1d(dimension="fecha", filters={"ciudad":"Santiago"}) → devuelve SOLO Santiago
+
+═══ OTRAS REGLAS ═══
 ${ANTI_HALLUCINATION}
+- Para TOTALES usa get_kpis con filtros, NUNCA sumes filas manualmente.
+- NUNCA hagas aritmética paso a paso. Usa get_kpis.
+- Respuestas CONCISAS, máximo 500 palabras.
 
-REGLAS CRÍTICAS ADICIONALES:
-- Para TOTALES o CONTEOS usa get_kpis con filtros. NUNCA sumes manualmente filas de agg_1d.
-- NUNCA hagas operaciones aritméticas escribiendo la suma paso a paso (199+446+397+...). Usa get_kpis.
-- Mantén respuestas CONCISAS. No repitas datos innecesariamente.
-- Si te piden "total del mes" → llama get_kpis con fecha_desde y fecha_hasta, NO listes todos los días.
-
-FORMATO: español, markdown. Tablas con headers:
+FORMATO: español, markdown. Tablas:
 | Col | Leads | Ventas | Conv% |
 |-----|-------|--------|-------|`;
 }
@@ -281,8 +291,20 @@ DIMENSIONES: ${JSON.stringify(dims, null, 0)}
 KPIs: ${JSON.stringify(kpis, null, 0)}
 FILTROS: ${JSON.stringify(af)}
 
-HERRAMIENTAS: aceptan "filters" y "date_field". LLAMA PRIMERO, luego JSON.
-Para TOTALES usa get_kpis(filters={...}), NUNCA sumes filas manualmente.
+═══ REGLA #1 — FILTROS ═══
+Cuando el usuario mencione CUALQUIER valor específico, DEBES pasarlo en "filters":
+- Ciudad → filters={"ciudad":"Santiago"}
+- Campaña → filters={"campana_mkt":"WOM_01_EX"}
+- Agente → filters={"agente_negocio":"wom_xxx"}
+- Tipo llamada → filters={"tipo_llamada":"form"}
+- Resultado → filters={"result_negocio":"SAC"}
+
+EJEMPLO CRÍTICO:
+❌ MALO: "tabla de Santiago" → agg_1d(dimension="fecha") sin filters → TODOS los leads
+✅ BUENO: agg_1d(dimension="fecha", filters={"ciudad":"Santiago"}) → solo Santiago
+
+LLAMA HERRAMIENTAS PRIMERO, luego genera JSON.
+Para TOTALES usa get_kpis(filters={...}), NUNCA sumes filas.
 ${ANTI_HALLUCINATION}
 
 ECHARTS: tooltip:{"trigger":"axis","axisPointer":{"type":"cross"}} | legend:{"data":[...],"bottom":0} | Colores: Leads="#3498db" Ventas="#2ecc71" Efectividad="#e74c3c"
@@ -291,6 +313,76 @@ RESPONDE SOLO JSON:
 dashboard: {"response_mode":"dashboard","assistant_message":"...","decision_goal":"...","dashboard":{"title":"...","subtitle":"...","time_range":"...","kpis":[{"label":"...","value":"...","trend":"up|down|neutral","icon":"TrendingUp|Users|Target"}],"charts":[{"id":"...","title":"...","type":"...","config":{...ECharts con datos REALES...}}],"insights":[{"type":"info","title":"...","description":"..."}],"tables":[{"title":"...","headers":[...],"rows":[[...]]}]}}
 chart_picker: {"response_mode":"chart_picker","assistant_message":"...","chart_options":[{"id":"...","name":"...","description":"..."}]}
 clarification: {"response_mode":"clarification","assistant_message":"...","clarifying_questions":[{"id":"q1","question":"...","options":["..."]}]}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FILTER EXTRACTOR — inyecta recordatorio de filtros basado en el mensaje
+// ═══════════════════════════════════════════════════════════════════════════
+function buildFilterReminder(userMsg: string, dims: any): string {
+  if (!userMsg || !dims) return "";
+  const msg = userMsg.toLowerCase();
+  const hints: string[] = [];
+
+  // Buscar ciudades mencionadas
+  if (dims.ciudades && Array.isArray(dims.ciudades)) {
+    for (const c of dims.ciudades) {
+      if (msg.includes(c.toLowerCase())) {
+        hints.push(`DETECTADO: ciudad "${c}" → usa filters={"ciudad":"${c}"}`);
+      }
+    }
+  }
+
+  // Buscar campañas mencionadas
+  if (dims.campanas_mkt && Array.isArray(dims.campanas_mkt)) {
+    for (const c of dims.campanas_mkt) {
+      if (msg.includes(c.toLowerCase())) {
+        hints.push(`DETECTADO: campaña "${c}" → usa filters={"campana_mkt":"${c}"}`);
+      }
+    }
+  }
+
+  // Buscar campañas inconcert
+  if (dims.campanas_inconcert && Array.isArray(dims.campanas_inconcert)) {
+    for (const c of dims.campanas_inconcert) {
+      if (msg.includes(c.toLowerCase())) {
+        hints.push(`DETECTADO: campaña inconcert "${c}" → usa filters={"campana_inconcert":"${c}"}`);
+      }
+    }
+  }
+
+  // Buscar tipos de llamada
+  if (dims.tipos_llamada && Array.isArray(dims.tipos_llamada)) {
+    for (const t of dims.tipos_llamada) {
+      if (msg.includes(t.toLowerCase())) {
+        hints.push(`DETECTADO: tipo llamada "${t}" → usa filters={"tipo_llamada":"${t}"}`);
+      }
+    }
+  }
+
+  // Buscar agentes
+  const agentFields = ["agentes_negocio", "agentes_prim_gestion", "agentes_ultim_gestion"];
+  for (const field of agentFields) {
+    if (dims[field] && Array.isArray(dims[field])) {
+      for (const a of dims[field]) {
+        if (msg.includes(a.toLowerCase())) {
+          const col = field.replace("agentes_", "agente_");
+          hints.push(`DETECTADO: agente "${a}" → usa filters={"${col}":"${a}"}`);
+        }
+      }
+    }
+  }
+
+  // Buscar resultados
+  if (dims.resultados_negocio && Array.isArray(dims.resultados_negocio)) {
+    for (const r of dims.resultados_negocio) {
+      if (r.length > 3 && msg.includes(r.toLowerCase())) {
+        hints.push(`DETECTADO: resultado "${r}" → usa filters={"result_negocio":"${r}"}`);
+      }
+    }
+  }
+
+  if (hints.length === 0) return "";
+  return `\n⚠️ FILTROS OBLIGATORIOS para esta consulta:\n${hints.join("\n")}\nDebes incluir estos filtros en CADA llamada a herramientas.`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -582,6 +674,15 @@ serve(async (req) => {
       const kpis = kr.data || {};
       console.log(`Meta OK: dims=${JSON.stringify(dims).length}c kpis=${JSON.stringify(kpis).length}c`);
       sys = mode === "dashdinamics" ? buildDashSys(dims, kpis, af) : buildAnalyticsSys(dims, kpis, af);
+
+      // Inyectar recordatorio de filtros basado en el último mensaje del usuario
+      const lastUserMsg = messages.filter((m: any) => m.role === "user").pop()?.content || "";
+      const filterReminder = buildFilterReminder(lastUserMsg, dims);
+      if (filterReminder) {
+        sys += filterReminder;
+        console.log(`Filter reminder injected: ${filterReminder.substring(0, 100)}`);
+      }
+
       if (botId) {
         const { data: bot } = await admin.from("bots").select("system_prompt").eq("id", botId).single();
         if (bot?.system_prompt) sys = bot.system_prompt + "\n\n" + sys;
