@@ -2,7 +2,6 @@ import { LandingNav } from "@/components/landing/LandingNav";
 import { HeroSection } from "@/components/landing/HeroSection";
 import { ServicesSection } from "@/components/landing/ServicesSection";
 import { BenefitsSection } from "@/components/landing/BenefitsSection";
-import { SocialProofSection } from "@/components/landing/SocialProofSection";
 import { AnimatedDashboard } from "@/components/landing/AnimatedDashboard";
 import { CTASection } from "@/components/landing/CTASection";
 import { ContactSection } from "@/components/landing/ContactSection";
@@ -30,7 +29,6 @@ const Index = () => {
     >
       <LandingNav />
       <HeroSection />
-      <SocialProofSection />
       <AnimatedDashboard />
       <ServicesSection />
       <BenefitsSection />

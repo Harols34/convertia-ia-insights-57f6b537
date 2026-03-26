@@ -12,38 +12,57 @@ const benefits = [
 
 export function BenefitsSection() {
   return (
-    <section id="beneficios" className="py-24 lg:py-32 relative overflow-hidden">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-white/5 blur-[150px]" />
-      <div className="container relative z-10">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="text-center mb-16 space-y-4"
-        >
-          <span className="text-sm font-semibold uppercase tracking-widest text-primary">Beneficios</span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold text-gray-900">
-            ¿Por qué elegir Converti-IA?
-          </h2>
-          <p className="text-gray-500 text-lg max-w-2xl mx-auto">
-            Tecnología de vanguardia al servicio de tu operación comercial.
-          </p>
-        </motion.div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {benefits.map((b, i) => (
+    <section id="beneficios" className="relative py-16 sm:py-20 lg:py-24">
+      <div className="container">
+        <div className="relative overflow-hidden rounded-3xl border border-emerald-500/20 gradient-hero px-5 py-10 shadow-2xl shadow-black/35 sm:px-8 sm:py-12 lg:px-10 lg:py-14">
+          {/* Resplandor verde (misma familia que el extremo accent de "crecer con datos") */}
+          <div
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,hsl(var(--accent)_/_0.18),transparent_65%)]"
+            aria-hidden
+          />
+          <div
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_0%,hsl(var(--primary)_/_0.08),transparent_55%)]"
+            aria-hidden
+          />
+
+          <div className="relative z-10">
             <motion.div
-              key={b.title}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ delay: i * 0.08 }}
-              className="p-6 rounded-xl bg-white/80 backdrop-blur-sm border border-gray-200 hover:border-primary/30 transition-colors shadow-sm"
+              className="mb-10 space-y-5 text-center sm:mb-12 lg:mb-14"
             >
-              <b.icon className="h-8 w-8 text-primary mb-4" />
-              <h3 className="font-display font-semibold text-gray-900 mb-2 text-lg">{b.title}</h3>
-              <p className="text-gray-500 text-sm leading-relaxed">{b.desc}</p>
+              <span className="text-sm font-semibold uppercase tracking-widest text-accent">
+                Beneficios
+              </span>
+              <h2 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
+                ¿Por qué elegir{" "}
+                <span className="text-gradient">Converti-IA</span>?
+              </h2>
+              <p className="mx-auto max-w-2xl text-lg font-medium leading-relaxed text-emerald-100/85">
+                Tecnología de vanguardia al servicio de tu operación comercial.
+              </p>
             </motion.div>
-          ))}
+
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {benefits.map((b, i) => (
+                <motion.div
+                  key={b.title}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.08 }}
+                  className="rounded-xl border border-emerald-500/15 bg-white/[0.04] p-6 backdrop-blur-sm transition-all duration-300 hover:border-accent/50 hover:bg-emerald-500/[0.06] hover:shadow-lg hover:shadow-accent/10"
+                >
+                  <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-accent text-white shadow-md shadow-accent/20">
+                    <b.icon className="h-5 w-5" strokeWidth={2} />
+                  </div>
+                  <h3 className="mb-2 font-display text-lg font-semibold text-white">{b.title}</h3>
+                  <p className="text-sm leading-relaxed text-emerald-100/65">{b.desc}</p>
+                </motion.div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </section>

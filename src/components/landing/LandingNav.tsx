@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Menu, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import logoImg from "@/assets/logo.ico";
 
 const links = [
@@ -30,27 +30,42 @@ export function LandingNav() {
           </span>
         </Link>
 
-        <div className="hidden md:flex items-center gap-8">
-          {links.map((l) => (
-            <a
-              key={l.label}
-              href={l.href}
-              className={`text-sm font-medium transition-colors hover:text-primary ${scrolled ? "text-muted-foreground" : "text-white/70"}`}
-            >
-              {l.label}
-            </a>
-          ))}
-          <Button variant="outline" size="sm" className={`${scrolled ? "" : "border-white/20 text-white hover:bg-white/10"}`} asChild>
-            <Link to="/login">Iniciar Sesión</Link>
-          </Button>
+        <div className="hidden md:flex items-center gap-6">
+          <div className="flex items-center gap-8">
+            {links.map((l) => (
+              <a
+                key={l.label}
+                href={l.href}
+                className={`text-sm font-medium transition-colors hover:text-primary ${scrolled ? "text-muted-foreground" : "text-white/70"}`}
+              >
+                {l.label}
+              </a>
+            ))}
+          </div>
+          <ThemeToggle
+            className={
+              scrolled
+                ? "shrink-0"
+                : "shrink-0 text-white hover:bg-white/10 hover:text-white focus-visible:ring-white/40"
+            }
+          />
         </div>
 
-        <button className="md:hidden" onClick={() => setOpen(!open)}>
-          {open
-            ? <X className={`h-6 w-6 ${scrolled ? "text-foreground" : "text-white"}`} />
-            : <Menu className={`h-6 w-6 ${scrolled ? "text-foreground" : "text-white"}`} />
-          }
-        </button>
+        <div className="flex items-center gap-1 md:hidden">
+          <ThemeToggle
+            className={
+              scrolled
+                ? "shrink-0"
+                : "shrink-0 text-white hover:bg-white/10 hover:text-white focus-visible:ring-white/40"
+            }
+          />
+          <button type="button" className="p-2" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? "Cerrar menú" : "Abrir menú"}>
+            {open
+              ? <X className={`h-6 w-6 ${scrolled ? "text-foreground" : "text-white"}`} />
+              : <Menu className={`h-6 w-6 ${scrolled ? "text-foreground" : "text-white"}`} />
+            }
+          </button>
+        </div>
       </div>
 
       {open && (
@@ -60,9 +75,6 @@ export function LandingNav() {
               {l.label}
             </a>
           ))}
-          <Button size="sm" className="w-full gradient-primary text-white" asChild>
-            <Link to="/login">Iniciar Sesión</Link>
-          </Button>
         </div>
       )}
     </nav>

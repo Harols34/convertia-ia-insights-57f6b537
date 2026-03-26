@@ -1,6 +1,5 @@
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
-import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 
 export function CTASection() {
@@ -26,9 +25,6 @@ export function CTASection() {
                 <a href="#contacto">
                   Solicitar Demo <ArrowRight className="ml-2 h-4 w-4" />
                 </a>
-              </Button>
-              <Button variant="outline" size="lg" className="border-white/20 text-white hover:bg-white/10 h-12 px-8" asChild>
-                <Link to="/login">Iniciar Sesión</Link>
               </Button>
             </div>
           </div>
