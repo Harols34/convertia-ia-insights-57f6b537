@@ -18,10 +18,10 @@ export function ContactSection() {
           className="text-center mb-12 space-y-4"
         >
           <span className="text-sm font-semibold uppercase tracking-widest text-primary">Contacto</span>
-          <h2 className="text-3xl sm:text-4xl font-display font-bold text-gray-900">
+          <h2 className="text-3xl sm:text-4xl font-display font-bold text-foreground">
             Hablemos de tu proyecto
           </h2>
-          <p className="text-gray-500">
+          <p className="text-muted-foreground">
             Completa el formulario y un especialista te contactará en menos de 24 horas.
           </p>
         </motion.div>
