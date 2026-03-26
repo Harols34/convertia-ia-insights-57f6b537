@@ -181,7 +181,7 @@ export function compareThisWeekVsLastWeek(leads: LeadRow[]) {
   const curEnd = endOfISOWeek(today);
   const prevEnd = subDays(curStart, 1);
   prevEnd.setHours(23, 59, 59, 999);
-  const prevStart = startOfISOWeek(prevEnd, { weekStartsOn: 1 });
+  const prevStart = startOfISOWeek(prevEnd);
   return compareRanges(leads, curStart, curEnd, prevStart, prevEnd);
 }
 
