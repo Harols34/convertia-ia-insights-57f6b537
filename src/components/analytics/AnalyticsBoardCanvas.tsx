@@ -70,7 +70,7 @@ function pivotCardSurface(appearance: WidgetAppearance | undefined | null): CSSP
   };
 }
 
-function toLayout(l: unknown, id: string): Layout {
+function toLayout(l: unknown, id: string): LayoutItem {
   const o = (l && typeof l === "object" ? l : {}) as BoardWidgetLayout;
   return {
     i: id,
