@@ -177,8 +177,8 @@ export function compareLast7VsPrevious7(leads: LeadRow[]) {
 /** Semana ISO actual vs anterior. */
 export function compareThisWeekVsLastWeek(leads: LeadRow[]) {
   const today = new Date();
-  const curStart = startOfISOWeek(today, { weekStartsOn: 1 });
-  const curEnd = endOfISOWeek(today, { weekStartsOn: 1 });
+  const curStart = startOfISOWeek(today);
+  const curEnd = endOfISOWeek(today);
   const prevEnd = subDays(curStart, 1);
   prevEnd.setHours(23, 59, 59, 999);
   const prevStart = startOfISOWeek(prevEnd, { weekStartsOn: 1 });
