@@ -80,7 +80,7 @@ export function buildWeeklySeries(leads: LeadRow[], maxWeeks = 24): WeeklyPoint[
   for (const row of leads) {
     const d = parseLeadDate(row);
     if (!d) continue;
-    const ws = startOfISOWeek(d);
+    const ws = startOfISOWeek(d, { weekStartsOn: 1 });
     const key = format(ws, "yyyy-MM-dd");
     if (!map.has(key)) {
       map.set(key, {
@@ -177,11 +177,11 @@ export function compareLast7VsPrevious7(leads: LeadRow[]) {
 /** Semana ISO actual vs anterior. */
 export function compareThisWeekVsLastWeek(leads: LeadRow[]) {
   const today = new Date();
-  const curStart = startOfISOWeek(today);
-  const curEnd = endOfISOWeek(today);
+  const curStart = startOfISOWeek(today, { weekStartsOn: 1 });
+  const curEnd = endOfISOWeek(today, { weekStartsOn: 1 });
   const prevEnd = subDays(curStart, 1);
   prevEnd.setHours(23, 59, 59, 999);
-  const prevStart = startOfISOWeek(prevEnd);
+  const prevStart = startOfISOWeek(prevEnd, { weekStartsOn: 1 });
   return compareRanges(leads, curStart, curEnd, prevStart, prevEnd);
 }
 
@@ -539,7 +539,7 @@ export function buildWeeklySeriesForSpec(
   for (const row of leads) {
     const d = parseLeadDate(row);
     if (!d) continue;
-    const wk = format(startOfISOWeek(d), "yyyy-MM-dd");
+    const wk = format(startOfISOWeek(d, { weekStartsOn: 1 }), "yyyy-MM-dd");
     if (!map.has(wk)) map.set(wk, { leads: 0, ventas: 0, match: 0 });
     const b = map.get(wk)!;
     b.leads += 1;

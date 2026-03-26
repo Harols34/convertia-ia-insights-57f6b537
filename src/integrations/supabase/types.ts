@@ -14,6 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          detail: Json | null
+          id: string
+          ip_address: string | null
+          module: string | null
+          tenant_id: string
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          detail?: Json | null
+          id?: string
+          ip_address?: string | null
+          module?: string | null
+          tenant_id: string
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          detail?: Json | null
+          id?: string
+          ip_address?: string | null
+          module?: string | null
+          tenant_id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_logs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       analytics_board_widgets: {
         Row: {
           board_id: string
@@ -89,47 +130,6 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "analytics_user_boards_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      audit_logs: {
-        Row: {
-          action: string
-          created_at: string
-          detail: Json | null
-          id: string
-          ip_address: string | null
-          module: string | null
-          tenant_id: string
-          user_id: string | null
-        }
-        Insert: {
-          action: string
-          created_at?: string
-          detail?: Json | null
-          id?: string
-          ip_address?: string | null
-          module?: string | null
-          tenant_id: string
-          user_id?: string | null
-        }
-        Update: {
-          action?: string
-          created_at?: string
-          detail?: Json | null
-          id?: string
-          ip_address?: string | null
-          module?: string | null
-          tenant_id?: string
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "audit_logs_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -996,14 +996,6 @@ export type Database = {
     Functions: {
       _build_filters_where: { Args: { _f: Json }; Returns: string }
       _date_field_expr: { Args: { _d: string }; Returns: string }
-      admin_list_raw_table_columns: {
-        Args: { p_table_name: string }
-        Returns: {
-          column_name: string
-          data_type: string
-          udt_name: string
-        }[]
-      }
       execute_leads_query: {
         Args: { _query: string; _tenant_id: string }
         Returns: Json
@@ -1092,6 +1084,14 @@ export type Database = {
         Returns: Json
       }
       list_integration_table_columns: {
+        Args: { p_table_name: string }
+        Returns: {
+          column_name: string
+          data_type: string
+          udt_name: string
+        }[]
+      }
+      admin_list_raw_table_columns: {
         Args: { p_table_name: string }
         Returns: {
           column_name: string

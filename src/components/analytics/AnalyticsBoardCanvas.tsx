@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import GridLayout, { type Layout, type LayoutItem, WidthProvider } from "react-grid-layout/legacy";
+import GridLayout, { type Layout, WidthProvider } from "react-grid-layout/legacy";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { Pencil, Trash2 } from "lucide-react";
@@ -70,7 +70,7 @@ function pivotCardSurface(appearance: WidgetAppearance | undefined | null): CSSP
   };
 }
 
-function toLayout(l: unknown, id: string): LayoutItem {
+function toLayout(l: unknown, id: string): Layout {
   const o = (l && typeof l === "object" ? l : {}) as BoardWidgetLayout;
   return {
     i: id,
@@ -126,10 +126,10 @@ export function AnalyticsBoardCanvas({ boardId, className, onEditWidget }: Analy
     },
   });
 
-  const layout: LayoutItem[] = useMemo(() => widgets.map((w) => toLayout(w.layout, w.id)), [widgets]);
+  const layout = useMemo(() => widgets.map((w) => toLayout(w.layout, w.id)), [widgets]);
 
   const persistLayout = useMutation({
-    mutationFn: async (items: LayoutItem[]) => {
+    mutationFn: async (items: Layout[]) => {
       await Promise.all(
         items.map((l) =>
           supabase
@@ -152,7 +152,7 @@ export function AnalyticsBoardCanvas({ boardId, className, onEditWidget }: Analy
   });
 
   const onLayoutChange = useCallback(
-    (next: LayoutItem[]) => {
+    (next: Layout[]) => {
       if (!boardId || !next.length) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
