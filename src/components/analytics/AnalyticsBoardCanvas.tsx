@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import GridLayout, { type Layout, WidthProvider } from "react-grid-layout/legacy";
+import GridLayout, { type Layout, type LayoutItem, WidthProvider } from "react-grid-layout/legacy";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { Pencil, Trash2 } from "lucide-react";
