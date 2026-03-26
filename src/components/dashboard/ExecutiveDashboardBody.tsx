@@ -251,7 +251,7 @@ function ExecutiveDashboardBodyInner({
         const i = params.dataIndex;
         if (typeof i !== "number" || i < 0 || i >= weekly.length) return;
         const start = parseISO(weekly[i]!.weekStart);
-        const end = endOfISOWeek(start, { weekStartsOn: 1 });
+        const end = endOfISOWeek(start);
         onFilterByWeekRange(format(start, "yyyy-MM-dd"), format(end, "yyyy-MM-dd"));
       },
     };

@@ -37,11 +37,11 @@ export function ServicesSection() {
           className="text-center mb-16 space-y-4"
         >
           <span className="text-sm font-semibold uppercase tracking-widest text-primary">Servicios</span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold text-gray-900">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold text-foreground">
             Todo lo que necesitas para{" "}
             <span className="text-gradient">crecer con datos</span>
           </h2>
-          <p className="text-gray-500 text-lg max-w-2xl mx-auto">
+          <p className="text-foreground/70 text-lg max-w-2xl mx-auto">
             Una plataforma integral que combina analítica avanzada, inteligencia artificial y automatización para potenciar la toma de decisiones.
           </p>
         </motion.div>
@@ -57,13 +57,13 @@ export function ServicesSection() {
             <motion.div
               key={s.title}
               variants={item}
-              className="group relative p-6 rounded-xl border border-gray-200 bg-white/80 backdrop-blur-sm hover:border-primary/40 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5"
+              className="group relative p-6 rounded-xl border border-border bg-card/80 backdrop-blur-sm hover:border-primary/40 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5"
             >
               <div className="w-10 h-10 rounded-lg gradient-primary flex items-center justify-center mb-4 group-hover:glow-sm transition-shadow">
                 <s.icon className="h-5 w-5 text-white" />
               </div>
-              <h3 className="font-display font-semibold text-gray-900 mb-2">{s.title}</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">{s.desc}</p>
+              <h3 className="font-display font-semibold text-foreground mb-2">{s.title}</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">{s.desc}</p>
             </motion.div>
           ))}
         </motion.div>
