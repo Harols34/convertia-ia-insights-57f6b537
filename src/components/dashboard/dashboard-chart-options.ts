@@ -628,7 +628,7 @@ export function categoryOption(data: NamedCount[], mode: CatViz, title: string):
             fontSize: 9,
             formatter: (p: { name: string; percent?: number }) => {
               const n = p.name.length > 16 ? `${p.name.slice(0, 14)}…` : p.name;
-              return `${n}\n${p.percent}%`;
+              return `${n}\n${p.percent ?? 0}%`;
             },
           },
         },

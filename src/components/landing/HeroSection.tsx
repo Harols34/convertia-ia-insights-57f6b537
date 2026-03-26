@@ -59,14 +59,6 @@ export function HeroSection() {
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </a>
               </Button>
-              <Button
-                variant="outline"
-                size="lg"
-                className="border-white/20 text-white hover:bg-white/10 h-12 px-8 text-base"
-                asChild
-              >
-                <Link to="/login">Iniciar Sesión</Link>
-              </Button>
             </div>
           </motion.div>
 

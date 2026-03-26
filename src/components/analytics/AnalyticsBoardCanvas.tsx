@@ -126,10 +126,10 @@ export function AnalyticsBoardCanvas({ boardId, className, onEditWidget }: Analy
     },
   });
 
-  const layout = useMemo(() => widgets.map((w) => toLayout(w.layout, w.id)), [widgets]);
+  const layout: LayoutItem[] = useMemo(() => widgets.map((w) => toLayout(w.layout, w.id)), [widgets]);
 
   const persistLayout = useMutation({
-    mutationFn: async (items: Layout[]) => {
+    mutationFn: async (items: LayoutItem[]) => {
       await Promise.all(
         items.map((l) =>
           supabase
@@ -152,7 +152,7 @@ export function AnalyticsBoardCanvas({ boardId, className, onEditWidget }: Analy
   });
 
   const onLayoutChange = useCallback(
-    (next: Layout[]) => {
+    (next: LayoutItem[]) => {
       if (!boardId || !next.length) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {

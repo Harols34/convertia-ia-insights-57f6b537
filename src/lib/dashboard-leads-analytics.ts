@@ -539,7 +539,7 @@ export function buildWeeklySeriesForSpec(
   for (const row of leads) {
     const d = parseLeadDate(row);
     if (!d) continue;
-    const wk = format(startOfISOWeek(d, { weekStartsOn: 1 }), "yyyy-MM-dd");
+    const wk = format(startOfISOWeek(d), "yyyy-MM-dd");
     if (!map.has(wk)) map.set(wk, { leads: 0, ventas: 0, match: 0 });
     const b = map.get(wk)!;
     b.leads += 1;

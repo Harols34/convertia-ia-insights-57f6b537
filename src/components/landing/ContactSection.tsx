@@ -37,25 +37,25 @@ export function ContactSection() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             onSubmit={(e) => { e.preventDefault(); setSubmitted(true); }}
-            className="space-y-5 p-8 rounded-xl border border-gray-200 bg-white/80 backdrop-blur-xl shadow-lg"
+            className="space-y-5 p-8 rounded-xl border border-border bg-white backdrop-blur-xl shadow-lg"
           >
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Nombre completo</label>
-                <Input placeholder="Tu nombre" required />
+                <label className="text-sm font-medium text-foreground">Nombre completo</label>
+                <Input placeholder="Tu nombre" required className="bg-white text-gray-900 placeholder:text-gray-400 border-gray-300" />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Correo electrónico</label>
-                <Input type="email" placeholder="correo@empresa.com" required />
+                <label className="text-sm font-medium text-foreground">Correo electrónico</label>
+                <Input type="email" placeholder="correo@empresa.com" required className="bg-white text-gray-900 placeholder:text-gray-400 border-gray-300" />
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Empresa</label>
-              <Input placeholder="Nombre de tu empresa" required />
+              <label className="text-sm font-medium text-foreground">Empresa</label>
+              <Input placeholder="Nombre de tu empresa" required className="bg-white text-gray-900 placeholder:text-gray-400 border-gray-300" />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Mensaje</label>
-              <Textarea placeholder="Cuéntanos qué necesitas..." rows={4} required />
+              <label className="text-sm font-medium text-foreground">Mensaje</label>
+              <Textarea placeholder="Cuéntanos qué necesitas..." rows={4} required className="bg-white text-gray-900 placeholder:text-gray-400 border-gray-300" />
             </div>
             <Button type="submit" className="w-full gradient-primary text-white font-semibold h-11 glow-sm">
               Enviar solicitud <Send className="ml-2 h-4 w-4" />
