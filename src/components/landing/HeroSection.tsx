@@ -1,19 +1,54 @@
-import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GradientCycleTitle } from "@/components/ui/gradient-cycle-title";
+import { RevealLegend } from "@/components/ui/reveal-legend";
 import heroImg from "@/assets/hero-dashboard.jpg";
 import logoImg from "@/assets/logo.ico";
+import { heroCopyVariants, heroPillVariants } from "@/lib/landing-copy";
+
+/** Alineado al ciclo de título (8s) para que cambie la variante con la frase ya completa */
+const HERO_ROTATE_MS = 8200;
+const PILL_ROTATE_MS = 7000;
 
 export function HeroSection() {
+  const reduceMotion = useReducedMotion();
+  const [heroIndex, setHeroIndex] = useState(0);
+  const [pillIndex, setPillIndex] = useState(0);
+
+  const variant = heroCopyVariants[reduceMotion ? 0 : heroIndex];
+  const pillText = heroPillVariants[reduceMotion ? 0 : pillIndex];
+
+  useEffect(() => {
+    if (reduceMotion || heroCopyVariants.length <= 1) return;
+    const id = window.setInterval(() => {
+      setHeroIndex((i) => (i + 1) % heroCopyVariants.length);
+    }, HERO_ROTATE_MS);
+    return () => clearInterval(id);
+  }, [reduceMotion]);
+
+  useEffect(() => {
+    if (reduceMotion || heroPillVariants.length <= 1) return;
+    const id = window.setInterval(() => {
+      setPillIndex((i) => (i + 1) % heroPillVariants.length);
+    }, PILL_ROTATE_MS);
+    return () => clearInterval(id);
+  }, [reduceMotion]);
+
+  const heroMotionKey = reduceMotion ? "static-h" : `${heroIndex}-${variant.title}`;
+
   return (
     <section className="relative min-h-screen flex items-center overflow-hidden">
-      {/* Subtle grid */}
-      <div className="absolute inset-0 opacity-[0.03]" style={{
-        backgroundImage: "linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px)",
-        backgroundSize: "60px 60px"
-      }} />
+      <div
+        className="absolute inset-0 opacity-[0.03]"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px)",
+          backgroundSize: "60px 60px",
+        }}
+      />
 
-      {/* Glow orbs */}
       <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] rounded-full bg-primary/10 blur-[120px]" />
       <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] rounded-full bg-accent/10 blur-[100px]" />
 
@@ -32,20 +67,62 @@ export function HeroSection() {
               </span>
             </div>
 
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-primary/30 bg-primary/5 text-sm text-primary">
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>Impulsado por Inteligencia Artificial</span>
+            <div
+              className="inline-flex min-h-[2.25rem] max-w-full items-center overflow-hidden rounded-full border border-primary/30 bg-primary/5 px-4 py-1.5 text-sm text-primary break-normal text-pretty"
+              aria-live={reduceMotion ? undefined : "polite"}
+            >
+              <Sparkles className="mr-2 h-3.5 w-3.5 shrink-0" aria-hidden />
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={reduceMotion ? "static-pill" : pillText}
+                  initial={reduceMotion ? false : { opacity: 0, y: 6, filter: "blur(4px)" }}
+                  animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                  exit={reduceMotion ? undefined : { opacity: 0, y: -4, filter: "blur(3px)" }}
+                  transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                  className="font-medium"
+                >
+                  {pillText}
+                </motion.span>
+              </AnimatePresence>
             </div>
 
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-display font-bold text-white leading-[1.08] tracking-tight">
-              Analítica avanzada para la era de la{" "}
-              <span className="text-gradient">IA</span>
-            </h1>
+            <div className="min-h-[8.5rem] sm:min-h-[7.5rem] lg:min-h-[8rem] max-w-full">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={heroMotionKey}
+                  initial={reduceMotion ? false : { opacity: 0, y: 12, filter: "blur(8px)" }}
+                  animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                  exit={reduceMotion ? undefined : { opacity: 0, y: -10, filter: "blur(5px)" }}
+                  transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <GradientCycleTitle
+                    as="h1"
+                    segments={variant.titleCycle}
+                    className="text-left text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-display font-bold leading-[1.08] tracking-tight justify-start"
+                  />
+                </motion.div>
+              </AnimatePresence>
+            </div>
 
-            <p className="text-lg lg:text-xl text-white/60 max-w-xl leading-relaxed">
-              Transforma datos en decisiones estratégicas con dashboards inteligentes,
-              AI Agents, speech analytics y automatización de última generación.
-            </p>
+            <div className="min-h-[5.5rem] max-w-xl">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={heroMotionKey}
+                  initial={reduceMotion ? false : { opacity: 0, y: 8, filter: "blur(5px)" }}
+                  animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                  exit={reduceMotion ? undefined : { opacity: 0, y: -6, filter: "blur(3px)" }}
+                  transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <RevealLegend
+                    text={variant.subtitle}
+                    animationKey={heroMotionKey}
+                    className="text-lg lg:text-xl text-white/60 leading-relaxed"
+                    sweepClassName="text-primary"
+                    layout="start"
+                  />
+                </motion.div>
+              </AnimatePresence>
+            </div>
 
             <div className="flex flex-wrap gap-4 pt-2">
               <Button
@@ -54,7 +131,7 @@ export function HeroSection() {
                 asChild
               >
                 <a href="#contacto">
-                  Solicitar Demo
+                  Solicitar demo
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </a>
               </Button>

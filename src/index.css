@@ -179,3 +179,71 @@
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/*
+ * Títulos ciclo: nunca a opacidad 0 — solo atenuar (~0.5) y al final (72–100%) todo a 1.
+ */
+@keyframes cc-title-dim-1 {
+  0%,
+  24% {
+    opacity: 1;
+  }
+  25%,
+  71% {
+    opacity: 0.5;
+  }
+  72%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes cc-title-dim-2 {
+  0%,
+  24% {
+    opacity: 0.5;
+  }
+  25%,
+  47% {
+    opacity: 1;
+  }
+  48%,
+  71% {
+    opacity: 0.5;
+  }
+  72%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes cc-title-dim-3 {
+  0%,
+  47% {
+    opacity: 0.5;
+  }
+  48%,
+  71% {
+    opacity: 1;
+  }
+  72%,
+  100% {
+    opacity: 1;
+  }
+}
+.animate-cc-title-dim-1 {
+  animation: cc-title-dim-1 8s ease-in-out infinite;
+}
+.animate-cc-title-dim-2 {
+  animation: cc-title-dim-2 8s ease-in-out infinite;
+}
+.animate-cc-title-dim-3 {
+  animation: cc-title-dim-3 8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-cc-title-dim-1,
+  .animate-cc-title-dim-2,
+  .animate-cc-title-dim-3 {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}

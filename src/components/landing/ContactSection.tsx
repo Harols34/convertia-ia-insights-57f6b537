@@ -1,6 +1,8 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { RotatingHeadline } from "@/components/ui/rotating-headline";
+import { contactCopyVariants } from "@/lib/landing-copy";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Send } from "lucide-react";
@@ -25,12 +27,15 @@ export function ContactSection() {
           className="text-center mb-12 space-y-4"
         >
           <span className="text-sm font-semibold uppercase tracking-widest text-primary">Contacto</span>
-          <h2 className="text-3xl sm:text-4xl font-display font-bold text-gray-900">
-            Hablemos de tu proyecto
-          </h2>
-          <p className="text-gray-500">
-            Completa el formulario y un especialista te contactará en menos de 24 horas.
-          </p>
+          <RotatingHeadline
+            items={contactCopyVariants}
+            intervalMs={8400}
+            minHeightClass="min-h-[12.5rem] sm:min-h-[11rem]"
+            titleClassName="text-3xl sm:text-4xl font-display font-bold"
+            subtitleClassName="text-gray-600"
+            subtitleSweepClassName="text-primary"
+            titleSurface="light"
+          />
         </motion.div>
 
         {submitted ? (

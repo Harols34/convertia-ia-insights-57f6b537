@@ -6,6 +6,8 @@ import { VariantAI } from "./VariantAI";
 import { VariantText } from "./VariantText";
 import { VariantPivot } from "./VariantPivot";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { RotatingHeadline } from "@/components/ui/rotating-headline";
+import { platformHeadlineVariants } from "@/lib/landing-copy";
 import { pa } from "./theme";
 
 const SLIDE_MS = 10_000;
@@ -28,7 +30,7 @@ const slides = [
   },
   {
     id: "pivot",
-    tab: "Constructor visual",
+    tab: "Arrastra y crea",
     url: "converti-ia.app/dashboards/pivot-builder",
   },
 ] as const;
@@ -73,13 +75,13 @@ export function PlatformActionShowcase() {
               <span className="text-sm font-semibold uppercase tracking-widest text-primary">
                 Plataforma en Acción
               </span>
-              <h2 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
-                Analítica que se ve <span className="text-gradient">increíble</span>
-              </h2>
-              <p className="mx-auto max-w-2xl text-lg text-white/70">
-                Dashboards BI, insights con IA, creación por texto y análisis tipo tabla dinámica todo en una
-                experiencia en vivo.
-              </p>
+              <RotatingHeadline
+                items={platformHeadlineVariants}
+                intervalMs={8200}
+                minHeightClass="min-h-[14rem] sm:min-h-[12.5rem] lg:min-h-[11.5rem]"
+                titleClassName="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl"
+                subtitleClassName="mx-auto max-w-2xl text-lg text-white/70"
+              />
             </motion.div>
 
             {/* Tabs + manual nav */}

@@ -1,14 +1,9 @@
 import { motion } from "framer-motion";
 import { Shield, Zap, Globe, Lock, TrendingUp, Users } from "lucide-react";
+import { RotatingHeadline } from "@/components/ui/rotating-headline";
+import { benefitsCards, benefitsHeadlineVariants } from "@/lib/landing-copy";
 
-const benefits = [
-  { icon: Zap, title: "Resultados en Minutos", desc: "Genera dashboards con lenguaje natural y obtén insights al instante sin programar." },
-  { icon: Shield, title: "Seguridad Enterprise", desc: "Multi-tenant con aislamiento total de datos, roles granulares y auditoría completa." },
-  { icon: Globe, title: "Multi-canal", desc: "Analiza datos de web, WhatsApp, Telegram, voz y cualquier fuente conectada." },
-  { icon: Lock, title: "Control de Acceso", desc: "Permisos granulares por módulo, cuenta, proyecto y acción para cada usuario." },
-  { icon: TrendingUp, title: "Escalabilidad SaaS", desc: "Arquitectura diseñada para crecer con tu empresa desde startup hasta enterprise." },
-  { icon: Users, title: "Colaboración", desc: "Equipos completos trabajan en la misma plataforma con vistas personalizadas." },
-];
+const benefitIcons = [Zap, Shield, Globe, Lock, TrendingUp, Users] as const;
 
 export function BenefitsSection() {
   return (
@@ -35,17 +30,19 @@ export function BenefitsSection() {
               <span className="text-sm font-semibold uppercase tracking-widest text-accent">
                 Beneficios
               </span>
-              <h2 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
-                ¿Por qué elegir{" "}
-                <span className="text-gradient">Converti-IA</span>?
-              </h2>
-              <p className="mx-auto max-w-2xl text-lg font-medium leading-relaxed text-emerald-100/85">
-                Tecnología de vanguardia al servicio de tu operación comercial.
-              </p>
+              <RotatingHeadline
+                items={benefitsHeadlineVariants}
+                intervalMs={8200}
+                minHeightClass="min-h-[13rem] sm:min-h-[11.5rem] lg:min-h-[10.5rem]"
+                titleClassName="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl"
+                subtitleClassName="mx-auto max-w-2xl font-medium leading-relaxed text-emerald-100/85"
+              />
             </motion.div>
 
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {benefits.map((b, i) => (
+              {benefitsCards.map((b, i) => {
+                const Icon = benefitIcons[i];
+                return (
                 <motion.div
                   key={b.title}
                   initial={{ opacity: 0, y: 20 }}
@@ -55,12 +52,15 @@ export function BenefitsSection() {
                   className="rounded-xl border border-emerald-500/15 bg-white/[0.04] p-6 backdrop-blur-sm transition-all duration-300 hover:border-accent/50 hover:bg-emerald-500/[0.06] hover:shadow-lg hover:shadow-accent/10"
                 >
                   <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-accent text-white shadow-md shadow-accent/20">
-                    <b.icon className="h-5 w-5" strokeWidth={2} />
+                    <Icon className="h-5 w-5" strokeWidth={2} />
                   </div>
                   <h3 className="mb-2 font-display text-lg font-semibold text-white">{b.title}</h3>
-                  <p className="text-sm leading-relaxed text-emerald-100/65">{b.desc}</p>
+                  <p className="text-sm leading-relaxed text-emerald-100/65 break-normal hyphens-none [overflow-wrap:normal] [word-break:normal]">
+                    {b.desc}
+                  </p>
                 </motion.div>
-              ))}
+              );
+              })}
             </div>
           </div>
         </div>

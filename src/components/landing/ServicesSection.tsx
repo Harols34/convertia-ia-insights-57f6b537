@@ -3,19 +3,13 @@ import {
   BarChart3, Brain, MessageSquare, Bot, Mic, Workflow,
   FileBarChart, Download, Activity, Plug
 } from "lucide-react";
+import { RotatingHeadline } from "@/components/ui/rotating-headline";
+import { servicesCards, servicesHeadlineVariants } from "@/lib/landing-copy";
 
-const services = [
-  { icon: BarChart3, title: "Dashboards Inteligentes", desc: "Tableros de control ejecutivos con KPIs en tiempo real, filtros avanzados y personalización total." },
-  { icon: Brain, title: "IA Generativa para BI", desc: "Genera dashboards y reportes con lenguaje natural. Pregunta y obtén visualizaciones al instante." },
-  { icon: MessageSquare, title: "Analytics Conversacional", desc: "Analiza conversaciones de todos tus canales para extraer insights, sentimientos y tendencias." },
-  { icon: Bot, title: "Chatbots & AI Agents", desc: "Agentes inteligentes para web, WhatsApp y Telegram con configuración personalizada por tenant." },
-  { icon: Mic, title: "Speech Analytics", desc: "Análisis de voz con transcripción automática, detección de emociones y métricas de calidad." },
-  { icon: Workflow, title: "Automatización", desc: "Flujos automatizados para alertas, reportes programados y acciones inteligentes basadas en datos." },
-  { icon: FileBarChart, title: "Reportes Ejecutivos", desc: "Genera reportes profesionales con branding corporativo listos para presentar a dirección." },
-  { icon: Download, title: "Exportaciones Avanzadas", desc: "Exporta a PDF, PPTX, Excel y CSV con trazabilidad completa y historial por usuario." },
-  { icon: Activity, title: "Monitoreo de KPIs", desc: "Alertas inteligentes cuando tus indicadores superan umbrales críticos definidos por ti." },
-  { icon: Plug, title: "Integraciones", desc: "Conecta APIs, Google Sheets, bases de datos y fuentes empresariales con sincronización automática." },
-];
+const serviceIcons = [
+  BarChart3, Brain, MessageSquare, Bot, Mic, Workflow,
+  FileBarChart, Download, Activity, Plug,
+] as const;
 
 const container = {
   hidden: {},
@@ -46,14 +40,13 @@ export function ServicesSection() {
               <span className="text-sm font-semibold uppercase tracking-widest text-primary">
                 Servicios
               </span>
-              <h2 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
-                Todo lo que necesitas para{" "}
-                <span className="text-gradient">crecer con datos</span>
-              </h2>
-              <p className="mx-auto max-w-2xl text-lg font-medium leading-relaxed text-white/75">
-                Una plataforma integral que combina analítica avanzada, inteligencia artificial y
-                automatización para potenciar la toma de decisiones.
-              </p>
+              <RotatingHeadline
+                items={servicesHeadlineVariants}
+                intervalMs={8200}
+                minHeightClass="min-h-[15rem] sm:min-h-[13.5rem] lg:min-h-[12.5rem]"
+                titleClassName="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl"
+                subtitleClassName="mx-auto max-w-2xl font-medium leading-relaxed text-white/75"
+              />
             </motion.div>
 
             <motion.div
@@ -63,19 +56,27 @@ export function ServicesSection() {
               viewport={{ once: true }}
               className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
             >
-              {services.map((s) => (
+              {servicesCards.map((s, i) => {
+                const Icon = serviceIcons[i];
+                return (
                 <motion.div
                   key={s.title}
                   variants={item}
                   className="group relative rounded-xl border border-white/[0.08] bg-white/[0.04] p-6 backdrop-blur-sm transition-all duration-300 hover:border-primary/45 hover:bg-white/[0.06] hover:shadow-lg hover:shadow-primary/10"
                 >
                   <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg gradient-primary transition-shadow group-hover:glow-sm">
-                    <s.icon className="h-5 w-5 text-white" />
+                    <Icon className="h-5 w-5 text-white" />
                   </div>
-                  <h3 className="mb-2 font-display font-semibold text-white">{s.title}</h3>
-                  <p className="text-sm leading-relaxed text-white/60">{s.desc}</p>
+                  <h3 className="mb-1 font-display font-semibold text-white">{s.title}</h3>
+                  <p className="mb-2 text-sm font-medium leading-snug text-primary/90 break-normal hyphens-none [overflow-wrap:normal] [word-break:normal]">
+                    {s.tagline}
+                  </p>
+                  <p className="text-sm leading-relaxed text-white/60 break-normal hyphens-none [overflow-wrap:normal] [word-break:normal]">
+                    {s.desc}
+                  </p>
                 </motion.div>
-              ))}
+              );
+              })}
             </motion.div>
           </div>
         </div>
