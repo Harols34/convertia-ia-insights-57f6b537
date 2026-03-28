@@ -1030,6 +1030,20 @@ export type Database = {
         Returns: Json
       }
       get_user_tenant: { Args: { _user_id: string }; Returns: string }
+      search_dashboard_sessions: {
+        Args: {
+          _date_from?: string
+          _date_to?: string
+          _limit?: number
+          _offset?: number
+          _search_text?: string
+        }
+        Returns: {
+          id: string
+          title: string
+          created_at: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

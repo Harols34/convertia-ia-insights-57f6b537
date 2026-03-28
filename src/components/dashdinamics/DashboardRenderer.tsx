@@ -2,30 +2,68 @@ import { DashboardData } from "@/types/dashdinamics";
 import { KpiGrid } from "./KpiGrid";
 import { InsightList } from "./InsightList";
 import { DynamicChart } from "@/components/app/DynamicChart";
-import { ArrowRight, Expand, Target } from "lucide-react";
+import { ArrowRight, Expand, Target, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { cn } from "@/lib/utils";
 
 interface DashboardRendererProps {
   message: string;
   dashboard: DashboardData;
   decisionGoal?: string | null;
   onRefine?: (prompt: string) => void;
+  /** Solo en el último mensaje del asistente: vuelve a llamar al modelo con la misma pregunta */
+  onRegenerateDashboard?: () => void;
+  isRegenerating?: boolean;
 }
 
-export function DashboardRenderer({ message, dashboard, decisionGoal, onRefine }: DashboardRendererProps) {
+export function DashboardRenderer({
+  message,
+  dashboard,
+  decisionGoal,
+  onRefine,
+  onRegenerateDashboard,
+  isRegenerating,
+}: DashboardRendererProps) {
   const navigate = useNavigate();
+  const nextSteps = Array.isArray(dashboard.recommended_next_steps)
+    ? dashboard.recommended_next_steps.map(String)
+    : typeof dashboard.recommended_next_steps === "string" && dashboard.recommended_next_steps.trim()
+      ? [dashboard.recommended_next_steps.trim()]
+      : dashboard.recommended_next_steps && typeof dashboard.recommended_next_steps === "object"
+        ? Object.values(dashboard.recommended_next_steps as Record<string, unknown>).map(String)
+        : [];
+  const kpis = Array.isArray(dashboard.kpis) ? dashboard.kpis : [];
+  const charts = Array.isArray(dashboard.charts) ? dashboard.charts : [];
+  const tables = Array.isArray(dashboard.tables) ? dashboard.tables : [];
+  const insights = Array.isArray(dashboard.insights) ? dashboard.insights : [];
 
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="space-y-1.5">
-        <h3 className="text-lg font-display font-bold tracking-tight">{dashboard.title}</h3>
-        {dashboard.subtitle && <p className="text-xs text-muted-foreground">{dashboard.subtitle}</p>}
-        {dashboard.time_range && (
-          <span className="inline-flex items-center text-[10px] px-2.5 py-1 rounded-full bg-primary/10 text-primary font-semibold">
-            {dashboard.time_range}
-          </span>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="space-y-1.5 min-w-0 flex-1">
+          <h3 className="text-lg font-display font-bold tracking-tight">{dashboard.title ?? "Dashboard"}</h3>
+          {dashboard.subtitle && <p className="text-xs text-muted-foreground">{dashboard.subtitle}</p>}
+          {dashboard.time_range && (
+            <span className="inline-flex items-center text-[10px] px-2.5 py-1 rounded-full bg-primary/10 text-primary font-semibold">
+              {dashboard.time_range}
+            </span>
+          )}
+        </div>
+        {onRegenerateDashboard && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5 shrink-0"
+            onClick={onRegenerateDashboard}
+            disabled={isRegenerating}
+            title="Reintenta la generación si algún gráfico quedó vacío"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", isRegenerating && "animate-spin")} />
+            Regenerar
+          </Button>
         )}
       </div>
 
@@ -41,13 +79,13 @@ export function DashboardRenderer({ message, dashboard, decisionGoal, onRefine }
       )}
 
       {/* KPIs */}
-      {dashboard.kpis && dashboard.kpis.length > 0 && <KpiGrid kpis={dashboard.kpis} />}
+      {kpis.length > 0 && <KpiGrid kpis={kpis} />}
 
       {/* Charts */}
-      {dashboard.charts && dashboard.charts.length > 0 && (
-        <div className={`grid gap-4 ${dashboard.charts.length > 1 ? "md:grid-cols-2" : ""}`}>
-          {dashboard.charts.map((chart) => (
-            <div key={chart.id} className="relative">
+      {charts.length > 0 && (
+        <div className={`grid gap-4 ${charts.length > 1 ? "md:grid-cols-2" : ""}`}>
+          {charts.map((chart, chartIndex) => (
+            <div key={chart.id ? `${chart.id}-${chartIndex}` : `chart-${chartIndex}`} className="relative">
               <div className="flex items-center justify-between mb-2 px-1">
                 <h4 className="text-xs font-display font-semibold text-muted-foreground">{chart.title}</h4>
                 <Button
@@ -61,54 +99,73 @@ export function DashboardRenderer({ message, dashboard, decisionGoal, onRefine }
                   <Expand className="h-3.5 w-3.5" />
                 </Button>
               </div>
-              <DynamicChart config={chart.config} allowExpand={false} />
+              {chart.rationale && (
+                <p className="text-[10px] text-muted-foreground mb-1 px-1 leading-snug">{chart.rationale}</p>
+              )}
+              <DynamicChart config={chart.config} allowExpand={false} showTypeSwitch />
             </div>
           ))}
         </div>
       )}
 
       {/* Tables */}
-      {dashboard.tables && dashboard.tables.length > 0 && (
+      {tables.length > 0 && (
         <div className="space-y-3">
-          {dashboard.tables.map((table, i) => (
-            <div key={i} className="rounded-xl border border-border overflow-hidden">
+          {tables.map((table, i) => {
+            const headers = Array.isArray(table.headers) ? table.headers : [];
+            const rows = Array.isArray(table.rows) ? table.rows : [];
+            const tableKey = table.title ? `${table.title}-${i}` : `table-${i}`;
+            return (
+            <div key={tableKey} className="rounded-xl border border-border overflow-hidden">
               <div className="px-4 py-2.5 bg-muted/50">
-                <h4 className="text-xs font-display font-semibold">{table.title}</h4>
+                <h4 className="text-xs font-display font-semibold">{table.title ?? "Tabla"}</h4>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-border bg-muted/30">
-                      {table.headers.map((h, j) => (
-                        <th key={j} className="px-4 py-2.5 text-left font-semibold text-muted-foreground">{h}</th>
+                      {headers.map((h, j) => (
+                        <th key={j} className="px-4 py-2.5 text-left font-semibold text-muted-foreground">{String(h ?? "")}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {table.rows.map((row, j) => (
+                    {rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={Math.max(headers.length, 1)} className="px-4 py-3 text-muted-foreground">
+                          Sin filas
+                        </td>
+                      </tr>
+                    ) : (
+                      rows.map((row, j) => {
+                        const cells = Array.isArray(row) ? row : [];
+                        return (
                       <tr key={j} className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors">
-                        {row.map((cell, k) => (
-                          <td key={k} className="px-4 py-2.5">{cell}</td>
+                        {cells.map((cell, k) => (
+                          <td key={k} className="px-4 py-2.5">{cell != null ? String(cell) : "—"}</td>
                         ))}
                       </tr>
-                    ))}
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* Insights */}
-      {dashboard.insights && dashboard.insights.length > 0 && <InsightList insights={dashboard.insights} />}
+      {insights.length > 0 && <InsightList insights={insights} />}
 
       {/* Next steps */}
-      {dashboard.recommended_next_steps && dashboard.recommended_next_steps.length > 0 && (
+      {nextSteps.length > 0 && (
         <div className="space-y-2.5">
           <h4 className="text-xs font-display font-semibold text-muted-foreground uppercase tracking-wider">Próximos pasos</h4>
           <div className="grid gap-2 sm:grid-cols-2">
-            {dashboard.recommended_next_steps.map((step, i) => (
+            {nextSteps.map((step, i) => (
               <button
                 key={i}
                 onClick={() => onRefine?.(step)}

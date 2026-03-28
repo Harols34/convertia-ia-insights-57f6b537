@@ -14,8 +14,14 @@ export function KpiGrid({ kpis }: { kpis: DashKpi[] }) {
         const trendColor = kpi.trend === "up" ? "text-emerald-500" : kpi.trend === "down" ? "text-red-500" : "text-muted-foreground";
         const trendBg = kpi.trend === "up" ? "bg-emerald-500/10" : kpi.trend === "down" ? "bg-red-500/10" : "bg-muted/50";
 
+        const fullLabel = `${kpi.label}: ${kpi.value}${kpi.change != null && String(kpi.change).trim() ? ` (${kpi.change})` : ""}`;
+
         return (
-          <div key={i} className="relative overflow-hidden rounded-xl border border-border bg-card p-4 space-y-2 group hover:shadow-md transition-all">
+          <div
+            key={i}
+            title={fullLabel}
+            className="relative overflow-hidden rounded-xl border border-border bg-card p-4 space-y-2 group hover:shadow-md transition-all cursor-default"
+          >
             <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="relative">
               <div className="flex items-center justify-between">

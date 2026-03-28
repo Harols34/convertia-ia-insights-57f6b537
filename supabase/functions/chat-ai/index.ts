@@ -21,7 +21,7 @@ interface Filters {
   fecha_hasta?: string;
 }
 
-const FILTER_DESC = `Filtros WHERE como JSON. Campos: agente_negocio, agente_prim_gestion, agente_ultim_gestion, campana_mkt, campana_inconcert, tipo_llamada, ciudad, categoria_mkt, result_negocio, result_prim_gestion, result_ultim_gestion, prim_resultado_marcadora, bpo, cliente. Ejemplo: {"campana_mkt":"WOM_CL_ENTRANTES","tipo_llamada":"Entrante"}`;
+const FILTER_DESC = `Filtros JSON para la tabla leads (tenant ya aplicado). Campos: agente_negocio, agente_prim_gestion, agente_ultim_gestion, campana_mkt, campana_inconcert, tipo_llamada, ciudad, categoria_mkt, result_negocio, result_prim_gestion, result_ultim_gestion, prim_resultado_marcadora, bpo, cliente, es_venta (boolean true=solo ventas). Ejemplo: {"campana_mkt":"WOM_CL_ENTRANTES","tipo_llamada":"Entrante","es_venta":true}`;
 const DATE_DESC = `Campo fecha para rango: fch_creacion(default), fch_negocio, fch_prim_gestion, fch_ultim_gestion, fch_prim_resultado_marcadora`;
 const DIM_DESC = `Dimensiones: agente_negocio, agente_prim_gestion, agente_ultim_gestion, campana_mkt, campana_inconcert, tipo_llamada, ciudad, categoria_mkt, result_negocio, result_prim_gestion, result_ultim_gestion, prim_resultado_marcadora, bpo, hora, hora_negocio, fecha, fecha_negocio, dia_semana, tramo_horario`;
 
@@ -30,7 +30,8 @@ const TOOLS = [
     type: "function",
     function: {
       name: "get_kpis",
-      description: "KPIs globales: total leads, ventas, conversión, tiempos.",
+      description:
+        "Totales y tasas en un rango: total_leads, ventas (es_venta), conversión/efectividad %, tiempos agregados. Fechas relativas (ayer, última semana, este mes) → convierte a fecha_desde/fecha_hasta YYYY-MM-DD en America/Santiago. Contactabilidad: si no viene en el resultado, calcúlala con agg_1d(dimension=prim_resultado_marcadora) y fórmula (CONNECTED+FINISHED)/total.",
       parameters: {
         type: "object",
         properties: {
@@ -46,7 +47,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "agg_1d",
-      description: `Agregación 1D: leads,ventas,conv% por dimensión. ${DIM_DESC}. Usa filters para filtrar, date_field para elegir fecha.`,
+      description: `Agregación 1D: leads, ventas y conversión por dimensión (${DIM_DESC}). "Por ciudad/campaña/agente" = usa dimension, no filters, salvo que el usuario pida un valor concreto (ej. ciudad=Santiago). Omite filters o {} si no hay corte explícito.`,
       parameters: {
         type: "object",
         properties: {
@@ -102,7 +103,8 @@ const TOOLS = [
     type: "function",
     function: {
       name: "funnel",
-      description: "Funnel: total→gestión→negocio→ventas.",
+      description:
+        "Embudo de conversión (leads → contactados/gestionados → negocio → ventas según devuelva el RPC). Úsalo para preguntas de funnel o embudo.",
       parameters: {
         type: "object",
         properties: {
@@ -120,16 +122,50 @@ const TOOLS = [
 // TOOL EXECUTION — con filtros forzados extraídos del mensaje del usuario
 // ═══════════════════════════════════════════════════════════════════════════
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** "America/Santiago" contiene "santiago" → no debe disparar filters.ciudad */
+function scrubTimezoneFalsePositives(text: string): string {
+  return text
+    .replace(/\bAmerica\/Santiago\b/gi, " ")
+    .replace(/\bPacific\/Easter\b/gi, " ")
+    .replace(/\bAmerica\/[A-Za-z_]+\/[A-Za-z_]+\b/g, " ");
+}
+
+/** Ciudad solo si aparece como término (no como parte de otra cadena) */
+function messageMentionsCityName(scrubbedUserMsg: string, city: string): boolean {
+  const c = city.trim();
+  if (!c || c.length < 2) return false;
+  const ml = scrubbedUserMsg.toLowerCase();
+  const cl = c.toLowerCase();
+  if (/\s/.test(c)) return ml.includes(cl);
+  const re = new RegExp(`(^|[^a-z0-9áéíóúñü])${escapeRegExp(cl)}([^a-z0-9áéíóúñü]|$)`, "i");
+  return re.test(ml);
+}
+
+const GENERIC_AGENT_TOKENS = new Set([
+  "agente", "agentes", "ciudad", "ciudades", "campana", "campaña", "campañas", "campanas",
+  "preferencias", "confirmadas", "dashboard", "tablero", "tableros", "periodo", "metrica",
+  "métrica", "paneles", "panel", "desde", "hasta", "marzo", "enero", "febrero", "abril",
+  "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+  "total", "leads", "ventas", "analisis", "análisis", "rendimiento", "comparacion", "comparación",
+  "elegido", "recomendado", "incluir", "adicional", "principal", "principales", "deseas",
+  "gustaria", "gustaría", "solo", "totales", "comparar",
+]);
+
 // Extrae filtros REALES del mensaje del usuario comparando contra dimensiones de la BD
 function extractFiltersFromMessage(userMsg: string, dims: any): Record<string, string> {
   if (!userMsg || !dims) return {};
-  const msg = userMsg.toLowerCase();
+  const scrubbed = scrubTimezoneFalsePositives(userMsg);
+  const msg = scrubbed.toLowerCase();
   const found: Record<string, string> = {};
 
-  // Ciudades
+  // Ciudades (NUNCA por subcadena tipo America/Santiago)
   if (dims.ciudades && Array.isArray(dims.ciudades)) {
     for (const c of dims.ciudades) {
-      if (c && c.length > 2 && msg.includes(c.toLowerCase())) {
+      if (c && c.length > 2 && messageMentionsCityName(scrubbed, c)) {
         found.ciudad = c;
         break;
       }
@@ -204,6 +240,15 @@ function extractFiltersFromMessage(userMsg: string, dims: any): Record<string, s
       }
     }
   }
+  // Resultados última gestión
+  if (dims.resultados_ultim_gestion && Array.isArray(dims.resultados_ultim_gestion)) {
+    for (const r of dims.resultados_ultim_gestion) {
+      if (r && r.length > 3 && msg.includes(r.toLowerCase())) {
+        found.result_ultim_gestion = r;
+        break;
+      }
+    }
+  }
   // Resultado marcadora
   if (dims.prim_resultado_marcadora && Array.isArray(dims.prim_resultado_marcadora)) {
     for (const r of dims.prim_resultado_marcadora) {
@@ -214,19 +259,96 @@ function extractFiltersFromMessage(userMsg: string, dims: any): Record<string, s
     }
   }
 
+  // Portabilidad (nombre coloquial → código en DIMENSIONES)
+  if (!found.campana_mkt && /portabilidad/.test(msg) && Array.isArray(dims.campanas_mkt)) {
+    const hit = dims.campanas_mkt.find((c: string) => /portabilidad/i.test(c));
+    if (hit) found.campana_mkt = hit;
+  }
+
+  // Canales frecuentes
+  if (!found.tipo_llamada && /\bwhatsapp\b/.test(msg) && Array.isArray(dims.tipos_llamada)) {
+    const w = dims.tipos_llamada.find((t: string) => /whatsapp/i.test(t));
+    if (w) found.tipo_llamada = w;
+  }
+  if (!found.tipo_llamada && /\bc2c\b/.test(msg) && Array.isArray(dims.tipos_llamada)) {
+    const w = dims.tipos_llamada.find((t: string) => String(t).toLowerCase().includes("c2c"));
+    if (w) found.tipo_llamada = w;
+  }
+  if (!found.tipo_llamada && /\bentrante\b/.test(msg) && Array.isArray(dims.tipos_llamada)) {
+    const w = dims.tipos_llamada.find((t: string) => /entrante/i.test(t));
+    if (w) found.tipo_llamada = w;
+  }
+  if (!found.tipo_llamada && (/formulario/.test(msg) || /\bform\b/.test(msg)) && Array.isArray(dims.tipos_llamada)) {
+    const w = dims.tipos_llamada.find((t: string) => /^form$/i.test(String(t).trim()));
+    if (w) found.tipo_llamada = w;
+  }
+  if (!found.tipo_llamada && /salientes?/.test(msg) && Array.isArray(dims.tipos_llamada)) {
+    const w = dims.tipos_llamada.find((t: string) => /c2c/i.test(String(t)));
+    if (w) found.tipo_llamada = w;
+  }
+
+  if (!found.result_ultim_gestion && /buz[oó]n/.test(msg) && Array.isArray(dims.resultados_ultim_gestion)) {
+    const hit = dims.resultados_ultim_gestion.find((r: string) => /buz[oó]n/i.test(r));
+    if (hit) found.result_ultim_gestion = hit;
+  }
+  if (!found.result_negocio && /no interesad/.test(msg) && Array.isArray(dims.resultados_negocio)) {
+    const hit = dims.resultados_negocio.find((r: string) => /no interesad/i.test(r));
+    if (hit) found.result_negocio = hit;
+  }
+
+  if (/última gestión|ultima gestion/.test(msg) && /no interesad/.test(msg) && Array.isArray(dims.resultados_ultim_gestion)) {
+    const hit = dims.resultados_ultim_gestion.find((r: string) => /no interesad/i.test(r));
+    if (hit) {
+      found.result_ultim_gestion = hit;
+      delete found.result_negocio;
+    }
+  }
+  if (/primera gestión|primera gestion/.test(msg) && /no interesad/.test(msg) && Array.isArray(dims.resultados_prim_gestion)) {
+    const hit = dims.resultados_prim_gestion.find((r: string) => /no interesad/i.test(r));
+    if (hit) {
+      found.result_prim_gestion = hit;
+      delete found.result_negocio;
+    }
+  }
+
+  // Agente: match parcial por token (ej. "luke" → wom_luke_age_0029) si no hubo match exacto
+  if (!found.agente_negocio && !found.agente_prim_gestion && !found.agente_ultim_gestion) {
+    const tokens = scrubbed
+      .toLowerCase()
+      .split(/[^a-z0-9áéíóúñü]+/)
+      .filter((t: string) => t.length >= 4 && !GENERIC_AGENT_TOKENS.has(t));
+    const agentPairs = [
+      ["agentes_negocio", "agente_negocio"],
+      ["agentes_prim_gestion", "agente_prim_gestion"],
+      ["agentes_ultim_gestion", "agente_ultim_gestion"],
+    ] as const;
+    outer: for (const [dimKey, fk] of agentPairs) {
+      const arr = dims[dimKey];
+      if (!Array.isArray(arr)) continue;
+      for (const a of arr) {
+        if (!a || typeof a !== "string") continue;
+        const al = a.toLowerCase();
+        for (const tok of tokens) {
+          if (al.includes(tok)) {
+            found[fk] = a;
+            break outer;
+          }
+        }
+      }
+    }
+  }
+
   return found;
 }
 
 // Combina: filtros forzados (del mensaje) + filtros del modelo (args.filters) + filtros frontend
 function buildFilters(args: any, af: Filters, forcedFilters: Record<string, string> = {}): object | null {
-  const m: Record<string, string> = {};
+  const m: Record<string, unknown> = {};
 
-  // 1. Filtros forzados (extraídos del mensaje del usuario) — MÁXIMA prioridad
   for (const [k, v] of Object.entries(forcedFilters)) {
     if (v) m[k] = v;
   }
 
-  // 2. Filtros del frontend
   if (af.campana_mkt) m.campana_mkt = af.campana_mkt;
   if (af.agente) m.agente_negocio = af.agente;
   if (af.tipo_llamada) m.tipo_llamada = af.tipo_llamada;
@@ -235,11 +357,11 @@ function buildFilters(args: any, af: Filters, forcedFilters: Record<string, stri
   if (af.campana_inconcert) m.campana_inconcert = af.campana_inconcert;
   if (af.bpo) m.bpo = af.bpo;
   if (af.result_negocio) m.result_negocio = af.result_negocio;
+  if (af.es_venta === true) m.es_venta = true;
 
-  // 3. Filtros del modelo (si los pasa bien, genial; si no, los forzados ya están)
   if (args.filters && typeof args.filters === "object") {
     for (const [k, v] of Object.entries(args.filters)) {
-      if (v) m[k] = String(v);
+      if (v !== undefined && v !== null && v !== "") m[k] = v;
     }
   }
 
@@ -403,34 +525,64 @@ FORMATO: español, markdown. Tablas:
 }
 
 function buildDashSys(dims: any, kpis: any, af: Filters): string {
-  return `Motor de DashDinamics.
+  return `Eres el asistente analítico de DashDinamics (Converti-IA): generas insights y dashboards desde la tabla leads (call center / ventas telco, ej. WOM Chile) en Supabase.
 
-DIMENSIONES: ${JSON.stringify(dims, null, 0)}
-KPIs: ${JSON.stringify(kpis, null, 0)}
-FILTROS: ${JSON.stringify(af)}
+DIMENSIONES (valores reales del tenant): ${JSON.stringify(dims, null, 0)}
+KPIs globales de referencia: ${JSON.stringify(kpis, null, 0)}
+FILTROS UI ya aplicados por el front: ${JSON.stringify(af)}
 
-═══ REGLA #1 — FILTROS ═══
-Cuando el usuario mencione CUALQUIER valor específico, DEBES pasarlo en "filters":
-- Ciudad → filters={"ciudad":"Santiago"}
-- Campaña → filters={"campana_mkt":"WOM_01_EX"}
-- Agente → filters={"agente_negocio":"wom_xxx"}
-- Tipo llamada → filters={"tipo_llamada":"form"}
-- Resultado → filters={"result_negocio":"SAC"}
+═══ DASH — SIN FILTROS AUTOMÁTICOS DESDE EL TEXTO ═══
+El servidor NO inyecta ciudad, campaña, agente ni tipo de llamada desde el mensaje del usuario. Solo deben usarse: (1) filtros que el usuario pida explícitamente en lenguaje natural y tú traduzcas a "filters", (2) los de FILTROS UI arriba. Expresiones genéricas como "por ciudad" o "por campaña" indican DIMENSIÓN de agrupación, NO filters salvo valor concreto (ej. "solo Santiago", código WOM_…).
 
-EJEMPLO CRÍTICO:
-❌ MALO: "tabla de Santiago" → agg_1d(dimension="fecha") sin filters → TODOS los leads
-✅ BUENO: agg_1d(dimension="fecha", filters={"ciudad":"Santiago"}) → solo Santiago
+═══ ZONA HORARIA ═══
+Interpreta y expresa fechas en America/Santiago (Chile). Convierte "ayer", "hoy", "última semana", "semana pasada", "este mes", "marzo", "hace 8 días", "últimos 30 días", "del 10 al 14 de marzo" a fecha_desde / fecha_hasta en YYYY-MM-DD según calendario local.
+Comparaciones: "esta semana vs anterior", "mes actual vs anterior", "lunes vs martes" → dos llamadas a herramientas o rangos explícitos en get_kpis/agg.
 
-LLAMA HERRAMIENTAS PRIMERO, luego genera JSON.
-Para TOTALES usa get_kpis(filters={...}), NUNCA sumes filas.
+═══ GLOSARIO (usa en insights) ═══
+Lead = registro de contacto. Venta = es_venta=true. Efectividad/conversión (%) = ventas / leads × 100 (si leads=0, indicar N/A).
+Contactabilidad (%) = leads con prim_resultado_marcadora IN ('CONNECTED','FINISHED') / total leads × 100.
+Porta POS/PRE, Fibra, Línea nueva, BAM: tipos de resultado de negocio. c2c=click-to-call saliente; Entrante; whatsapp; form=formulario.
+Distingue SIEMPRE: result_prim_gestion (primera gestión agente), result_ultim_gestion (última gestión), result_negocio (cierre definitivo). Si el usuario dice "resultado" sin aclarar → prioriza result_negocio; si dice "primera gestión" o "última gestión" → filtro en el campo correspondiente.
+Ciudad vacía en datos → mostrar/agrupar como "Sin ciudad". keyword vacío → ignorar.
+
+═══ SINÓNIMOS ═══
+ventas/conversiones/plata hecha → es_venta=true o métricas sobre ventas. convertimos/efectividad → tasa ventas/leads.
+mejor vendedor → ranking por agente y ventas. "se perdieron" → NO_ANSWER / sin venta según contexto. "por dónde entran" → tipo_llamada o categoria_mkt.
+
+═══ REGLA #1 — FILTROS EN HERRAMIENTAS ═══
+Todo valor concreto (ciudad, campaña_mkt, agente_*, tipo_llamada, result_*, prim_resultado_marcadora, categoria_mkt, es_venta) va en "filters" del tool SOLO si el usuario lo pide explícitamente (nombre de ciudad, código de campaña, id de agente, etc.).
+Si el usuario dice "portabilidad" y no da código, elige de DIMENSIONES.campanas_mkt la que contenga PORTABILIDAD.
+Sin rango de fechas explícito: asume los últimos 7 días calendario en Chile (fch_creacion) y dilo en time_range.
+
+═══ CIUDAD: DIMENSIÓN agrupación vs FILTRO ═══
+Frases como "por ciudad", "rendimiento por ciudad", "desglose por ciudad", "KPIs por ciudad" = usa agg_1d con dimension "ciudad" y SIN filters.ciudad (debes ver TODAS las ciudades con datos en el rango).
+filters.ciudad SOLO si el usuario nombra una ciudad concreta ("solo Santiago", "Melipilla", etc.).
+El huso horario o "calendario Chile" NO implica filtro por ciudad.
+
+═══ HERRAMIENTAS ═══
+get_kpis: totales, conversión, tiempos agregados. agg_1d: por dimensión (fecha, hora, campana_mkt, agente_*, ciudad, tipo_llamada, result_*, etc.). agg_2d: cruce 2 dimensiones. time_metrics: tiempos respuesta/ciclo. funnel: embudo leads→gestión→negocio→ventas.
+Para hora pico / leads por hora usa dimension "hora" o "hora_negocio" según date_field adecuado (fch_creacion para llegada).
+
+═══ EJECUCIÓN OBLIGATORIA ═══
+NUNCA devuelvas formularios, preguntas de afinación, clarifying_questions ni dashboard_presets. SIEMPRE llama herramientas y devuelve response_mode "dashboard" con datos reales. Si el pedido es vago, infiere periodo (p. ej. últimos 7 días), métricas razonables y los gráficos más útiles.
+
+═══ DESGLOSE "NINGUNO" ═══
+Si el usuario eligió "Ninguno" (sin desglose por agente/campaña/ciudad): NO uses dimension campana_mkt, agente_* ni ciudad en agg_1d/agg_2d ni en títulos de gráficos. Solo fecha, hora o KPIs globales. Prohibido titular "por campaña" o "por agente".
+
+═══ FECHAS Y TOTALES ═══
+Mismo rango inclusivo (America/Santiago) y mismo date_field (por defecto fch_creacion) en get_kpis y en agg_1d(dimension=fecha). total_leads de get_kpis debe ser coherente con la serie diaria del mismo rango.
+
+Cuando corresponda dashboard: LLAMA herramientas ANTES del JSON final. TOTALES con get_kpis, no sumes filas a mano. Prioriza kpis[] con valores copiados de RESULTADO_BD_REAL.
 ${ANTI_HALLUCINATION}
 
-ECHARTS: tooltip:{"trigger":"axis","axisPointer":{"type":"cross"}} | legend:{"data":[...],"bottom":0} | Colores: Leads="#3498db" Ventas="#2ecc71" Efectividad="#e74c3c"
+═══ FORMATO dashboard ═══
+assistant_message: insights en markdown. dashboard: title, subtitle, time_range, kpis (leads, ventas, conversión %, contactabilidad cuando aplique), charts, tables, insights, recommended_next_steps.
+Cada chart: id, title, type, rationale, config ECharts con datos reales. Si el usuario pidió un solo tablero, unifica en un dashboard; si pidió varios paneles, varios charts bien titulados en el mismo dashboard.
+Tablas: headers como array de strings; rows SIEMPRE array de arrays (cada fila = array de celdas en el mismo orden que headers). Si el chart tiene datos, la tabla detalle debe repetir esas filas con valores numéricos, no rows vacío.
+Paleta: Leads #3498db, Ventas #2ecc71, Conversión #e74c3c.
 
-RESPONDE SOLO JSON:
-dashboard: {"response_mode":"dashboard","assistant_message":"...","decision_goal":"...","dashboard":{"title":"...","subtitle":"...","time_range":"...","kpis":[{"label":"...","value":"...","trend":"up|down|neutral","icon":"TrendingUp|Users|Target"}],"charts":[{"id":"...","title":"...","type":"...","config":{...ECharts con datos REALES...}}],"insights":[{"type":"info","title":"...","description":"..."}],"tables":[{"title":"...","headers":[...],"rows":[[...]]}]}}
-chart_picker: {"response_mode":"chart_picker","assistant_message":"...","chart_options":[{"id":"...","name":"...","description":"..."}]}
-clarification: {"response_mode":"clarification","assistant_message":"...","clarifying_questions":[{"id":"q1","question":"...","options":["..."]}]}`;
+RESPONDE SOLO JSON válido en la raíz:
+{"response_mode":"dashboard","assistant_message":"...","decision_goal":"...","dashboard":{...}}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -485,7 +637,7 @@ async function runDash(
         {
           role: "user",
           content:
-            'Genera JSON final. ESTRUCTURA OBLIGATORIA: {"response_mode":"dashboard","assistant_message":"...","dashboard":{"title":"...","charts":[...],"tables":[...],"kpis":[...],"insights":[...]}}. response_mode DEBE estar en la RAÍZ del JSON, NO dentro de dashboard. Usa EXACTAMENTE los números de RESULTADO_BD_REAL.',
+            'JSON único: response_mode "dashboard" obligatorio. RESULTADO_BD_REAL en kpis/charts/tables. "por ciudad" = dimension ciudad sin filters.ciudad salvo ciudad explícita. tablas: rows array de arrays. get_kpis y agg mismo rango y date_field. Sin clarifying_questions.',
         },
       ],
       response_format: { type: "json_object" },
@@ -558,12 +710,119 @@ async function runAnalytics(
   return fr.body!;
 }
 
+function coerceStringArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map((x) => String(x ?? ""));
+  if (typeof v === "string" && v.trim()) return [v.trim()];
+  if (v && typeof v === "object") return Object.values(v as Record<string, unknown>).map((x) => String(x ?? ""));
+  return [];
+}
+
+/** El modelo a veces devuelve rows como objetos; el front espera string[][]. */
+/** Quita entradas no-objeto en series[] (JSON roto del modelo → strings como `},{`) */
+function sanitizeChartConfig(config: unknown): unknown {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return config;
+  const c = config as Record<string, unknown>;
+  const raw = c.series;
+  if (!Array.isArray(raw)) return config;
+  const cleaned = raw.filter((s) => s !== null && typeof s === "object" && !Array.isArray(s));
+  if (cleaned.length === raw.length) return config;
+  return { ...c, series: cleaned };
+}
+
+function normalizeTableRows(headers: string[], rows: unknown): string[][] {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => {
+    if (Array.isArray(row)) return row.map((c) => (c != null ? String(c) : "—"));
+    if (row && typeof row === "object") {
+      const o = row as Record<string, unknown>;
+      if (headers.length > 0) {
+        return headers.map((h) => {
+          const v = o[h] ?? o[String(h).toLowerCase()];
+          return v != null ? String(v) : "—";
+        });
+      }
+      return Object.values(o).map((v) => (v != null ? String(v) : "—"));
+    }
+    return [row != null ? String(row) : "—"];
+  });
+}
+
+function sanitizeDashboard(d: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  if (!d || typeof d !== "object") {
+    return {
+      title: "Dashboard",
+      subtitle: "",
+      time_range: "",
+      kpis: [],
+      charts: [],
+      tables: [],
+      insights: [],
+      recommended_next_steps: [],
+    };
+  }
+  const charts = Array.isArray(d.charts)
+    ? d.charts.map((ch: any) => ({
+        ...ch,
+        config: ch?.config != null ? sanitizeChartConfig(ch.config) : ch?.config,
+      }))
+    : [];
+  const tables = Array.isArray(d.tables)
+    ? d.tables.map((t: any) => {
+        const headers = Array.isArray(t?.headers) ? t.headers.map((h: unknown) => String(h ?? "")) : [];
+        let rows = t?.rows;
+        if (Array.isArray(rows) && rows.length > 0 && rows[0] && typeof rows[0] === "object" && !Array.isArray(rows[0])) {
+          const sample = rows[0] as Record<string, unknown>;
+          const derived =
+            headers.length > 0 ? headers : Object.keys(sample);
+          const h = derived.length > 0 ? derived : headers;
+          return {
+            ...t,
+            headers: h,
+            rows: normalizeTableRows(h, rows),
+          };
+        }
+        return {
+          ...t,
+          headers,
+          rows: normalizeTableRows(headers, rows),
+        };
+      })
+    : [];
+  return {
+    ...d,
+    kpis: Array.isArray(d.kpis) ? d.kpis : [],
+    charts,
+    tables,
+    insights: Array.isArray(d.insights) ? d.insights : [],
+    recommended_next_steps: coerceStringArray(d.recommended_next_steps),
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // JSON NORMALIZER — asegura que la estructura sea la que espera el frontend
 // ═══════════════════════════════════════════════════════════════════════════
+
+/** Respuestas antiguas "clarification" → dashboard mínimo (sin formulario en UI) */
+function coerceClarificationToDashboard(raw: any): any {
+  const hint =
+    raw.assistant_message ||
+    "No se generó un tablero. Reformula tu pregunta con periodo y qué quieres medir, o pulsa Regenerar.";
+  return {
+    response_mode: "dashboard",
+    assistant_message: hint,
+    decision_goal: null,
+    dashboard: null,
+  };
+}
 function normalizeDashResponse(raw: any): any {
   // Caso 1: Ya tiene response_mode en raíz → estructura correcta
   if (raw.response_mode) {
+    if (raw.response_mode === "clarification") {
+      return coerceClarificationToDashboard(raw);
+    }
+    if (raw.response_mode === "dashboard" && raw.dashboard) {
+      return { ...raw, dashboard: sanitizeDashboard(raw.dashboard) };
+    }
     return raw;
   }
 
@@ -576,7 +835,7 @@ function normalizeDashResponse(raw: any): any {
       response_mode: mode,
       assistant_message: inner.assistant_message || inner.message || "",
       decision_goal: inner.decision_goal || null,
-      dashboard: inner,
+      dashboard: sanitizeDashboard(inner),
     };
   }
 
@@ -591,7 +850,7 @@ function normalizeDashResponse(raw: any): any {
         response_mode: "dashboard",
         assistant_message: inner.assistant_message || inner.description || inner.message || "",
         decision_goal: inner.decision_goal || null,
-        dashboard: {
+        dashboard: sanitizeDashboard({
           title: inner.title || keys[0],
           subtitle: inner.subtitle || "",
           time_range: inner.time_range || "",
@@ -600,7 +859,7 @@ function normalizeDashResponse(raw: any): any {
           insights: inner.insights || [],
           tables: inner.tables || [],
           recommended_next_steps: inner.recommended_next_steps || [],
-        },
+        }),
       };
     }
   }
@@ -611,7 +870,7 @@ function normalizeDashResponse(raw: any): any {
       response_mode: "dashboard",
       assistant_message: raw.assistant_message || raw.message || "",
       decision_goal: raw.decision_goal || null,
-      dashboard: {
+      dashboard: sanitizeDashboard({
         title: raw.title || "Dashboard",
         subtitle: raw.subtitle || "",
         time_range: raw.time_range || "",
@@ -620,7 +879,7 @@ function normalizeDashResponse(raw: any): any {
         insights: raw.insights || [],
         tables: raw.tables || [],
         recommended_next_steps: raw.recommended_next_steps || [],
-      },
+      }),
     };
   }
 
@@ -633,13 +892,9 @@ function normalizeDashResponse(raw: any): any {
     };
   }
 
-  // Caso 6: clarifying_questions → clarification
+  // Caso 6: clarifying_questions (legado) → dashboard sin panel
   if (raw.clarifying_questions) {
-    return {
-      response_mode: "clarification",
-      assistant_message: raw.assistant_message || "",
-      clarifying_questions: raw.clarifying_questions,
-    };
+    return coerceClarificationToDashboard(raw);
   }
 
   // Fallback: envolver como mensaje
@@ -733,13 +988,17 @@ serve(async (req) => {
       console.log(`Meta OK: dims=${JSON.stringify(dims).length}c kpis=${JSON.stringify(kpis).length}c`);
       sys = mode === "dashdinamics" ? buildDashSys(dims, kpis, af) : buildAnalyticsSys(dims, kpis, af);
 
-      // Extraer filtros FORZADOS del mensaje del usuario
-      const lastUserMsg = messages.filter((m: any) => m.role === "user").pop()?.content || "";
-      forcedFilters = extractFiltersFromMessage(lastUserMsg, dims);
-      if (Object.keys(forcedFilters).length > 0) {
-        console.log(`FORCED FILTERS from message: ${JSON.stringify(forcedFilters)}`);
-        // También agregar al system prompt como recordatorio
-        sys += `\n⚠️ FILTROS DETECTADOS EN EL MENSAJE: ${JSON.stringify(forcedFilters)}. DEBES incluir estos en cada llamada a herramientas.`;
+      // DashDinamics: NO extraer filtros desde el texto (aclaración y preferencias mencionan ciudad/campaña/tipo genérico y rompen el análisis). Solo el modelo + filtros UI.
+      const lastUserMsg =
+        String(messages.filter((m: any) => m.role === "user").pop()?.content || "").trim();
+      if (mode === "dashdinamics") {
+        forcedFilters = {};
+      } else {
+        forcedFilters = extractFiltersFromMessage(lastUserMsg, dims);
+        if (Object.keys(forcedFilters).length > 0) {
+          console.log(`FORCED FILTERS from message: ${JSON.stringify(forcedFilters)}`);
+          sys += `\n⚠️ FILTROS DETECTADOS EN EL MENSAJE: ${JSON.stringify(forcedFilters)}. DEBES incluir estos en cada llamada a herramientas.`;
+        }
       }
 
       if (botId) {
@@ -760,6 +1019,12 @@ serve(async (req) => {
         try {
           const parsed = JSON.parse(c);
           const normalized = normalizeDashResponse(parsed);
+          if (normalized.response_mode === "clarification") {
+            const coerced = coerceClarificationToDashboard(normalized);
+            return new Response(JSON.stringify({ reply: coerced }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
           console.log(`[D] Normalized mode: ${normalized.response_mode}, has dashboard: ${!!normalized.dashboard}`);
           return new Response(JSON.stringify({ reply: normalized }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },

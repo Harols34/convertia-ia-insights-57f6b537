@@ -53,7 +53,7 @@ export default function ChartDetailPage() {
       {chartConfig && (
         <div className="border border-border rounded-xl bg-card p-6">
           {title && <h2 className="text-lg font-display font-semibold mb-4">{title}</h2>}
-          <DynamicChart config={chartConfig} allowExpand={false} height={500} />
+          <DynamicChart config={chartConfig} allowExpand={false} height={500} showTypeSwitch />
         </div>
       )}
 
@@ -63,7 +63,7 @@ export default function ChartDetailPage() {
           {dashboard.charts.map((chart) => (
             <div key={chart.id} className="border border-border rounded-xl bg-card p-4">
               <h3 className="text-sm font-display font-semibold mb-2">{chart.title}</h3>
-              <DynamicChart config={chart.config} allowExpand={false} height={350} />
+              <DynamicChart config={chart.config} allowExpand={false} height={350} showTypeSwitch />
             </div>
           ))}
         </div>
