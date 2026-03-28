@@ -11,11 +11,11 @@ export default function AppLayout() {
     <ProtectedRoute>
       <LeadsDataProvider>
         <SidebarProvider>
-          <div className="min-h-screen flex w-full">
+          <div className="flex h-svh max-h-svh min-h-0 w-full overflow-hidden">
             <AppSidebar />
-            <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
               <AppTopbar />
-              <main className="flex-1 p-6">
+              <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-6">
                 <Outlet />
               </main>
             </div>

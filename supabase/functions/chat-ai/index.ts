@@ -652,6 +652,33 @@ async function runDash(
 // ═══════════════════════════════════════════════════════════════════════════
 // ANALYTICS: tools → stream
 // ═══════════════════════════════════════════════════════════════════════════
+/** Chat de bots (/app/bots): conversación textual sin herramientas SQL ni filtros inyectados desde el texto. */
+async function runTextBot(
+  key: string,
+  sys: string,
+  msgs: { role: string; content: string }[],
+  model: string,
+): Promise<ReadableStream> {
+  const all = [{ role: "system", content: sys }, ...msgs];
+  const fr = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: model || "gpt-4o-mini",
+      messages: all,
+      stream: true,
+      temperature: 0.45,
+      max_tokens: 2048,
+    }),
+  });
+  if (!fr.ok) {
+    const t = await fr.text();
+    throw new Error(`OpenAI ${fr.status}: ${t}`);
+  }
+  if (!fr.body) throw new Error("Sin cuerpo de respuesta");
+  return fr.body;
+}
+
 async function runAnalytics(
   key: string,
   sys: string,
@@ -936,6 +963,61 @@ serve(async (req) => {
     const af: Filters = body.filters ?? {};
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const { data: tid } = await admin.rpc("get_user_tenant", { _user_id: user.id });
+    const isDash = mode === "dashdinamics";
+    const isBotChat = Boolean(botId) && !isDash;
+
+    const key = Deno.env.get("OPENAI_API_KEY");
+    if (mode === "bot_builder") {
+      if (!key) {
+        return new Response(JSON.stringify({ error: "OPENAI_API_KEY no configurada" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: isSuper } = await sb.rpc("has_role", { _user_id: user.id, _role: "super_admin" });
+      if (!isSuper) {
+        return new Response(JSON.stringify({ error: "Solo super administradores pueden usar el asistente de creación" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const desc = String(body.contextDescription ?? "").trim();
+      if (!desc) {
+        return new Response(JSON.stringify({ error: "contextDescription es requerido" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const bsys =
+        `Eres experto en diseño de system prompts para asistentes conversacionales B2B (ventas, soporte, analytics). ` +
+        `El usuario describirá el propósito del bot. Devuelve SOLO el texto del system prompt en español, sin prefijos como "System prompt:", sin cercar el texto en markdown. ` +
+        `Incluye: rol, tono, límites (no inventar cifras o datos internos sin fuente), formato de respuesta. Entre 400 y 1500 palabras.`;
+      const br = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: bsys },
+            { role: "user", content: `Descripción del bot deseada:\n\n${desc}` },
+          ],
+          temperature: 0.35,
+          max_tokens: 2500,
+        }),
+      });
+      if (!br.ok) {
+        const tx = await br.text();
+        return new Response(JSON.stringify({ error: `OpenAI: ${tx}` }), {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const bj = await br.json();
+      const system_prompt = String(bj.choices?.[0]?.message?.content ?? "").trim();
+      return new Response(JSON.stringify({ system_prompt }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (webhookUrl) {
       try {
@@ -961,16 +1043,43 @@ serve(async (req) => {
       }
     }
 
-    const key = Deno.env.get("OPENAI_API_KEY");
-    if (!key)
+    if (!key) {
       return new Response(JSON.stringify({ error: "OPENAI_API_KEY no configurada" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
 
     let sys: string;
     let forcedFilters: Record<string, string> = {};
-    if (tid) {
+    let botModel = "gpt-4o-mini";
+
+    if (isBotChat) {
+      if (!tid) {
+        return new Response(JSON.stringify({ error: "Sin tenant asignado" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: bot, error: botErr } = await admin
+        .from("bots")
+        .select("system_prompt, model")
+        .eq("id", botId)
+        .eq("tenant_id", tid)
+        .maybeSingle();
+      if (botErr || !bot) {
+        return new Response(JSON.stringify({ error: "Bot no encontrado" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      sys =
+        `${String(bot.system_prompt || "Eres un asistente útil.").trim()}\n\n` +
+        `Responde siempre en español. Puedes usar markdown (títulos, listas, negritas). ` +
+        `Sé claro y útil; no inventes cifras de negocio ni tablas de datos salvo que el usuario pida orientación general.`;
+      botModel = (bot as { model?: string }).model || "gpt-4o-mini";
+      forcedFilters = {};
+    } else if (tid) {
       const [dr, kr] = await Promise.all([
         admin.rpc("get_leads_dimensions", { _tenant_id: tid }),
         admin.rpc("get_leads_kpis", {
@@ -988,7 +1097,6 @@ serve(async (req) => {
       console.log(`Meta OK: dims=${JSON.stringify(dims).length}c kpis=${JSON.stringify(kpis).length}c`);
       sys = mode === "dashdinamics" ? buildDashSys(dims, kpis, af) : buildAnalyticsSys(dims, kpis, af);
 
-      // DashDinamics: NO extraer filtros desde el texto (aclaración y preferencias mencionan ciudad/campaña/tipo genérico y rompen el análisis). Solo el modelo + filtros UI.
       const lastUserMsg =
         String(messages.filter((m: any) => m.role === "user").pop()?.content || "").trim();
       if (mode === "dashdinamics") {
@@ -1000,16 +1108,11 @@ serve(async (req) => {
           sys += `\n⚠️ FILTROS DETECTADOS EN EL MENSAJE: ${JSON.stringify(forcedFilters)}. DEBES incluir estos en cada llamada a herramientas.`;
         }
       }
-
-      if (botId) {
-        const { data: bot } = await admin.from("bots").select("system_prompt").eq("id", botId).single();
-        if (bot?.system_prompt) sys = bot.system_prompt + "\n\n" + sys;
-      }
     } else {
       sys = "No hay tenant_id.";
     }
 
-    console.log(`Prompt: ${sys.length}c mode=${mode}`);
+    console.log(`Prompt: ${sys.length}c mode=${mode} botChat=${isBotChat}`);
 
     if (mode === "dashdinamics") {
       try {
@@ -1037,6 +1140,19 @@ serve(async (req) => {
         }
       } catch (e) {
         console.error("Dash err:", e);
+        return new Response(JSON.stringify({ error: (e as Error).message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    if (isBotChat) {
+      try {
+        const stream = await runTextBot(key, sys, messages, botModel);
+        return new Response(stream, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
+      } catch (e) {
+        console.error("Bot chat err:", e);
         return new Response(JSON.stringify({ error: (e as Error).message }), {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
