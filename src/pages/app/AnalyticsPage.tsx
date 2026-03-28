@@ -211,7 +211,7 @@ export default function AnalyticsPage() {
       if (e1) throw e1;
       let y = 0;
       for (const w of existing ?? []) {
-        const l = w.layout as BoardWidgetLayout;
+        const l = w.layout as unknown as BoardWidgetLayout;
         y = Math.max(y, (l?.y ?? 0) + (l?.h ?? 0));
       }
       const { error } = await supabase.from("analytics_board_widgets").insert({
