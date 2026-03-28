@@ -80,7 +80,7 @@ export function buildWeeklySeries(leads: LeadRow[], maxWeeks = 24): WeeklyPoint[
   for (const row of leads) {
     const d = parseLeadDate(row);
     if (!d) continue;
-    const ws = startOfISOWeek(d, { weekStartsOn: 1 });
+    const ws = startOfISOWeek(d);
     const key = format(ws, "yyyy-MM-dd");
     if (!map.has(key)) {
       map.set(key, {
