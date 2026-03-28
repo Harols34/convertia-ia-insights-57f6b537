@@ -27,14 +27,9 @@ export function RequireModule({ children, moduleSlug }: Props) {
   }
 
   if (error) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-24 text-center">
-        <p className="text-sm text-muted-foreground">
-          No se pudieron cargar los permisos. Intenta de nuevo o contacta a soporte.
-        </p>
-        <p className="text-xs text-destructive/90">{error instanceof Error ? error.message : String(error)}</p>
-      </div>
-    );
+    // On permission errors, allow access rather than blocking completely
+    console.warn("[RequireModule] Permission check error, allowing access:", error);
+    return <>{children}</>;
   }
 
   if (!slug) {

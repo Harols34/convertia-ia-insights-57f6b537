@@ -14,47 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      audit_logs: {
-        Row: {
-          action: string
-          created_at: string
-          detail: Json | null
-          id: string
-          ip_address: string | null
-          module: string | null
-          tenant_id: string
-          user_id: string | null
-        }
-        Insert: {
-          action: string
-          created_at?: string
-          detail?: Json | null
-          id?: string
-          ip_address?: string | null
-          module?: string | null
-          tenant_id: string
-          user_id?: string | null
-        }
-        Update: {
-          action?: string
-          created_at?: string
-          detail?: Json | null
-          id?: string
-          ip_address?: string | null
-          module?: string | null
-          tenant_id?: string
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "audit_logs_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       analytics_board_widgets: {
         Row: {
           board_id: string
@@ -130,6 +89,47 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "analytics_user_boards_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          detail: Json | null
+          id: string
+          ip_address: string | null
+          module: string | null
+          tenant_id: string
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          detail?: Json | null
+          id?: string
+          ip_address?: string | null
+          module?: string | null
+          tenant_id: string
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          detail?: Json | null
+          id?: string
+          ip_address?: string | null
+          module?: string | null
+          tenant_id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_logs_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -666,6 +666,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "profiles_active_tenant_id_fkey"
+            columns: ["active_tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "profiles_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
@@ -1025,6 +1032,14 @@ export type Database = {
     Functions: {
       _build_filters_where: { Args: { _f: Json }; Returns: string }
       _date_field_expr: { Args: { _d: string }; Returns: string }
+      admin_list_raw_table_columns: {
+        Args: { p_table_name: string }
+        Returns: {
+          column_name: string
+          data_type: string
+          udt_name: string
+        }[]
+      }
       execute_leads_query: {
         Args: { _query: string; _tenant_id: string }
         Returns: Json
@@ -1047,6 +1062,10 @@ export type Database = {
           total_ventas: number
         }[]
       }
+      get_accessible_tenant_ids: {
+        Args: { _user_id: string }
+        Returns: string[]
+      }
       get_leads_dimensions: { Args: { _tenant_id: string }; Returns: Json }
       get_leads_kpis: {
         Args: {
@@ -1058,24 +1077,8 @@ export type Database = {
         }
         Returns: Json
       }
-      get_accessible_tenant_ids: { Args: { _user_id: string }; Returns: string[] }
-      get_my_accessible_module_slugs: { Args: Record<PropertyKey, never>; Returns: string[] }
+      get_my_accessible_module_slugs: { Args: never; Returns: string[] }
       get_user_tenant: { Args: { _user_id: string }; Returns: string }
-      set_active_tenant: { Args: { _tenant_id: string | null }; Returns: undefined }
-      search_dashboard_sessions: {
-        Args: {
-          _date_from?: string
-          _date_to?: string
-          _limit?: number
-          _offset?: number
-          _search_text?: string
-        }
-        Returns: {
-          id: string
-          title: string
-          created_at: string
-        }[]
-      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -1137,14 +1140,21 @@ export type Database = {
           udt_name: string
         }[]
       }
-      admin_list_raw_table_columns: {
-        Args: { p_table_name: string }
+      search_dashboard_sessions: {
+        Args: {
+          _date_from?: string
+          _date_to?: string
+          _limit?: number
+          _offset?: number
+          _search_text?: string
+        }
         Returns: {
-          column_name: string
-          data_type: string
-          udt_name: string
+          created_at: string
+          id: string
+          title: string
         }[]
       }
+      set_active_tenant: { Args: { _tenant_id: string }; Returns: undefined }
     }
     Enums: {
       app_role:

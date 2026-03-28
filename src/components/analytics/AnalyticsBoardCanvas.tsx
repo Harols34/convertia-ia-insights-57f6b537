@@ -70,7 +70,7 @@ function pivotCardSurface(appearance: WidgetAppearance | undefined | null): CSSP
   };
 }
 
-function toLayout(l: unknown, id: string): Layout {
+function toLayout(l: unknown, id: string) {
   const o = (l && typeof l === "object" ? l : {}) as BoardWidgetLayout;
   return {
     i: id,
@@ -129,7 +129,7 @@ export function AnalyticsBoardCanvas({ boardId, className, onEditWidget }: Analy
   const layout = useMemo(() => widgets.map((w) => toLayout(w.layout, w.id)), [widgets]);
 
   const persistLayout = useMutation({
-    mutationFn: async (items: Layout[]) => {
+    mutationFn: async (items: Array<{ i: string; x: number; y: number; w: number; h: number; minW?: number; minH?: number }>) => {
       await Promise.all(
         items.map((l) =>
           supabase
@@ -152,7 +152,7 @@ export function AnalyticsBoardCanvas({ boardId, className, onEditWidget }: Analy
   });
 
   const onLayoutChange = useCallback(
-    (next: Layout[]) => {
+    (next: Array<{ i: string; x: number; y: number; w: number; h: number; minW?: number; minH?: number }>) => {
       if (!boardId || !next.length) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
@@ -223,12 +223,12 @@ export function AnalyticsBoardCanvas({ boardId, className, onEditWidget }: Analy
     <div className={cn("flex-1 min-h-0 min-w-0 rounded-xl border border-border bg-muted/5 p-2 overflow-auto", className)}>
       <Grid
           className="layout"
-          layout={layout}
+          layout={layout as any}
           cols={12}
           rowHeight={28}
           margin={[10, 10]}
           containerPadding={[0, 0]}
-          onLayoutChange={onLayoutChange}
+          onLayoutChange={onLayoutChange as any}
           draggableHandle=".drag-handle"
           compactType="vertical"
           preventCollision={false}

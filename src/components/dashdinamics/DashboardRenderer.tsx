@@ -26,12 +26,13 @@ export function DashboardRenderer({
   isRegenerating,
 }: DashboardRendererProps) {
   const navigate = useNavigate();
-  const nextSteps = Array.isArray(dashboard.recommended_next_steps)
-    ? dashboard.recommended_next_steps.map(String)
-    : typeof dashboard.recommended_next_steps === "string" && dashboard.recommended_next_steps.trim()
-      ? [dashboard.recommended_next_steps.trim()]
-      : dashboard.recommended_next_steps && typeof dashboard.recommended_next_steps === "object"
-        ? Object.values(dashboard.recommended_next_steps as Record<string, unknown>).map(String)
+  const rawSteps = dashboard.recommended_next_steps as unknown;
+  const nextSteps = Array.isArray(rawSteps)
+    ? rawSteps.map(String)
+    : typeof rawSteps === "string" && rawSteps.trim()
+      ? [rawSteps.trim()]
+      : rawSteps && typeof rawSteps === "object"
+        ? Object.values(rawSteps as Record<string, unknown>).map(String)
         : [];
   const kpis = Array.isArray(dashboard.kpis) ? dashboard.kpis : [];
   const charts = Array.isArray(dashboard.charts) ? dashboard.charts : [];
