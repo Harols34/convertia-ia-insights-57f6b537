@@ -23,6 +23,7 @@ import ConfiguracionPage from "./pages/app/ConfiguracionPage.tsx";
 import SoportePage from "./pages/app/SoportePage.tsx";
 import CuentasPage from "./pages/app/CuentasPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
+import { RequireModule } from "./components/auth/RequireModule.tsx";
 
 const queryClient = new QueryClient();
 
@@ -38,19 +39,20 @@ const App = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route path="/recuperar" element={<RecoverPage />} />
             <Route path="/app" element={<AppLayout />}>
-              <Route index element={<DashboardPage />} />
-              <Route path="dashdinamics" element={<DashDinamicsPage />} />
-              <Route path="dashdinamics/detail" element={<ChartDetailPage />} />
-              <Route path="analytics" element={<AnalyticsPage />} />
-              <Route path="reportes" element={<ReportesPage />} />
-              <Route path="exportaciones" element={<ExportacionesPage />} />
-              <Route path="bots" element={<BotsPage />} />
-              <Route path="integraciones" element={<IntegracionesPage />} />
-              <Route path="usuarios" element={<UsuariosPage />} />
-              <Route path="roles" element={<RolesPage />} />
-              <Route path="auditoria" element={<AuditoriaPage />} />
-              <Route path="configuracion" element={<ConfiguracionPage />} />
-              <Route path="cuentas" element={<CuentasPage />} />
+              <Route index element={<RequireModule moduleSlug="dashboard"><DashboardPage /></RequireModule>} />
+              <Route path="dashdinamics" element={<RequireModule moduleSlug="dashboards-ia"><DashDinamicsPage /></RequireModule>} />
+              <Route path="dashdinamics/detail" element={<RequireModule moduleSlug="dashboards-ia"><ChartDetailPage /></RequireModule>} />
+              <Route path="analytics" element={<RequireModule moduleSlug="analytics"><AnalyticsPage /></RequireModule>} />
+              <Route path="reportes" element={<RequireModule moduleSlug="reportes"><ReportesPage /></RequireModule>} />
+              <Route path="exportaciones" element={<RequireModule moduleSlug="exportaciones"><ExportacionesPage /></RequireModule>} />
+              <Route path="bots" element={<RequireModule moduleSlug="bots"><BotsPage /></RequireModule>} />
+              <Route path="integraciones" element={<RequireModule moduleSlug="integraciones"><IntegracionesPage /></RequireModule>} />
+              <Route path="usuarios" element={<RequireModule moduleSlug="usuarios"><UsuariosPage /></RequireModule>} />
+              <Route path="roles" element={<RequireModule moduleSlug="roles"><RolesPage /></RequireModule>} />
+              <Route path="auditoria" element={<RequireModule moduleSlug="auditoria"><AuditoriaPage /></RequireModule>} />
+              <Route path="configuracion" element={<RequireModule moduleSlug="configuracion"><ConfiguracionPage /></RequireModule>} />
+              <Route path="cuentas" element={<RequireModule moduleSlug="cuentas"><CuentasPage /></RequireModule>} />
+              {/* Sin RequireModule: debe ser alcanzable aunque falte el permiso del módulo (evita bucle Navigate) */}
               <Route path="soporte" element={<SoportePage />} />
             </Route>
             <Route path="*" element={<NotFound />} />

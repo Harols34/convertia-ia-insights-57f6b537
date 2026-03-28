@@ -39,6 +39,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsSuperAdmin } from "@/hooks/use-app-access";
+import { Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 
@@ -92,7 +94,7 @@ export default function BotsPage() {
   const [editingListConvId, setEditingListConvId] = useState<string | null>(null);
   const [listTitleDraft, setListTitleDraft] = useState("");
 
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const { data: isSuperAdmin = false } = useIsSuperAdmin();
   const [showIaWizard, setShowIaWizard] = useState(false);
   const [wizardStep, setWizardStep] = useState<1 | 2>(1);
   const [wizardContext, setWizardContext] = useState("");
@@ -126,21 +128,6 @@ export default function BotsPage() {
   useEffect(() => {
     fetchBots();
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!user) {
-        setIsSuperAdmin(false);
-        return;
-      }
-      const { data } = await supabase.rpc("has_role", { _user_id: user.id, _role: "super_admin" });
-      if (!cancelled) setIsSuperAdmin(!!data);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id]);
 
   useEffect(() => {
     scrollToBottom();
@@ -536,50 +523,60 @@ export default function BotsPage() {
             Agentes conversacionales vía Edge Function (sin n8n por defecto). Datos tabulares: usa Dashboard IA o Analytics.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {isSuperAdmin && (
-            <Button
-              onClick={() => {
-                setEditBot(null);
-                setWizardStep(1);
-                setWizardContext("");
-                setForm({
-                  name: "",
-                  channel: "web",
-                  system_prompt: "Eres un asistente inteligente de análisis de datos.",
-                  model: "gpt-4o-mini",
-                  n8n_workflow_id: "",
-                  n8n_webhook_url: "",
-                  dataSources: ["leads"],
-                  responseMode: "prompt",
-                });
-                setShowIaWizard(true);
-              }}
-              className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-600 text-white hover:opacity-95"
-            >
-              <Sparkles className="h-4 w-4" /> Nuevo bot (IA)
-            </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {isSuperAdmin ? (
+            <>
+              <Button
+                onClick={() => {
+                  setEditBot(null);
+                  setWizardStep(1);
+                  setWizardContext("");
+                  setForm({
+                    name: "",
+                    channel: "web",
+                    system_prompt: "Eres un asistente inteligente de análisis de datos.",
+                    model: "gpt-4o-mini",
+                    n8n_workflow_id: "",
+                    n8n_webhook_url: "",
+                    dataSources: ["leads"],
+                    responseMode: "prompt",
+                  });
+                  setShowIaWizard(true);
+                }}
+                className="gap-2 bg-gradient-to-r from-violet-600 to-cyan-600 text-white hover:opacity-95"
+              >
+                <Sparkles className="h-4 w-4" /> Nuevo bot (IA)
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditBot(null);
+                  setForm({
+                    name: "",
+                    channel: "web",
+                    system_prompt: "Eres un asistente inteligente de análisis de datos.",
+                    model: "gpt-4o-mini",
+                    n8n_workflow_id: "",
+                    n8n_webhook_url: "",
+                    dataSources: ["leads"],
+                    responseMode: "prompt",
+                  });
+                  setShowForm(true);
+                }}
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" /> Formulario manual
+              </Button>
+            </>
+          ) : (
+            <p className="max-w-md text-xs text-muted-foreground">
+              Solo un super administrador puede crear o editar bots aquí. Para solicitar uno nuevo, abre un ticket en{" "}
+              <Link to="/app/soporte" className="font-medium text-primary underline underline-offset-2">
+                Soporte
+              </Link>
+              .
+            </p>
           )}
-          <Button
-            variant="outline"
-            onClick={() => {
-              setEditBot(null);
-              setForm({
-                name: "",
-                channel: "web",
-                system_prompt: "Eres un asistente inteligente de análisis de datos.",
-                model: "gpt-4o-mini",
-                n8n_workflow_id: "",
-                n8n_webhook_url: "",
-                dataSources: ["leads"],
-                responseMode: "prompt",
-              });
-              setShowForm(true);
-            }}
-            className="gap-2"
-          >
-            <Plus className="h-4 w-4" /> {isSuperAdmin ? "Formulario manual" : "Nuevo bot"}
-          </Button>
         </div>
         </div>
       </div>
@@ -626,41 +623,43 @@ export default function BotsPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex shrink-0 gap-0.5">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void toggleBot(bot);
-                        }}
-                      >
-                        {bot.is_active ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEdit(bot);
-                        }}
-                      >
-                        <Settings2 className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void deleteBot(bot.id);
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+                    {isSuperAdmin && (
+                      <div className="flex shrink-0 gap-0.5">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void toggleBot(bot);
+                          }}
+                        >
+                          {bot.is_active ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEdit(bot);
+                          }}
+                        >
+                          <Settings2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void deleteBot(bot.id);
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               );

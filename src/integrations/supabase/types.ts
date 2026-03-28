@@ -635,6 +635,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          active_tenant_id: string | null
           avatar_url: string | null
           created_at: string
           full_name: string
@@ -644,6 +645,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          active_tenant_id?: string | null
           avatar_url?: string | null
           created_at?: string
           full_name: string
@@ -653,6 +655,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          active_tenant_id?: string | null
           avatar_url?: string | null
           created_at?: string
           full_name?: string
@@ -989,6 +992,32 @@ export type Database = {
         }
         Relationships: []
       }
+      user_tenant_access: {
+        Row: {
+          created_at: string
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          tenant_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_tenant_access_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1029,7 +1058,10 @@ export type Database = {
         }
         Returns: Json
       }
+      get_accessible_tenant_ids: { Args: { _user_id: string }; Returns: string[] }
+      get_my_accessible_module_slugs: { Args: Record<PropertyKey, never>; Returns: string[] }
       get_user_tenant: { Args: { _user_id: string }; Returns: string }
+      set_active_tenant: { Args: { _tenant_id: string | null }; Returns: undefined }
       search_dashboard_sessions: {
         Args: {
           _date_from?: string

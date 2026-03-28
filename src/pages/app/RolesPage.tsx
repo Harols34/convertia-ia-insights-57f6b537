@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
-import { ShieldCheck, Plus, Search, Pencil, Trash2, Users, Copy } from "lucide-react";
+import { ShieldCheck, Plus, Users, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,15 +15,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Constants } from "@/integrations/supabase/types";
+import { Constants, type Database } from "@/integrations/supabase/types";
+import { useIsSuperAdmin } from "@/hooks/use-app-access";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const SYSTEM_ROLES = Constants.public.Enums.app_role;
+type AppRole = Database["public"]["Enums"]["app_role"];
 
 export default function RolesPage() {
   const queryClient = useQueryClient();
+  const { data: isSuperAdmin } = useIsSuperAdmin();
   const [showCustomForm, setShowCustomForm] = useState(false);
-  const [editingRole, setEditingRole] = useState<any>(null);
   const [customForm, setCustomForm] = useState({ name: "", description: "" });
+  const [tenantAccessForm, setTenantAccessForm] = useState({ userId: "", tenantId: "" });
 
   const { data: modules } = useQuery({
     queryKey: ["modules"],
@@ -76,6 +80,94 @@ export default function RolesPage() {
     },
   });
 
+  const { data: allTenants } = useQuery({
+    queryKey: ["tenants-all"],
+    enabled: !!isSuperAdmin,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("tenants").select("id, name, slug").order("name");
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const { data: tenantAccessRows } = useQuery({
+    queryKey: ["user-tenant-access-list"],
+    enabled: !!isSuperAdmin,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("user_tenant_access")
+        .select("user_id, tenant_id, created_at, tenants(name, slug)")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const tenantAccessUserIds = useMemo(
+    () => [...new Set((tenantAccessRows || []).map((r) => r.user_id))],
+    [tenantAccessRows],
+  );
+
+  const { data: profileNames } = useQuery({
+    queryKey: ["profiles-names-batch", tenantAccessUserIds],
+    enabled: !!isSuperAdmin && tenantAccessUserIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("profiles").select("id, full_name").in("id", tenantAccessUserIds);
+      if (error) throw error;
+      return Object.fromEntries((data || []).map((p) => [p.id, p.full_name as string]));
+    },
+  });
+
+  const toggleRolePermission = useMutation({
+    mutationFn: async ({
+      role,
+      permissionId,
+      grant,
+    }: {
+      role: AppRole;
+      permissionId: string;
+      grant: boolean;
+    }) => {
+      if (grant) {
+        const { error } = await supabase.from("role_permissions").insert({ role, permission_id: permissionId });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("role_permissions").delete().eq("role", role).eq("permission_id", permissionId);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["role-permissions"] });
+      toast.success("Permiso actualizado");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const addTenantAccess = useMutation({
+    mutationFn: async (payload: { user_id: string; tenant_id: string }) => {
+      const { error } = await supabase.from("user_tenant_access").insert(payload);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user-tenant-access-list"] });
+      toast.success("Usuario vinculado a la cuenta");
+      setTenantAccessForm({ userId: "", tenantId: "" });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const removeTenantAccess = useMutation({
+    mutationFn: async (payload: { user_id: string; tenant_id: string }) => {
+      const { error } = await supabase.from("user_tenant_access").delete().eq("user_id", payload.user_id).eq("tenant_id", payload.tenant_id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user-tenant-access-list"] });
+      toast.success("Acceso eliminado");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const createCustomRole = useMutation({
     mutationFn: async (f: { name: string; description: string }) => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -117,10 +209,15 @@ export default function RolesPage() {
       </div>
 
       <Tabs defaultValue="system" className="space-y-4">
-        <TabsList>
+        <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="system">Roles del Sistema</TabsTrigger>
           <TabsTrigger value="custom">Roles Personalizados</TabsTrigger>
           <TabsTrigger value="matrix">Matriz de Permisos</TabsTrigger>
+          {isSuperAdmin && (
+            <TabsTrigger value="tenants" className="gap-1">
+              <Building2 className="h-3.5 w-3.5" /> Acceso a cuentas
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="system" className="space-y-4">
@@ -187,6 +284,11 @@ export default function RolesPage() {
         </TabsContent>
 
         <TabsContent value="matrix" className="space-y-4">
+          {!isSuperAdmin && (
+            <p className="text-sm text-muted-foreground">
+              Solo un super administrador puede modificar la matriz. Aquí ves los permisos actuales de cada rol del sistema.
+            </p>
+          )}
           <Card><CardContent className="p-0 overflow-x-auto">
             <Table>
               <TableHeader>
@@ -207,15 +309,32 @@ export default function RolesPage() {
                           <p className="text-sm font-medium">{perm.action}</p>
                         </div>
                       </TableCell>
-                      {SYSTEM_ROLES.map(role => (
-                        <TableCell key={role} className="text-center">
-                          {getPermissionsForRole(role).includes(perm.id) ? (
-                            <Badge variant="default" className="text-[10px]">✓</Badge>
-                          ) : (
-                            <span className="text-muted-foreground/30">—</span>
-                          )}
-                        </TableCell>
-                      ))}
+                      {SYSTEM_ROLES.map(role => {
+                        const has = getPermissionsForRole(role).includes(perm.id);
+                        return (
+                          <TableCell key={role} className="text-center">
+                            {isSuperAdmin ? (
+                              <div className="flex justify-center">
+                                <Switch
+                                  checked={has}
+                                  disabled={toggleRolePermission.isPending}
+                                  onCheckedChange={(v) =>
+                                    toggleRolePermission.mutate({
+                                      role: role as AppRole,
+                                      permissionId: perm.id,
+                                      grant: v,
+                                    })
+                                  }
+                                />
+                              </div>
+                            ) : has ? (
+                              <Badge variant="default" className="text-[10px]">✓</Badge>
+                            ) : (
+                              <span className="text-muted-foreground/30">—</span>
+                            )}
+                          </TableCell>
+                        );
+                      })}
                     </TableRow>
                   ))
                 ))}
@@ -230,6 +349,98 @@ export default function RolesPage() {
             </Table>
           </CardContent></Card>
         </TabsContent>
+
+        {isSuperAdmin && (
+          <TabsContent value="tenants" className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Otorga a un usuario acceso a cuentas adicionales (además de la cuenta de su perfil). El selector de cuenta en la barra superior y los datos (dashboards, bots, etc.) respetan solo las cuentas permitidas.
+            </p>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Vincular usuario a cuenta</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-end">
+                <div className="flex-1 space-y-2">
+                  <Label className="text-xs">UUID de usuario</Label>
+                  <Input
+                    placeholder="uuid del usuario (auth / profiles)"
+                    value={tenantAccessForm.userId}
+                    onChange={(e) => setTenantAccessForm((f) => ({ ...f, userId: e.target.value.trim() }))}
+                  />
+                </div>
+                <div className="flex-1 space-y-2">
+                  <Label className="text-xs">Cuenta (tenant)</Label>
+                  <Select value={tenantAccessForm.tenantId} onValueChange={(v) => setTenantAccessForm((f) => ({ ...f, tenantId: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar cuenta" /></SelectTrigger>
+                    <SelectContent>
+                      {(allTenants || []).map((t) => (
+                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  type="button"
+                  disabled={
+                    !tenantAccessForm.userId ||
+                    !tenantAccessForm.tenantId ||
+                    addTenantAccess.isPending
+                  }
+                  onClick={() =>
+                    addTenantAccess.mutate({
+                      user_id: tenantAccessForm.userId,
+                      tenant_id: tenantAccessForm.tenantId,
+                    })
+                  }
+                >
+                  {addTenantAccess.isPending ? "Guardando…" : "Agregar"}
+                </Button>
+              </CardContent>
+            </Card>
+            <Card><CardContent className="p-0 overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Usuario</TableHead>
+                    <TableHead>Cuenta</TableHead>
+                    <TableHead className="text-right">Acción</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tenantAccessRows && tenantAccessRows.length > 0 ? (
+                    tenantAccessRows.map((row) => {
+                      const t = row.tenants as { name?: string; slug?: string } | null;
+                      const name = profileNames?.[row.user_id] || row.user_id.slice(0, 8) + "…";
+                      return (
+                        <TableRow key={`${row.user_id}-${row.tenant_id}`}>
+                          <TableCell className="text-sm">{name}</TableCell>
+                          <TableCell className="text-sm">{t?.name || row.tenant_id}</TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive"
+                              disabled={removeTenantAccess.isPending}
+                              onClick={() => removeTenantAccess.mutate({ user_id: row.user_id, tenant_id: row.tenant_id })}
+                            >
+                              Quitar
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={3} className="py-8 text-center text-muted-foreground text-sm">
+                        No hay accesos adicionales configurados
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent></Card>
+          </TabsContent>
+        )}
       </Tabs>
 
       <Dialog open={showCustomForm} onOpenChange={setShowCustomForm}>

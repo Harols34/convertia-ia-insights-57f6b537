@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
@@ -16,6 +17,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Link } from "react-router-dom";
 
 const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   open: { label: "Abierto", variant: "destructive" },
@@ -34,12 +37,22 @@ const priorityConfig: Record<string, { label: string; variant: "default" | "seco
 export default function SoportePage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const location = useLocation();
+  const [accessNotice, setAccessNotice] = useState<{ from?: string; module?: string } | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<any>(null);
   const [form, setForm] = useState({ title: "", description: "", priority: "medium" });
   const [comment, setComment] = useState("");
+
+  useEffect(() => {
+    const st = location.state as { accessDenied?: boolean; from?: string; module?: string } | undefined;
+    if (st?.accessDenied) {
+      setAccessNotice({ from: st.from, module: st.module });
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   const { data: tickets, isLoading } = useQuery({
     queryKey: ["support-tickets", statusFilter],
@@ -121,14 +134,69 @@ export default function SoportePage() {
 
   return (
     <div className="space-y-6">
+      {accessNotice && (
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Sin acceso a ese módulo</AlertTitle>
+          <AlertDescription className="text-sm space-y-3">
+            <p>
+              {accessNotice.module
+                ? `No tienes permiso para ver el módulo «${accessNotice.module}».`
+                : "No tienes permiso para acceder a esa sección."}{" "}
+              Si necesitas acceso, crea un ticket aquí o contacta a tu administrador.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/app">Ir al inicio</Link>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setAccessNotice(null)}>
+                Cerrar aviso
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold">Soporte</h1>
           <p className="text-muted-foreground text-sm mt-1">Gestiona tickets de soporte y solicitudes</p>
         </div>
-        <Button onClick={() => setShowCreate(true)}>
-          <Plus className="h-4 w-4 mr-2" /> Nuevo ticket
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setForm({
+                title: "Solicitud: alta o cambio de bot (IA / manual)",
+                description:
+                  "Describe el uso previsto del bot, canal (web, etc.) y si necesitas integración con datos concretos. Un administrador revisará la solicitud.",
+                priority: "medium",
+              });
+              setShowCreate(true);
+            }}
+          >
+            Plantilla: bots
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setForm({
+                title: "Solicitud: acceso a módulo o cuenta adicional",
+                description:
+                  "Indica qué módulos o cuentas (tenants) necesitas y el motivo. Tu administrador o soporte podrá ajustar roles y permisos.",
+                priority: "medium",
+              });
+              setShowCreate(true);
+            }}
+          >
+            Plantilla: permisos
+          </Button>
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus className="h-4 w-4 mr-2" /> Nuevo ticket
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
