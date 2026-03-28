@@ -223,7 +223,7 @@ export function AnalyticsBoardCanvas({ boardId, className, onEditWidget }: Analy
     <div className={cn("flex-1 min-h-0 min-w-0 rounded-xl border border-border bg-muted/5 p-2 overflow-auto", className)}>
       <Grid
           className="layout"
-          layout={layout}
+          layout={layout as any}
           cols={12}
           rowHeight={28}
           margin={[10, 10]}
