@@ -288,14 +288,13 @@ export default function DashDinamicsPage() {
 
     const { data, error } = await supabase
       .from("dashboard_sessions")
-      .insert({
-        tenant_id: tenantId,
+      .insert([{
+        tenant_id: tenantId as string,
         user_id: user.id,
         prompt: "Nueva sesión Dashboard IA",
         title: "Nueva sesión",
         status: "active",
-        result: {} as Record<string, unknown>,
-      })
+      }])
       .select("id")
       .single();
 

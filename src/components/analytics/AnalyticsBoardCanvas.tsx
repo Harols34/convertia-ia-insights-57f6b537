@@ -228,7 +228,7 @@ export function AnalyticsBoardCanvas({ boardId, className, onEditWidget }: Analy
           rowHeight={28}
           margin={[10, 10]}
           containerPadding={[0, 0]}
-          onLayoutChange={onLayoutChange}
+          onLayoutChange={onLayoutChange as any}
           draggableHandle=".drag-handle"
           compactType="vertical"
           preventCollision={false}
