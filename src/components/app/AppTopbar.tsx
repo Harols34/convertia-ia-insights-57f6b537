@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { LogOut, Search, Bell } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
-import { TenantAccountSwitcher } from "@/components/app/TenantAccountSwitcher";
 
 export function AppTopbar() {
   const navigate = useNavigate();
@@ -26,7 +25,6 @@ export function AppTopbar() {
       </div>
 
       <div className="flex items-center gap-1">
-        <TenantAccountSwitcher />
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-4 w-4" />
           <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-primary" />

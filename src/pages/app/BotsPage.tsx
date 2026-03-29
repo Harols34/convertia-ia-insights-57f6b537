@@ -181,8 +181,6 @@ export default function BotsPage() {
     setChatInput("");
     setHeaderTitleEditing(false);
     if (!user) return;
-    const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
-    if (!tenantId) return;
 
     await loadConversations(bot.id);
 
@@ -191,7 +189,6 @@ export default function BotsPage() {
       .select("id, title, created_at")
       .eq("bot_id", bot.id)
       .eq("user_id", user.id)
-      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
       .limit(1);
 
@@ -199,12 +196,19 @@ export default function BotsPage() {
     if (convs && convs.length > 0) {
       convId = convs[0].id;
     } else {
+      // Use profile's home tenant for new conversations
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("tenant_id")
+        .eq("id", user.id)
+        .single();
+      if (!profile) return;
       const { data: newConv } = await supabase
         .from("bot_conversations")
         .insert({
           bot_id: bot.id,
           user_id: user.id,
-          tenant_id: tenantId,
+          tenant_id: profile.tenant_id,
           title: `Chat · ${bot.name}`,
         })
         .select("id")
@@ -219,14 +223,18 @@ export default function BotsPage() {
 
   const startNewConversation = async () => {
     if (!activeBot || !user) return;
-    const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
-    if (!tenantId) return;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("tenant_id")
+      .eq("id", user.id)
+      .single();
+    if (!profile) return;
     const { data: newConv, error } = await supabase
       .from("bot_conversations")
       .insert({
         bot_id: activeBot.id,
         user_id: user.id,
-        tenant_id: tenantId,
+        tenant_id: profile.tenant_id,
         title: "Nueva conversación",
       })
       .select("id, title, created_at")

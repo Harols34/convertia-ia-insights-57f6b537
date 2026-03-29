@@ -211,14 +211,11 @@ export default function DashDinamicsPage() {
 
   const loadLatestSession = async () => {
     if (!user) return;
-    const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
-    if (!tenantId) return;
 
     const { data: sessionsData } = await supabase
       .from("dashboard_sessions")
       .select("*")
       .eq("user_id", user.id)
-      .eq("tenant_id", tenantId)
       .eq("status", "active")
       .order("created_at", { ascending: false })
       .limit(1);
@@ -283,13 +280,18 @@ export default function DashDinamicsPage() {
     if (sessionId) return sessionId;
     if (!user) return null;
 
-    const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
-    if (!tenantId) return null;
+    // Use profile's home tenant for new sessions
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("tenant_id")
+      .eq("id", user.id)
+      .single();
+    if (!profile) return null;
 
     const { data, error } = await supabase
       .from("dashboard_sessions")
       .insert([{
-        tenant_id: tenantId as string,
+        tenant_id: profile.tenant_id,
         user_id: user.id,
         prompt: "Nueva sesión Dashboard IA",
         title: "Nueva sesión",
