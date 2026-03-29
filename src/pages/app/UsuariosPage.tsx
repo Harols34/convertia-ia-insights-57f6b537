@@ -32,13 +32,24 @@ export default function UsuariosPage() {
   const [form, setForm] = useState({ email: "", password: "", full_name: "", role: "viewer" as string });
   const [bulkText, setBulkText] = useState("");
 
+  // SuperAdmin: fetch ALL profiles; otherwise fetch only accessible tenant profiles
   const { data: profiles, isLoading } = useQuery({
-    queryKey: ["users-profiles"],
+    queryKey: ["users-profiles", isSuperAdmin],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return [];
-      const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
-      const { data, error } = await supabase.from("profiles").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false });
+      if (isSuperAdmin) {
+        // SuperAdmin sees ALL users in the system
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (error) throw error;
+        return data || [];
+      }
+      // Non-super: RLS will filter by accessible tenants
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return data || [];
     },
@@ -96,11 +107,16 @@ export default function UsuariosPage() {
     return userRoles?.filter(r => r.user_id === userId).map(r => r.role) || [];
   };
 
+  const getTenantName = (tenantId: string) => {
+    return tenants?.find(t => t.id === tenantId)?.name || tenantId.slice(0, 8) + "…";
+  };
+
   const createUserMutation = useMutation({
     mutationFn: async (f: typeof form) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No autenticado");
-      const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
+      const { data: profile } = await supabase.from("profiles").select("tenant_id").eq("id", user.id).single();
+      const tenantId = profile?.tenant_id;
 
       const { data: { session } } = await supabase.auth.getSession();
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`, {
@@ -138,14 +154,8 @@ export default function UsuariosPage() {
 
   const saveUserTenantAccessMutation = useMutation({
     mutationFn: async ({
-      userId,
-      primary,
-      selected,
-    }: {
-      userId: string;
-      primary: string;
-      selected: string[];
-    }) => {
+      userId, primary, selected,
+    }: { userId: string; primary: string; selected: string[] }) => {
       if (!selected.includes(primary)) throw new Error("La cuenta principal debe estar entre las seleccionadas");
       const { error: eProfile } = await supabase.from("profiles").update({ tenant_id: primary }).eq("id", userId);
       if (eProfile) throw eProfile;
@@ -162,10 +172,7 @@ export default function UsuariosPage() {
     onSuccess: (_, v) => {
       queryClient.invalidateQueries({ queryKey: ["users-profiles"] });
       queryClient.invalidateQueries({ queryKey: ["user-tenant-access-edit", v.userId] });
-      queryClient.invalidateQueries({ queryKey: ["user-tenant-access-list"] });
-      setEditingUser((u: { id: string; tenant_id: string; full_name?: string } | null) =>
-        u && u.id === v.userId ? { ...u, tenant_id: v.primary } : u,
-      );
+      setEditingUser((u: any) => u && u.id === v.userId ? { ...u, tenant_id: v.primary } : u);
       toast.success("Acceso a cuentas actualizado");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -174,7 +181,6 @@ export default function UsuariosPage() {
   const toggleTenantInSelection = (tid: string, checked: boolean) => {
     setTenantSelection((prev) => {
       if (checked) {
-        if (prev.includes(tid)) return prev;
         const next = [...prev, tid];
         if (!primaryTenantId || !next.includes(primaryTenantId)) setPrimaryTenantId(tid);
         return next;
@@ -184,16 +190,13 @@ export default function UsuariosPage() {
         return prev;
       }
       const next = prev.filter((id) => id !== tid);
-      if (tid === primaryTenantId) {
-        setPrimaryTenantId(next[0] ?? "");
-      }
+      if (tid === primaryTenantId) setPrimaryTenantId(next[0] ?? "");
       return next;
     });
   };
 
   const updateRoleMutation = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
-      // Delete existing roles, then insert new one
       await supabase.from("user_roles").delete().eq("user_id", userId);
       const { error } = await supabase.from("user_roles").insert({ user_id: userId, role: role as any });
       if (error) throw error;
@@ -211,7 +214,8 @@ export default function UsuariosPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No autenticado");
-      const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
+      const { data: profile } = await supabase.from("profiles").select("tenant_id").eq("id", user.id).single();
+      const tenantId = profile?.tenant_id;
 
       const results = [];
       for (const line of lines) {
@@ -242,14 +246,16 @@ export default function UsuariosPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-display font-bold">Usuarios</h1>
-          <p className="text-muted-foreground text-sm mt-1">Gestiona usuarios, roles y accesos del tenant</p>
+          <p className="text-muted-foreground text-sm mt-1">
+            {isSuperAdmin ? "Todos los usuarios del sistema" : "Usuarios de tus cuentas asignadas"}
+          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setShowBulk(true)}>
-            <Upload className="h-4 w-4 mr-2" /> Creación masiva
+            <Upload className="h-4 w-4 mr-2" /> Masivo
           </Button>
           <Button onClick={() => { setForm({ email: "", password: "", full_name: "", role: "viewer" }); setShowCreate(true); }}>
             <Plus className="h-4 w-4 mr-2" /> Nuevo usuario
@@ -267,7 +273,7 @@ export default function UsuariosPage() {
           <div><p className="text-sm text-muted-foreground">Activos</p><p className="text-2xl font-bold">{profiles?.filter(p => p.is_active).length ?? 0}</p></div>
         </div></CardContent></Card>
         <Card><CardContent className="pt-6"><div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-red-500/10 flex items-center justify-center"><ToggleLeft className="h-5 w-5 text-red-500" /></div>
+          <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center"><ToggleLeft className="h-5 w-5 text-destructive" /></div>
           <div><p className="text-sm text-muted-foreground">Inactivos</p><p className="text-2xl font-bold">{profiles?.filter(p => !p.is_active).length ?? 0}</p></div>
         </div></CardContent></Card>
       </div>
@@ -282,6 +288,7 @@ export default function UsuariosPage() {
           <Table>
             <TableHeader><TableRow>
               <TableHead>Nombre</TableHead>
+              <TableHead>Cuenta</TableHead>
               <TableHead>Roles</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Creación</TableHead>
@@ -289,13 +296,19 @@ export default function UsuariosPage() {
             </TableRow></TableHeader>
             <TableBody>
               {isLoading ? Array.from({ length: 4 }).map((_, i) => (
-                <TableRow key={i}>{Array.from({ length: 5 }).map((_, j) => <TableCell key={j}><Skeleton className="h-4 w-24" /></TableCell>)}</TableRow>
+                <TableRow key={i}>{Array.from({ length: 6 }).map((_, j) => <TableCell key={j}><Skeleton className="h-4 w-24" /></TableCell>)}</TableRow>
               )) : filtered && filtered.length > 0 ? filtered.map((p) => (
                 <TableRow key={p.id}>
-                  <TableCell><p className="font-medium">{p.full_name}</p><p className="text-xs text-muted-foreground font-mono">{p.id.slice(0, 8)}...</p></TableCell>
+                  <TableCell>
+                    <p className="font-medium">{p.full_name}</p>
+                    <p className="text-xs text-muted-foreground font-mono">{p.id.slice(0, 8)}…</p>
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-sm text-muted-foreground">{getTenantName(p.tenant_id)}</span>
+                  </TableCell>
                   <TableCell>
                     <div className="flex gap-1 flex-wrap">
-                      {getRolesForUser(p.id).map(r => <Badge key={r} variant="secondary" className="text-xs capitalize">{r}</Badge>)}
+                      {getRolesForUser(p.id).map(r => <Badge key={r} variant="secondary" className="text-xs capitalize">{r.replace("_", " ")}</Badge>)}
                       {getRolesForUser(p.id).length === 0 && <Badge variant="outline" className="text-xs">Sin rol</Badge>}
                     </div>
                   </TableCell>
@@ -307,13 +320,13 @@ export default function UsuariosPage() {
                         <Pencil className="h-4 w-4" />
                       </Button>
                       <Button size="icon" variant="ghost" onClick={() => toggleActiveMutation.mutate({ id: p.id, is_active: !p.is_active })}>
-                        {p.is_active ? <ToggleRight className="h-4 w-4 text-emerald-500" /> : <ToggleLeft className="h-4 w-4 text-red-500" />}
+                        {p.is_active ? <ToggleRight className="h-4 w-4 text-emerald-500" /> : <ToggleLeft className="h-4 w-4 text-destructive" />}
                       </Button>
                     </div>
                   </TableCell>
                 </TableRow>
               )) : (
-                <TableRow><TableCell colSpan={5} className="text-center py-12">
+                <TableRow><TableCell colSpan={6} className="text-center py-12">
                   <Users className="h-10 w-10 mx-auto text-muted-foreground/40 mb-3" /><p className="text-muted-foreground">No se encontraron usuarios</p>
                 </TableCell></TableRow>
               )}
@@ -327,7 +340,7 @@ export default function UsuariosPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Nuevo usuario</DialogTitle>
-            <DialogDescription>Crea un nuevo usuario para este tenant</DialogDescription>
+            <DialogDescription>Crea un nuevo usuario en la plataforma</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="space-y-2"><Label>Email *</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
@@ -337,7 +350,7 @@ export default function UsuariosPage() {
               <Label>Rol</Label>
               <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{ROLES.map((r) => <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>)}</SelectContent>
+                <SelectContent>{ROLES.map((r) => <SelectItem key={r} value={r} className="capitalize">{r.replace("_", " ")}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
@@ -372,9 +385,7 @@ export default function UsuariosPage() {
         <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Editar usuario – {editingUser?.full_name}</DialogTitle>
-            <DialogDescription>
-              Rol del sistema y, si aplica, en qué cuentas (tenants) puede trabajar el usuario.
-            </DialogDescription>
+            <DialogDescription>Rol del sistema y cuentas asignadas.</DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh] pr-3">
             <div className="space-y-6">
@@ -404,37 +415,20 @@ export default function UsuariosPage() {
                     <Building2 className="h-4 w-4" />
                     Cuentas con acceso
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Marca una o varias cuentas. La <strong>cuenta principal</strong> es la del perfil (<code className="text-[10px] bg-muted px-1 rounded">profiles.tenant_id</code>); el resto se guardan como acceso adicional para el selector de cuenta.
-                  </p>
                   {loadingExtraAccess && (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Cargando accesos actuales…
+                      Cargando accesos…
                     </div>
                   )}
                   <div className="space-y-2">
                     <Label className="text-xs">Cuenta principal</Label>
-                    <Select
-                      value={primaryTenantId}
-                      onValueChange={(v) => setPrimaryTenantId(v)}
-                      disabled={
-                        tenantSelection.length === 0 ||
-                        saveUserTenantAccessMutation.isPending ||
-                        loadingExtraAccess
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Elegir cuenta principal" />
-                      </SelectTrigger>
+                    <Select value={primaryTenantId} onValueChange={(v) => setPrimaryTenantId(v)} disabled={tenantSelection.length === 0 || saveUserTenantAccessMutation.isPending || loadingExtraAccess}>
+                      <SelectTrigger><SelectValue placeholder="Elegir cuenta principal" /></SelectTrigger>
                       <SelectContent>
                         {tenantSelection.map((id) => {
                           const t = tenants?.find((x) => x.id === id);
-                          return (
-                            <SelectItem key={id} value={id}>
-                              {t?.name ?? id.slice(0, 8) + "…"}
-                            </SelectItem>
-                          );
+                          return <SelectItem key={id} value={id}>{t?.name ?? id.slice(0, 8) + "…"}</SelectItem>;
                         })}
                       </SelectContent>
                     </Select>
@@ -445,19 +439,10 @@ export default function UsuariosPage() {
                       {(tenants || []).map((t) => {
                         const checked = tenantSelection.includes(t.id);
                         return (
-                          <label
-                            key={t.id}
-                            className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50 cursor-pointer"
-                          >
-                            <Checkbox
-                              checked={checked}
-                              onCheckedChange={(v) => toggleTenantInSelection(t.id, v === true)}
-                              disabled={saveUserTenantAccessMutation.isPending || loadingExtraAccess}
-                            />
+                          <label key={t.id} className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50 cursor-pointer">
+                            <Checkbox checked={checked} onCheckedChange={(v) => toggleTenantInSelection(t.id, v === true)} disabled={saveUserTenantAccessMutation.isPending || loadingExtraAccess} />
                             <span className="text-sm flex-1">{t.name}</span>
-                            {t.id === primaryTenantId && (
-                              <Badge variant="secondary" className="text-[10px]">Principal</Badge>
-                            )}
+                            {t.id === primaryTenantId && <Badge variant="secondary" className="text-[10px]">Principal</Badge>}
                           </label>
                         );
                       })}
@@ -465,42 +450,16 @@ export default function UsuariosPage() {
                   </div>
                   <Button
                     className="w-full"
-                    disabled={
-                      saveUserTenantAccessMutation.isPending ||
-                      loadingExtraAccess ||
-                      !editingUser ||
-                      tenantSelection.length === 0 ||
-                      !primaryTenantId
-                    }
-                    onClick={() =>
-                      editingUser &&
-                      saveUserTenantAccessMutation.mutate({
-                        userId: editingUser.id,
-                        primary: primaryTenantId,
-                        selected: tenantSelection,
-                      })
-                    }
+                    disabled={saveUserTenantAccessMutation.isPending || loadingExtraAccess || !editingUser || tenantSelection.length === 0 || !primaryTenantId}
+                    onClick={() => editingUser && saveUserTenantAccessMutation.mutate({ userId: editingUser.id, primary: primaryTenantId, selected: tenantSelection })}
                   >
-                    {saveUserTenantAccessMutation.isPending ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Guardando cuentas…
-                      </>
-                    ) : (
-                      "Guardar acceso a cuentas"
-                    )}
+                    {saveUserTenantAccessMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Guardando…</> : "Guardar acceso a cuentas"}
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-2 rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
                   <p className="font-medium text-foreground">Cuenta del perfil</p>
-                  <p>
-                    Este usuario pertenece a:{" "}
-                    <strong>{tenants?.find((x) => x.id === editingUser?.tenant_id)?.name ?? "—"}</strong>
-                  </p>
-                  <p className="text-xs">
-                    Para asignar acceso a varias cuentas, hace falta un super administrador.
-                  </p>
+                  <p>Este usuario pertenece a: <strong>{tenants?.find((x) => x.id === editingUser?.tenant_id)?.name ?? "—"}</strong></p>
                 </div>
               )}
             </div>
