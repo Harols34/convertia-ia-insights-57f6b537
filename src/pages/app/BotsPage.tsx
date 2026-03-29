@@ -223,14 +223,18 @@ export default function BotsPage() {
 
   const startNewConversation = async () => {
     if (!activeBot || !user) return;
-    const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
-    if (!tenantId) return;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("tenant_id")
+      .eq("id", user.id)
+      .single();
+    if (!profile) return;
     const { data: newConv, error } = await supabase
       .from("bot_conversations")
       .insert({
         bot_id: activeBot.id,
         user_id: user.id,
-        tenant_id: tenantId,
+        tenant_id: profile.tenant_id,
         title: "Nueva conversación",
       })
       .select("id, title, created_at")
