@@ -211,14 +211,11 @@ export default function DashDinamicsPage() {
 
   const loadLatestSession = async () => {
     if (!user) return;
-    const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
-    if (!tenantId) return;
 
     const { data: sessionsData } = await supabase
       .from("dashboard_sessions")
       .select("*")
       .eq("user_id", user.id)
-      .eq("tenant_id", tenantId)
       .eq("status", "active")
       .order("created_at", { ascending: false })
       .limit(1);
