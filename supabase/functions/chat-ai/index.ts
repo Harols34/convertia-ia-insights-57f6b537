@@ -1063,9 +1063,8 @@ serve(async (req) => {
       }
       const { data: bot, error: botErr } = await admin
         .from("bots")
-        .select("system_prompt, model")
+        .select("system_prompt, model, tenant_id")
         .eq("id", botId)
-        .eq("tenant_id", tid)
         .maybeSingle();
       if (botErr || !bot) {
         return new Response(JSON.stringify({ error: "Bot no encontrado" }), {
