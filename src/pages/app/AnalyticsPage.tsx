@@ -73,8 +73,8 @@ export default function AnalyticsPage() {
   });
 
   const { data: boards = [], isLoading: boardsLoading } = useQuery({
-    queryKey: ["analytics-boards", tenantId, user?.id],
-    enabled: !!tenantId && !!user?.id,
+    queryKey: ["analytics-boards", user?.id],
+    enabled: !!user?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("analytics_user_boards")
@@ -102,7 +102,7 @@ export default function AnalyticsPage() {
       return data.id as string;
     },
     onSuccess: (id) => {
-      queryClient.invalidateQueries({ queryKey: ["analytics-boards", tenantId, user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["analytics-boards", user?.id] });
       setSelectedBoardId(id);
       toast.success("Tablero creado");
     },
@@ -321,7 +321,7 @@ export default function AnalyticsPage() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["analytics-boards", tenantId, user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["analytics-boards", user?.id] });
       setRenameOpen(false);
       toast.success("Tablero actualizado");
     },
@@ -334,7 +334,7 @@ export default function AnalyticsPage() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["analytics-boards", tenantId, user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["analytics-boards", user?.id] });
       setSelectedBoardId(null);
       toast.success("Tablero eliminado");
     },
