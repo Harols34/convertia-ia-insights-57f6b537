@@ -6,6 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { fetchAllIntegrationRows } from "@/components/integraciones/fetch-integration-table";
+import { useAuth } from "@/hooks/use-auth";
+import { resolveWritableTenantId } from "@/lib/accessible-tenant";
 
 interface ExportRow {
   id: string;
@@ -17,6 +20,7 @@ interface ExportRow {
 }
 
 export default function ExportacionesPage() {
+  const { user } = useAuth();
   const [exports, setExports] = useState<ExportRow[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
@@ -31,7 +35,7 @@ export default function ExportacionesPage() {
   }, []);
 
   const quickExport = async (type: "csv" | "xlsx") => {
-    const { data: leads } = await supabase.from("leads").select("*").limit(1000);
+    const leads = (await fetchAllIntegrationRows(supabase, "leads")) as any[];
     if (!leads || leads.length === 0) {
       toast({ title: "Sin datos", description: "No hay leads para exportar", variant: "destructive" });
       return;
@@ -48,20 +52,20 @@ export default function ExportacionesPage() {
     a.click();
     URL.revokeObjectURL(url);
 
-    const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
-      await supabase.from("exports").insert({
-        tenant_id: tenantId,
-        user_id: user.id,
-        export_type: type,
-        source_module: "exportaciones",
-        file_name: fileName,
-        metadata: { total_rows: leads.length },
-      });
-      // Refresh list
-      const { data: updated } = await supabase.from("exports").select("*").order("created_at", { ascending: false }).limit(100);
-      setExports((updated as any[]) || []);
+      const tenantId = await resolveWritableTenantId(user.id);
+      if (tenantId) {
+        await supabase.from("exports").insert({
+          tenant_id: tenantId,
+          user_id: user.id,
+          export_type: type,
+          source_module: "exportaciones",
+          file_name: fileName,
+          metadata: { total_rows: leads.length },
+        });
+        const { data: updated } = await supabase.from("exports").select("*").order("created_at", { ascending: false }).limit(100);
+        setExports((updated as any[]) || []);
+      }
     }
 
     toast({ title: "Exportación generada", description: `${leads.length} registros exportados` });

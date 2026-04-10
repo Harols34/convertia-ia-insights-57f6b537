@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { FileBarChart, Loader2, Filter, Download } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -6,39 +6,62 @@ import { Button } from "@/components/ui/button";
 import { LeadsTable } from "@/components/app/LeadsTable";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { fetchAllIntegrationRows } from "@/components/integraciones/fetch-integration-table";
+import { resolveWritableTenantId } from "@/lib/accessible-tenant";
 
 export default function ReportesPage() {
-  const [leads, setLeads] = useState<any[]>([]);
+  const { user } = useAuth();
+  const [allLeads, setAllLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<{ cliente?: string; bpo?: string }>({});
   const [filterOpts, setFilterOpts] = useState<{ clientes: string[]; bpos: string[] }>({ clientes: [], bpos: [] });
   const { toast } = useToast();
 
   useEffect(() => {
+    let cancelled = false;
     const fetch = async () => {
       setLoading(true);
-      let query = supabase.from("leads").select("*").order("fch_creacion", { ascending: false }).limit(1000);
-      if (filters.cliente) query = query.eq("cliente", filters.cliente);
-      if (filters.bpo) query = query.eq("bpo", filters.bpo);
-      const { data } = await query;
-      setLeads(data || []);
-
-      if (filterOpts.clientes.length === 0) {
-        const { data: all } = await supabase.from("leads").select("cliente, bpo").limit(1000);
+      try {
+        const rows = (await fetchAllIntegrationRows(supabase, "leads")) as any[];
+        if (cancelled) return;
+        setAllLeads(rows);
         setFilterOpts({
-          clientes: [...new Set(all?.map((l: any) => l.cliente).filter(Boolean))] as string[],
-          bpos: [...new Set(all?.map((l: any) => l.bpo).filter(Boolean))] as string[],
+          clientes: [...new Set(rows.map((l) => l.cliente).filter(Boolean))] as string[],
+          bpos: [...new Set(rows.map((l) => l.bpo).filter(Boolean))] as string[],
         });
+      } catch (error) {
+        if (!cancelled) {
+          setAllLeads([]);
+          toast({ title: "No se pudieron cargar los reportes", description: error instanceof Error ? error.message : "Error", variant: "destructive" });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     };
-    fetch();
-  }, [filters]);
+    void fetch();
+    return () => {
+      cancelled = true;
+    };
+  }, [toast]);
 
-  const exportCSV = () => {
+  const leads = useMemo(
+    () =>
+      allLeads.filter((lead) => {
+        if (filters.cliente && lead.cliente !== filters.cliente) return false;
+        if (filters.bpo && lead.bpo !== filters.bpo) return false;
+        return true;
+      }),
+    [allLeads, filters],
+  );
+
+  const exportCSV = async () => {
     if (leads.length === 0) return;
     const headers = ["cliente", "id_lead", "campana_mkt", "bpo", "ciudad", "result_prim_gestion", "result_negocio", "fch_creacion"];
-    const csv = [headers.join(","), ...leads.map((l) => headers.map((h) => `"${l[h] || ""}"`).join(","))].join("\n");
+    const csv = [
+      headers.join(","),
+      ...leads.map((l) => headers.map((h) => `"${String(l[h] || "").replace(/"/g, '""')}"`).join(",")),
+    ].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -48,11 +71,10 @@ export default function ReportesPage() {
     URL.revokeObjectURL(url);
 
     // Log export
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: user.id });
-      await supabase.from("exports").insert({
+    if (user) {
+      const tenantId = await resolveWritableTenantId(user.id);
+      if (tenantId) {
+        await supabase.from("exports").insert({
         tenant_id: tenantId,
         user_id: user.id,
         export_type: "csv",
@@ -60,7 +82,8 @@ export default function ReportesPage() {
         file_name: `reporte_leads_${new Date().toISOString().slice(0, 10)}.csv`,
         metadata: { total_rows: leads.length, filters },
       });
-    })();
+      }
+    }
 
     toast({ title: "Exportación completada", description: `${leads.length} registros exportados a CSV` });
   };

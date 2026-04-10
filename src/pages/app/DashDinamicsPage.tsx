@@ -32,6 +32,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { dashMessageToApiContent, type DashMessage, type StructuredResponse } from "@/types/dashdinamics";
 import { cn } from "@/lib/utils";
+import { resolveWritableTenantId } from "@/lib/accessible-tenant";
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-ai`;
 /** Chats por página: primero los 4 más recientes; al desplazar se cargan más. */
@@ -280,18 +281,13 @@ export default function DashDinamicsPage() {
     if (sessionId) return sessionId;
     if (!user) return null;
 
-    // Use profile's home tenant for new sessions
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("tenant_id")
-      .eq("id", user.id)
-      .single();
-    if (!profile) return null;
+    const tenantId = await resolveWritableTenantId(user.id);
+    if (!tenantId) return null;
 
     const { data, error } = await supabase
       .from("dashboard_sessions")
       .insert([{
-        tenant_id: profile.tenant_id,
+        tenant_id: tenantId,
         user_id: user.id,
         prompt: "Nueva sesión Dashboard IA",
         title: "Nueva sesión",

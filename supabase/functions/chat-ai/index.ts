@@ -464,6 +464,66 @@ function buildDimensionsFromLeads(leads: any[]): any {
   };
 }
 
+const MONTHS_ES: Record<string, string> = {
+  enero: "01",
+  febrero: "02",
+  marzo: "03",
+  abril: "04",
+  mayo: "05",
+  junio: "06",
+  julio: "07",
+  agosto: "08",
+  septiembre: "09",
+  setiembre: "09",
+  octubre: "10",
+  noviembre: "11",
+  diciembre: "12",
+};
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function resolveDateHintsFromMessage(userMsg: string, leads: any[]): string[] {
+  if (!userMsg || !leads.length) return [];
+
+  const dateSet = new Set<string>();
+  for (const lead of leads) {
+    const iso = typeof lead.fch_creacion === "string" ? lead.fch_creacion.slice(0, 10) : "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) dateSet.add(iso);
+  }
+
+  const dates = Array.from(dateSet);
+  if (!dates.length) return [];
+
+  const out: string[] = [];
+  const matches = userMsg.toLowerCase().matchAll(/\b(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de\s+(\d{4}))?\b/g);
+
+  for (const match of matches) {
+    const day = Number(match[1]);
+    const month = MONTHS_ES[match[2]];
+    const explicitYear = match[3];
+    let iso: string | null = null;
+
+    if (explicitYear) {
+      iso = `${explicitYear}-${month}-${pad2(day)}`;
+    } else {
+      const suffix = `${month}-${pad2(day)}`;
+      const candidates = dates.filter((d) => d.slice(5) === suffix).sort();
+      if (candidates.length > 0) {
+        iso = candidates[candidates.length - 1];
+      } else {
+        const latest = dates.sort()[dates.length - 1];
+        if (latest) iso = `${latest.slice(0, 4)}-${suffix}`;
+      }
+    }
+
+    if (iso) out.push(`"${match[0]}" = ${iso}`);
+  }
+
+  return out;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // FILTER EXTRACTION from user message
 // ═══════════════════════════════════════════════════════════════════════════
@@ -606,6 +666,7 @@ REGLA ABSOLUTA: Cada número DEBE venir de RESULTADO_BD_REAL.
 function buildAnalyticsSys(dims: any, kpis: any, af: Filters, todayStr: string, tenantNames: string[]): string {
   return `Eres asistente BI de Converti-IA Analytics.
 Hoy es ${todayStr} (America/Santiago). El usuario tiene acceso a datos de: ${tenantNames.join(", ") || "todas las cuentas"}.
+RANGO REAL DISPONIBLE: ${kpis?.fecha_min || "sin datos"} → ${kpis?.fecha_max || "sin datos"}.
 
 DIMENSIONES: ${JSON.stringify(dims, null, 0)}
 KPIs: ${JSON.stringify(kpis, null, 0)}
@@ -621,6 +682,9 @@ Cuando el usuario mencione CUALQUIER valor específico (ciudad, campaña, agente
 ${ANTI_HALLUCINATION}
 - Para TOTALES usa get_kpis con filtros, NUNCA sumes filas.
 - Sin rango de fechas explícito: asume TODO el rango disponible.
+- Si el usuario dice "hasta el momento", "hasta ahora" o "al momento", usa como fin ${kpis?.fecha_max || todayStr}.
+- Si el usuario menciona una fecha sin año (ej. "15 de marzo"), usa el año más reciente que exista en la data para ese día/mes.
+- NUNCA pidas CSV, Excel, archivo o fuente de datos: ya estás conectado a los leads consolidados.
 
 FORMATO: español, markdown. Tablas:
 | Col | Leads | Ventas | Conv% |
@@ -630,6 +694,7 @@ FORMATO: español, markdown. Tablas:
 function buildDashSys(dims: any, kpis: any, af: Filters, todayStr: string, tenantNames: string[]): string {
   return `Eres el asistente analítico de DashDinamics (Converti-IA): generas insights y dashboards desde leads consolidados de ${tenantNames.length} cuenta(s): ${tenantNames.join(", ") || "todas"}.
 Hoy es ${todayStr} (America/Santiago).
+RANGO REAL DISPONIBLE: ${kpis?.fecha_min || "sin datos"} → ${kpis?.fecha_max || "sin datos"}.
 
 DIMENSIONES (valores reales consolidados): ${JSON.stringify(dims, null, 0)}
 KPIs globales: ${JSON.stringify(kpis, null, 0)}
@@ -645,6 +710,9 @@ cliente = cuenta/tenant. Si el usuario pregunta "de la cuenta X" o "del cliente 
 ═══ REGLA #1 — FILTROS ═══
 Todo valor concreto va en "filters" SOLO si el usuario lo pide explícitamente.
 Sin rango de fechas explícito: asume TODO el rango disponible (no limites a 7 días).
+- Si el usuario dice "hasta el momento", "hasta ahora" o "al momento", usa ${kpis?.fecha_max || todayStr} como fecha_hasta.
+- Si el usuario menciona una fecha sin año, usa el año más reciente disponible para ese día/mes en los datos.
+- NUNCA pidas archivos ni aclaraciones sobre la fuente: la data ya está conectada.
 
 ═══ EJECUCIÓN OBLIGATORIA ═══
 NUNCA devuelvas formularios ni clarifying_questions. SIEMPRE llama herramientas y devuelve response_mode "dashboard" con datos reales.
@@ -665,11 +733,16 @@ function buildBotWithToolsSys(botPrompt: string, dims: any, kpis: any, todayStr:
 ═══ CONTEXTO DE DATOS ═══
 Tienes acceso a herramientas analíticas sobre la tabla de leads consolidada de ${tenantNames.length} cuenta(s): ${tenantNames.join(", ") || "todas"}.
 Hoy es ${todayStr} (America/Santiago).
+RANGO REAL DISPONIBLE: ${kpis?.fecha_min || "sin datos"} → ${kpis?.fecha_max || "sin datos"}.
 DIMENSIONES: ${JSON.stringify(dims, null, 0)}
 KPIs actuales: ${JSON.stringify(kpis, null, 0)}
 
 Cuando el usuario pregunte sobre datos, leads, ventas, métricas, agentes, campañas, ciudades, etc., USA las herramientas (get_kpis, agg_1d, agg_2d, time_metrics, funnel).
 Sin rango explícito: usa TODO el rango disponible.
+Si el usuario pregunta por una fecha sin año, usa el año más reciente que exista en los datos para ese día/mes.
+Si dice "hasta el momento" o "hasta ahora", usa ${kpis?.fecha_max || todayStr}.
+NUNCA pidas CSV, Excel, archivo, base de datos o fuente de datos: ya la tienes conectada.
+Si preguntan "¿cuántos leads tienes?", responde con get_kpis usando toda la data accesible.
 ${ANTI_HALLUCINATION}
 Responde en español, markdown.`;
 }
@@ -1006,6 +1079,8 @@ serve(async (req) => {
     let forcedFilters: Record<string, string> = {};
     let botModel = "gpt-4o-mini";
     let botUsesTools = false;
+    const lastUserMsg = String(messages.filter((m: any) => m.role === "user").pop()?.content || "").trim();
+    const dateHints = resolveDateHintsFromMessage(lastUserMsg, allLeads);
 
     if (isBotChat) {
       const { data: bot, error: botErr } = await admin
@@ -1020,13 +1095,12 @@ serve(async (req) => {
       const dataSource = Array.isArray(cfg.dataSources) ? cfg.dataSources[0] : "leads";
 
       // If bot is configured for leads data, enable analytics tools
-      if (dataSource === "leads" && allLeads.length > 0) {
+      if (dataSource === "leads") {
         botUsesTools = true;
         sys = buildBotWithToolsSys(
           String(bot.system_prompt || "Eres un asistente útil."),
           dims, kpis, todayChile, tenantNames
         );
-        const lastUserMsg = String(messages.filter((m: any) => m.role === "user").pop()?.content || "").trim();
         forcedFilters = extractFiltersFromMessage(lastUserMsg, dims);
       } else {
         sys = `${String(bot.system_prompt || "Eres un asistente útil.").trim()}\n\nResponde siempre en español. Puedes usar markdown. Sé claro y útil.`;
@@ -1036,7 +1110,6 @@ serve(async (req) => {
         ? buildDashSys(dims, kpis, af, todayChile, tenantNames)
         : buildAnalyticsSys(dims, kpis, af, todayChile, tenantNames);
 
-      const lastUserMsg = String(messages.filter((m: any) => m.role === "user").pop()?.content || "").trim();
       if (isDash) {
         forcedFilters = {};
       } else {
@@ -1045,6 +1118,10 @@ serve(async (req) => {
           sys += `\n⚠️ FILTROS DETECTADOS: ${JSON.stringify(forcedFilters)}. Inclúyelos en cada herramienta.`;
         }
       }
+    }
+
+    if (dateHints.length > 0) {
+      sys += `\n⚠️ FECHAS RESUELTAS SEGÚN LA DATA: ${dateHints.join("; ")}. Usa exactamente esas fechas si corresponde.`;
     }
 
     console.log(`[MAIN] leads=${allLeads.length} dims=${JSON.stringify(dims).length}c mode=${mode} botTools=${botUsesTools}`);
