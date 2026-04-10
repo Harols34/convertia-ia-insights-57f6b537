@@ -43,6 +43,7 @@ import { useIsSuperAdmin } from "@/hooks/use-app-access";
 import { Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
+import { resolveWritableTenantId } from "@/lib/accessible-tenant";
 
 interface BotRow {
   id: string;
@@ -54,6 +55,7 @@ interface BotRow {
   n8n_workflow_id: string | null;
   config: Record<string, unknown> | null;
   created_at: string;
+  tenant_id: string;
 }
 
 interface ChatMsg {
@@ -196,19 +198,17 @@ export default function BotsPage() {
     if (convs && convs.length > 0) {
       convId = convs[0].id;
     } else {
-      // Use profile's home tenant for new conversations
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("tenant_id")
-        .eq("id", user.id)
-        .single();
-      if (!profile) return;
+      const tenantId = await resolveWritableTenantId(user.id, bot.tenant_id);
+      if (!tenantId) {
+        toast({ title: "No se encontró una cuenta accesible", variant: "destructive" });
+        return;
+      }
       const { data: newConv } = await supabase
         .from("bot_conversations")
         .insert({
           bot_id: bot.id,
           user_id: user.id,
-          tenant_id: profile.tenant_id,
+          tenant_id: tenantId,
           title: `Chat · ${bot.name}`,
         })
         .select("id")
@@ -223,18 +223,17 @@ export default function BotsPage() {
 
   const startNewConversation = async () => {
     if (!activeBot || !user) return;
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("tenant_id")
-      .eq("id", user.id)
-      .single();
-    if (!profile) return;
+    const tenantId = await resolveWritableTenantId(user.id, activeBot.tenant_id);
+    if (!tenantId) {
+      toast({ title: "No se encontró una cuenta accesible", variant: "destructive" });
+      return;
+    }
     const { data: newConv, error } = await supabase
       .from("bot_conversations")
       .insert({
         bot_id: activeBot.id,
         user_id: user.id,
-        tenant_id: profile.tenant_id,
+        tenant_id: tenantId,
         title: "Nueva conversación",
       })
       .select("id, title, created_at")
@@ -392,7 +391,11 @@ export default function BotsPage() {
       data: { user: u },
     } = await supabase.auth.getUser();
     if (!u) return;
-    const { data: tenantId } = await supabase.rpc("get_user_tenant", { _user_id: u.id });
+    const tenantId = await resolveWritableTenantId(u.id, editBot?.tenant_id ?? null);
+    if (!tenantId) {
+      toast({ title: "No se encontró una cuenta accesible", variant: "destructive" });
+      return;
+    }
     const payload = {
       name: form.name,
       channel: form.channel,

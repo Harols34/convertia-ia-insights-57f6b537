@@ -27,6 +27,7 @@ import type { Json } from "@/integrations/supabase/types";
 import type { BoardFilterWidgetConfig, BoardWidgetLayout, PivotWidgetPersistedConfig } from "@/types/analytics-pivot";
 import { isBoardFilterWidgetConfig } from "@/types/analytics-pivot";
 import { toast } from "sonner";
+import { resolveWritableTenantId } from "@/lib/accessible-tenant";
 
 type BoardRow = {
   id: string;
@@ -62,16 +63,6 @@ export default function AnalyticsPage() {
   /** Constructor en hoja lateral (modal) */
   const [constructorSheetOpen, setConstructorSheetOpen] = useState(false);
 
-  const { data: tenantId } = useQuery({
-    queryKey: ["user-tenant-id", user?.id],
-    enabled: !!user?.id,
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("get_user_tenant", { _user_id: user!.id });
-      if (error) throw error;
-      return data as string | null;
-    },
-  });
-
   const { data: boards = [], isLoading: boardsLoading } = useQuery({
     queryKey: ["analytics-boards", user?.id],
     enabled: !!user?.id,
@@ -88,10 +79,12 @@ export default function AnalyticsPage() {
 
   const createBoard = useMutation({
     mutationFn: async (name: string) => {
+      const tenantId = await resolveWritableTenantId(user!.id);
+      if (!tenantId) throw new Error("No se encontró una cuenta accesible");
       const { data, error } = await supabase
         .from("analytics_user_boards")
         .insert({
-          tenant_id: tenantId!,
+          tenant_id: tenantId,
           user_id: user!.id,
           name: name.trim() || "Mi tablero",
           sort_order: 0,
@@ -112,11 +105,11 @@ export default function AnalyticsPage() {
   });
 
   useEffect(() => {
-    if (!tenantId || !user?.id || boardsLoading) return;
+    if (!user?.id || boardsLoading) return;
     if (boards.length > 0 || seedAttempted.current) return;
     seedAttempted.current = true;
     createBoard.mutate("Mi tablero");
-  }, [tenantId, user?.id, boards, boardsLoading, createBoard]);
+  }, [user?.id, boards, boardsLoading, createBoard]);
 
   useEffect(() => {
     if (!boards.length) {
