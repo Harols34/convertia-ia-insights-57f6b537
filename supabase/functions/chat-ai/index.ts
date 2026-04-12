@@ -127,7 +127,6 @@ async function fetchAccessibleLeads(
 ): Promise<any[]> {
   if (!tenantIds.length) return [];
   const allLeads: any[] = [];
-  // Fetch up to 5000 leads per tenant (use service_role which bypasses RLS)
   for (const tid of tenantIds) {
     let from = 0;
     const pageSize = 1000;
@@ -142,11 +141,50 @@ async function fetchAccessibleLeads(
       allLeads.push(...data);
       if (data.length < pageSize) break;
       from += pageSize;
-      if (from >= 5000) break; // safety cap per tenant
     }
   }
   console.log(`[MULTI] Fetched ${allLeads.length} leads from ${tenantIds.length} tenants`);
   return allLeads;
+}
+
+interface TemporalOverrides {
+  fecha_desde?: string;
+  fecha_hasta?: string;
+}
+
+function normalizeText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function extractAvailableCreationDates(leads: any[]): string[] {
+  const s = new Set<string>();
+  for (const lead of leads) {
+    const raw = typeof lead?.fch_creacion === "string" ? lead.fch_creacion.slice(0, 10) : "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) s.add(raw);
+  }
+  return Array.from(s).sort();
+}
+
+function shiftIsoDate(iso: string, days: number): string {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function clampIsoDate(iso: string, minDate?: string | null, maxDate?: string | null): string {
+  let out = iso;
+  if (minDate && out < minDate) out = minDate;
+  if (maxDate && out > maxDate) out = maxDate;
+  return out;
+}
+
+function lastDayOfMonthIso(year: number, month1Based: number): string {
+  return new Date(Date.UTC(year, month1Based, 0)).toISOString().slice(0, 10);
 }
 
 function getDateField(lead: any, field: string | null): Date | null {
@@ -403,19 +441,27 @@ function executeToolInMemory(
   args: any,
   af: Filters,
   forcedFilters: Record<string, string>,
+  temporalOverrides?: TemporalOverrides | null,
 ): string {
-  const filtered = applyFiltersToLeads(allLeads, args, af, forcedFilters);
-  const df = args.date_field || null;
+  const effectiveArgs = { ...(args || {}) };
+  if (temporalOverrides?.fecha_desde) effectiveArgs.fecha_desde = temporalOverrides.fecha_desde;
+  if (temporalOverrides?.fecha_hasta) effectiveArgs.fecha_hasta = temporalOverrides.fecha_hasta;
+  const filtered = applyFiltersToLeads(allLeads, effectiveArgs, af, forcedFilters);
+  const df = effectiveArgs.date_field || null;
 
-  console.log(`[EXEC-MEM] ${name} total=${allLeads.length} filtered=${filtered.length} filters=${JSON.stringify({...forcedFilters, ...args.filters})}`);
+  console.log(`[EXEC-MEM] ${name} total=${allLeads.length} filtered=${filtered.length} filters=${JSON.stringify({ ...forcedFilters, ...effectiveArgs.filters })} overrides=${JSON.stringify(temporalOverrides || {})}`);
 
   try {
+    if (filtered.length === 0) {
+      return `RESULTADO_BD: ${name} retornó 0 filas. No hay datos para estos filtros. NO inventes datos.`;
+    }
+
     let data: any;
     switch (name) {
       case "get_kpis": data = computeKpis(filtered); break;
-      case "agg_1d": data = agg1d(filtered, args.dimension, df, args.limit || 50); break;
-      case "agg_2d": data = agg2d(filtered, args.dim1, args.dim2, df, args.top_n || 10); break;
-      case "time_metrics": data = timeMetrics(filtered, args.group_by || null, df); break;
+      case "agg_1d": data = agg1d(filtered, effectiveArgs.dimension, df, effectiveArgs.limit || 50); break;
+      case "agg_2d": data = agg2d(filtered, effectiveArgs.dim1, effectiveArgs.dim2, df, effectiveArgs.top_n || 10); break;
+      case "time_metrics": data = timeMetrics(filtered, effectiveArgs.group_by || null, df); break;
       case "funnel": data = funnelCalc(filtered); break;
       default: return `ERROR: herramienta "${name}" no existe`;
     }
@@ -484,16 +530,7 @@ function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-function resolveDateHintsFromMessage(userMsg: string, leads: any[]): string[] {
-  if (!userMsg || !leads.length) return [];
-
-  const dateSet = new Set<string>();
-  for (const lead of leads) {
-    const iso = typeof lead.fch_creacion === "string" ? lead.fch_creacion.slice(0, 10) : "";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) dateSet.add(iso);
-  }
-
-  const dates = Array.from(dateSet);
+function resolveDateHintsFromMessage(userMsg: string, dates: string[]): string[] {
   if (!dates.length) return [];
 
   const out: string[] = [];
@@ -524,12 +561,86 @@ function resolveDateHintsFromMessage(userMsg: string, leads: any[]): string[] {
   return out;
 }
 
+function inferTemporalOverridesFromMessage(
+  userMsg: string,
+  dates: string[],
+  todayStr: string,
+  dataMin?: string | null,
+  dataMax?: string | null,
+): TemporalOverrides | null {
+  if (!userMsg || !dates.length) return null;
+
+  const msg = normalizeText(scrubTimezoneFalsePositives(userMsg));
+  const earliest = dataMin || dates[0] || null;
+  const latest = dataMax || dates[dates.length - 1] || null;
+  const out: TemporalOverrides = {};
+
+  if (/\bhasta ayer\b/.test(msg)) {
+    out.fecha_hasta = clampIsoDate(shiftIsoDate(todayStr, -1), earliest, latest);
+  } else if (/\b(?:hasta ahora|hasta el momento|al momento|hasta hoy)\b/.test(msg)) {
+    out.fecha_hasta = clampIsoDate(todayStr, earliest, latest);
+  } else if (/\bayer\b/.test(msg)) {
+    const y = clampIsoDate(shiftIsoDate(todayStr, -1), earliest, latest);
+    out.fecha_desde = y;
+    out.fecha_hasta = y;
+  } else if (/\bhoy\b/.test(msg)) {
+    const h = clampIsoDate(todayStr, earliest, latest);
+    out.fecha_desde = h;
+    out.fecha_hasta = h;
+  }
+
+  const monthMatches = Array.from(msg.matchAll(/\b(?:mes\s+de\s+)?(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de\s+(\d{4}))?\b/g));
+  if (monthMatches.length > 0) {
+    const match = monthMatches[monthMatches.length - 1];
+    const month = Number(MONTHS_ES[match[1]]);
+    const monthStr = pad2(month);
+    const explicitYear = match[2];
+    const candidate = explicitYear
+      ? `${explicitYear}-${monthStr}-01`
+      : dates.filter((d) => d.slice(5, 7) === monthStr).sort().pop() || latest;
+
+    if (candidate) {
+      const year = Number(candidate.slice(0, 4));
+      out.fecha_desde = clampIsoDate(`${year}-${monthStr}-01`, earliest, latest);
+      const monthEnd = clampIsoDate(lastDayOfMonthIso(year, month), earliest, latest);
+      if (!out.fecha_hasta || out.fecha_hasta > monthEnd) out.fecha_hasta = monthEnd;
+      if (out.fecha_hasta && out.fecha_hasta < out.fecha_desde) out.fecha_hasta = out.fecha_desde;
+    }
+  }
+
+  return out.fecha_desde || out.fecha_hasta ? out : null;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // FILTER EXTRACTION from user message
 // ═══════════════════════════════════════════════════════════════════════════
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractKeywordScopedValue(userMsg: string, patterns: RegExp[]): string | null {
+  for (const pattern of patterns) {
+    const match = userMsg.match(pattern);
+    const raw = match?.[1]?.trim();
+    if (!raw) continue;
+    const cleaned = raw.replace(/^["'“”]+|["'“”]+$/g, "").trim();
+    if (cleaned.length >= 2) return cleaned;
+  }
+  return null;
+}
+
+function findBestDimensionMatch(term: string, values: string[]): string | null {
+  const needle = normalizeText(term);
+  if (!needle) return null;
+  for (const value of values) {
+    if (normalizeText(value) === needle) return value;
+  }
+  for (const value of values) {
+    const candidate = normalizeText(value);
+    if (candidate.includes(needle) || needle.includes(candidate)) return value;
+  }
+  return null;
 }
 
 function scrubTimezoneFalsePositives(text: string): string {
@@ -587,6 +698,26 @@ function extractFiltersFromMessage(userMsg: string, dims: any): Record<string, s
   // Clientes
   if (dims.clientes && Array.isArray(dims.clientes)) {
     for (const c of dims.clientes) { if (c && c.length > 2 && msg.includes(c.toLowerCase())) { found.cliente = c; break; } }
+  }
+  if (!found.cliente && Array.isArray(dims.clientes)) {
+    const clientTerm = extractKeywordScopedValue(scrubbed, [
+      /\b(?:cliente|cuenta)\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con)\b|[?.!,;]|$)/i,
+    ]);
+    if (clientTerm) {
+      const match = findBestDimensionMatch(clientTerm, dims.clientes as string[]);
+      if (match) found.cliente = match;
+    }
+  }
+  if ((!found.campana_mkt && !found.campana_inconcert) && (Array.isArray(dims.campanas_mkt) || Array.isArray(dims.campanas_inconcert))) {
+    const campaignTerm = extractKeywordScopedValue(scrubbed, [
+      /\bcampa(?:ñ|n)a\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con)\b|[?.!,;]|$)/i,
+    ]);
+    if (campaignTerm) {
+      const mktMatch = Array.isArray(dims.campanas_mkt) ? findBestDimensionMatch(campaignTerm, dims.campanas_mkt as string[]) : null;
+      const inconcertMatch = Array.isArray(dims.campanas_inconcert) ? findBestDimensionMatch(campaignTerm, dims.campanas_inconcert as string[]) : null;
+      if (mktMatch) found.campana_mkt = mktMatch;
+      else if (inconcertMatch) found.campana_inconcert = inconcertMatch;
+    }
   }
   // Agentes
   for (const [dimKey, filterKey] of [
@@ -651,6 +782,35 @@ function extractFiltersFromMessage(userMsg: string, dims: any): Record<string, s
   }
 
   return found;
+}
+
+function detectUnavailableEntityRequest(userMsg: string, dims: any, matchedFilters: Record<string, string>): string | null {
+  if (!userMsg || !dims) return null;
+  const scrubbed = scrubTimezoneFalsePositives(userMsg);
+
+  if (!matchedFilters.cliente && Array.isArray(dims.clientes)) {
+    const clientTerm = extractKeywordScopedValue(scrubbed, [
+      /\b(?:cliente|cuenta)\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con)\b|[?.!,;]|$)/i,
+    ]);
+    if (clientTerm && !findBestDimensionMatch(clientTerm, dims.clientes as string[])) {
+      return `No hay datos para el cliente "${clientTerm}" en las cuentas accesibles.`;
+    }
+  }
+
+  if (!matchedFilters.campana_mkt && !matchedFilters.campana_inconcert) {
+    const campaignTerm = extractKeywordScopedValue(scrubbed, [
+      /\bcampa(?:ñ|n)a\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con)\b|[?.!,;]|$)/i,
+    ]);
+    const campaignValues = [
+      ...(Array.isArray(dims.campanas_mkt) ? (dims.campanas_mkt as string[]) : []),
+      ...(Array.isArray(dims.campanas_inconcert) ? (dims.campanas_inconcert as string[]) : []),
+    ];
+    if (campaignTerm && !findBestDimensionMatch(campaignTerm, campaignValues)) {
+      return `No hay datos para la campaña "${campaignTerm}" en las cuentas accesibles.`;
+    }
+  }
+
+  return null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -757,6 +917,7 @@ async function runDash(
   allLeads: any[],
   af: Filters,
   ff: Record<string, string> = {},
+  temporalOverrides?: TemporalOverrides | null,
 ) {
   const all = [{ role: "system", content: sys }, ...msgs];
   for (let i = 0; i < 5; i++) {
@@ -781,7 +942,7 @@ async function runDash(
       msg.tool_calls.map(async (tc: any) => {
         const a = JSON.parse(tc.function.arguments || "{}");
         console.log(`[D] ${tc.function.name}(${JSON.stringify(a)})`);
-        const r = executeToolInMemory(allLeads, tc.function.name, a, af, ff);
+        const r = executeToolInMemory(allLeads, tc.function.name, a, af, ff, temporalOverrides);
         console.log(`[D] → ${r.substring(0, 150)}`);
         return { role: "tool", tool_call_id: tc.id, content: r };
       }),
@@ -833,6 +994,7 @@ async function runBotWithTools(
   af: Filters,
   ff: Record<string, string>,
   model: string,
+  temporalOverrides?: TemporalOverrides | null,
 ): Promise<ReadableStream | string> {
   const all = [{ role: "system", content: sys }, ...msgs];
   for (let i = 0; i < 5; i++) {
@@ -853,7 +1015,7 @@ async function runBotWithTools(
       msg.tool_calls.map(async (tc: any) => {
         const a = JSON.parse(tc.function.arguments || "{}");
         console.log(`[B] ${tc.function.name}(${JSON.stringify(a)})`);
-        const r = executeToolInMemory(allLeads, tc.function.name, a, af, ff);
+        const r = executeToolInMemory(allLeads, tc.function.name, a, af, ff, temporalOverrides);
         console.log(`[B] → ${r.substring(0, 150)}`);
         return { role: "tool", tool_call_id: tc.id, content: r };
       }),
@@ -879,6 +1041,7 @@ async function runAnalytics(
   allLeads: any[],
   af: Filters,
   ff: Record<string, string> = {},
+  temporalOverrides?: TemporalOverrides | null,
 ): Promise<ReadableStream | string> {
   const all = [{ role: "system", content: sys }, ...msgs];
   for (let i = 0; i < 5; i++) {
@@ -899,7 +1062,7 @@ async function runAnalytics(
       msg.tool_calls.map(async (tc: any) => {
         const a = JSON.parse(tc.function.arguments || "{}");
         console.log(`[A] ${tc.function.name}(${JSON.stringify(a)})`);
-        const r = executeToolInMemory(allLeads, tc.function.name, a, af, ff);
+        const r = executeToolInMemory(allLeads, tc.function.name, a, af, ff, temporalOverrides);
         console.log(`[A] → ${r.substring(0, 150)}`);
         return { role: "tool", tool_call_id: tc.id, content: r };
       }),
@@ -995,6 +1158,14 @@ function normalizeDashResponse(raw: any): any {
   return { response_mode: "dashboard", assistant_message: raw.assistant_message || raw.message || JSON.stringify(raw).substring(0, 500), dashboard: null };
 }
 
+function buildNoDataDashReply(message: string) {
+  return { response_mode: "dashboard", assistant_message: message, decision_goal: null, dashboard: null };
+}
+
+function buildSsePayload(text: string): string {
+  return `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\ndata: [DONE]\n\n`;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1074,13 +1245,24 @@ serve(async (req) => {
     const allLeads = await fetchAccessibleLeads(admin, tids);
     const dims = buildDimensionsFromLeads(allLeads);
     const kpis = computeKpis(allLeads);
+    const availableDates = extractAvailableCreationDates(allLeads);
 
     let sys: string;
     let forcedFilters: Record<string, string> = {};
     let botModel = "gpt-4o-mini";
     let botUsesTools = false;
     const lastUserMsg = String(messages.filter((m: any) => m.role === "user").pop()?.content || "").trim();
-    const dateHints = resolveDateHintsFromMessage(lastUserMsg, allLeads);
+    const dateHints = resolveDateHintsFromMessage(lastUserMsg, availableDates);
+    const temporalOverrides = inferTemporalOverridesFromMessage(lastUserMsg, availableDates, todayChile, kpis?.fecha_min || null, kpis?.fecha_max || null);
+    let unavailableEntityReason: string | null = null;
+
+    if (!allLeads.length) {
+      const noData = "No hay leads accesibles para responder con datos reales.";
+      if (isDash) {
+        return new Response(JSON.stringify({ reply: buildNoDataDashReply(noData) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      return new Response(buildSsePayload(noData), { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
+    }
 
     if (isBotChat) {
       const { data: bot, error: botErr } = await admin
@@ -1102,6 +1284,7 @@ serve(async (req) => {
           dims, kpis, todayChile, tenantNames
         );
         forcedFilters = extractFiltersFromMessage(lastUserMsg, dims);
+        unavailableEntityReason = detectUnavailableEntityRequest(lastUserMsg, dims, forcedFilters);
       } else {
         sys = `${String(bot.system_prompt || "Eres un asistente útil.").trim()}\n\nResponde siempre en español. Puedes usar markdown. Sé claro y útil.`;
       }
@@ -1110,25 +1293,31 @@ serve(async (req) => {
         ? buildDashSys(dims, kpis, af, todayChile, tenantNames)
         : buildAnalyticsSys(dims, kpis, af, todayChile, tenantNames);
 
-      if (isDash) {
-        forcedFilters = {};
-      } else {
-        forcedFilters = extractFiltersFromMessage(lastUserMsg, dims);
-        if (Object.keys(forcedFilters).length > 0) {
-          sys += `\n⚠️ FILTROS DETECTADOS: ${JSON.stringify(forcedFilters)}. Inclúyelos en cada herramienta.`;
-        }
+      forcedFilters = extractFiltersFromMessage(lastUserMsg, dims);
+      unavailableEntityReason = detectUnavailableEntityRequest(lastUserMsg, dims, forcedFilters);
+      if (Object.keys(forcedFilters).length > 0) {
+        sys += `\n⚠️ FILTROS DETECTADOS: ${JSON.stringify(forcedFilters)}. Inclúyelos en cada herramienta.`;
       }
     }
 
     if (dateHints.length > 0) {
       sys += `\n⚠️ FECHAS RESUELTAS SEGÚN LA DATA: ${dateHints.join("; ")}. Usa exactamente esas fechas si corresponde.`;
     }
+    if (temporalOverrides) {
+      sys += `\n⚠️ RANGO TEMPORAL RESUELTO AUTOMÁTICAMENTE: ${JSON.stringify(temporalOverrides)}. Aplícalo en las herramientas.`;
+    }
+    if (unavailableEntityReason) {
+      if (isDash) {
+        return new Response(JSON.stringify({ reply: buildNoDataDashReply(unavailableEntityReason) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      return new Response(buildSsePayload(unavailableEntityReason), { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
+    }
 
     console.log(`[MAIN] leads=${allLeads.length} dims=${JSON.stringify(dims).length}c mode=${mode} botTools=${botUsesTools}`);
 
     if (isDash) {
       try {
-        const msg = await runDash(key, sys, messages, allLeads, af, forcedFilters);
+        const msg = await runDash(key, sys, messages, allLeads, af, forcedFilters, temporalOverrides);
         const c = msg?.content || "{}";
         try {
           const parsed = JSON.parse(c);
@@ -1149,9 +1338,9 @@ serve(async (req) => {
     if (isBotChat) {
       try {
         if (botUsesTools) {
-          const res = await runBotWithTools(key, sys, messages, allLeads, af, forcedFilters, botModel);
+          const res = await runBotWithTools(key, sys, messages, allLeads, af, forcedFilters, botModel, temporalOverrides);
           if (typeof res === "string") {
-            const sse = `data: ${JSON.stringify({ choices: [{ delta: { content: res } }] })}\n\ndata: [DONE]\n\n`;
+            const sse = buildSsePayload(res);
             return new Response(sse, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
           }
           return new Response(res, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
@@ -1167,9 +1356,9 @@ serve(async (req) => {
 
     // Analytics mode (default)
     try {
-      const res = await runAnalytics(key, sys, messages, allLeads, af, forcedFilters);
+      const res = await runAnalytics(key, sys, messages, allLeads, af, forcedFilters, temporalOverrides);
       if (typeof res === "string") {
-        const sse = `data: ${JSON.stringify({ choices: [{ delta: { content: res } }] })}\n\ndata: [DONE]\n\n`;
+        const sse = buildSsePayload(res);
         return new Response(sse, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
       }
       return new Response(res, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
