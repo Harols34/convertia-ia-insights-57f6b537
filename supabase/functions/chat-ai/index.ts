@@ -631,7 +631,7 @@ function extractKeywordScopedValue(userMsg: string, patterns: RegExp[]): string 
 }
 
 function campaignKeywordPattern(flags = "i"): RegExp {
-  return new RegExp(String.raw`\bcam(?:p|pa)(?:a|á)?(?:ñ|n)a\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con|solo|unicamente|únicamente)\b|[?.!,;]|$)`, flags);
+  return new RegExp(String.raw`\bcam(?:p|ap)a(?:ñ|n)a\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con|solo|unicamente|únicamente)\b|[?.!,;]|$)`, flags);
 }
 
 function collectLooseEntityCandidates(userMsg: string): string[] {
