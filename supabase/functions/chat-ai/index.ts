@@ -630,6 +630,86 @@ function extractKeywordScopedValue(userMsg: string, patterns: RegExp[]): string 
   return null;
 }
 
+function campaignKeywordPattern(flags = "i"): RegExp {
+  return new RegExp(String.raw`\bcam(?:p|ap)a(?:ñ|n)a\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con|solo|unicamente|únicamente)\b|[?.!,;]|$)`, flags);
+}
+
+function collectLooseEntityCandidates(userMsg: string): string[] {
+  const scrubbed = scrubTimezoneFalsePositives(userMsg);
+  const normalized = scrubbed
+    .replace(/["'“”‘’]/g, " ")
+    .replace(/[?.!,;:(){}\[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return [];
+
+  const candidates = new Set<string>();
+  const patterns = [
+    /\b(?:solo|solamente|unicamente|únicamente)\s+de\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con)\b|$)/gi,
+    /\bde\s+([a-z0-9áéíóúñü._\-]{3,})\b/gi,
+    /\bpara\s+([a-z0-9áéíóúñü._\-]{3,})\b/gi,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of normalized.matchAll(pattern)) {
+      const raw = match[1]?.trim();
+      if (!raw) continue;
+      const cleaned = raw
+        .replace(/^(?:la|el|los|las)\s+/i, "")
+        .replace(/\s+(?:mes|dia|días|dias)$/i, "")
+        .trim();
+      if (!cleaned) continue;
+      const token = normalizeText(cleaned);
+      if (!token || token.length < 3) continue;
+      if (MONTHS_ES[token]) continue;
+      if (["abril", "marzo", "enero", "febrero", "mayo", "junio", "julio", "agosto", "septiembre", "setiembre", "octubre", "noviembre", "diciembre", "ayer", "hoy", "manana", "mañana", "mes", "dia", "dias", "día", "días", "momento", "ahora", "total", "totales", "lead", "leads", "venta", "ventas", "efectividad", "conversion", "conversión"].includes(token)) continue;
+      candidates.add(cleaned);
+    }
+  }
+
+  return Array.from(candidates);
+}
+
+function resolveEntityFromLooseCandidates(userMsg: string, dims: any): Record<string, string> {
+  if (!dims) return {};
+
+  const candidates = collectLooseEntityCandidates(userMsg);
+  if (!candidates.length) return {};
+
+  for (const candidate of candidates) {
+    const clientMatch = Array.isArray(dims.clientes) ? findBestDimensionMatch(candidate, dims.clientes as string[]) : null;
+    if (clientMatch) return { cliente: clientMatch };
+
+    const mktMatch = Array.isArray(dims.campanas_mkt) ? findBestDimensionMatch(candidate, dims.campanas_mkt as string[]) : null;
+    if (mktMatch) return { campana_mkt: mktMatch };
+
+    const inconcertMatch = Array.isArray(dims.campanas_inconcert) ? findBestDimensionMatch(candidate, dims.campanas_inconcert as string[]) : null;
+    if (inconcertMatch) return { campana_inconcert: inconcertMatch };
+  }
+
+  return {};
+}
+
+function detectUnavailableLooseEntityRequest(userMsg: string, dims: any): string | null {
+  if (!dims) return null;
+  const candidates = collectLooseEntityCandidates(userMsg);
+  if (!candidates.length) return null;
+
+  const campaignValues = [
+    ...(Array.isArray(dims.campanas_mkt) ? (dims.campanas_mkt as string[]) : []),
+    ...(Array.isArray(dims.campanas_inconcert) ? (dims.campanas_inconcert as string[]) : []),
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(dims.clientes) && findBestDimensionMatch(candidate, dims.clientes as string[])) continue;
+    if (findBestDimensionMatch(candidate, campaignValues)) continue;
+    return `No hay datos para \"${candidate}\" en campañas o clientes accesibles.`;
+  }
+
+  return null;
+}
+
 function findBestDimensionMatch(term: string, values: string[]): string | null {
   const needle = normalizeText(term);
   if (!needle) return null;
@@ -710,7 +790,7 @@ function extractFiltersFromMessage(userMsg: string, dims: any): Record<string, s
   }
   if ((!found.campana_mkt && !found.campana_inconcert) && (Array.isArray(dims.campanas_mkt) || Array.isArray(dims.campanas_inconcert))) {
     const campaignTerm = extractKeywordScopedValue(scrubbed, [
-      /\bcampa(?:ñ|n)a\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con)\b|[?.!,;]|$)/i,
+      campaignKeywordPattern(),
     ]);
     if (campaignTerm) {
       const mktMatch = Array.isArray(dims.campanas_mkt) ? findBestDimensionMatch(campaignTerm, dims.campanas_mkt as string[]) : null;
@@ -718,6 +798,10 @@ function extractFiltersFromMessage(userMsg: string, dims: any): Record<string, s
       if (mktMatch) found.campana_mkt = mktMatch;
       else if (inconcertMatch) found.campana_inconcert = inconcertMatch;
     }
+  }
+
+  if (!found.cliente && !found.campana_mkt && !found.campana_inconcert) {
+    Object.assign(found, resolveEntityFromLooseCandidates(scrubbed, dims));
   }
   // Agentes
   for (const [dimKey, filterKey] of [
@@ -799,7 +883,7 @@ function detectUnavailableEntityRequest(userMsg: string, dims: any, matchedFilte
 
   if (!matchedFilters.campana_mkt && !matchedFilters.campana_inconcert) {
     const campaignTerm = extractKeywordScopedValue(scrubbed, [
-      /\bcampa(?:ñ|n)a\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con)\b|[?.!,;]|$)/i,
+      campaignKeywordPattern(),
     ]);
     const campaignValues = [
       ...(Array.isArray(dims.campanas_mkt) ? (dims.campanas_mkt as string[]) : []),
@@ -808,6 +892,11 @@ function detectUnavailableEntityRequest(userMsg: string, dims: any, matchedFilte
     if (campaignTerm && !findBestDimensionMatch(campaignTerm, campaignValues)) {
       return `No hay datos para la campaña "${campaignTerm}" en las cuentas accesibles.`;
     }
+  }
+
+  if (!matchedFilters.cliente && !matchedFilters.campana_mkt && !matchedFilters.campana_inconcert) {
+    const looseReason = detectUnavailableLooseEntityRequest(scrubbed, dims);
+    if (looseReason) return looseReason;
   }
 
   return null;
