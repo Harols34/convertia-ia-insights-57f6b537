@@ -103,7 +103,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "funnel",
-      description: "Embudo de conversión (leads → contactados → negocio → ventas).",
+      description: "Embudo de conversión (leads → contactados → negocio → ventas). Útil para 'efectividad', 'tasa de cierre', 'pipeline'.",
       parameters: {
         type: "object",
         properties: {
@@ -112,6 +112,99 @@ const TOOLS = [
           date_field: { type: "string", description: DATE_DESC },
           filters: { type: "object", description: FILTER_DESC },
         },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "ranking",
+      description: `Rankings TOP/BOTTOM de cualquier dimensión. Sinónimos: "top", "mejores", "peores", "ranking", "los que más/menos", "líderes". Métricas: "leads"|"ventas"|"conv_pct"|"contactabilidad". order: "desc" para mejores, "asc" para peores. Dimensiones: ${DIM_DESC}`,
+      parameters: {
+        type: "object",
+        properties: {
+          dimension: { type: "string", description: "Dimensión a rankear" },
+          metric: { type: "string", enum: ["leads", "ventas", "conv_pct", "contactabilidad"], description: "Métrica de orden" },
+          order: { type: "string", enum: ["desc", "asc"], description: "desc=top, asc=bottom" },
+          top_n: { type: "integer", description: "Cantidad (ej. 5, 10). Default 10" },
+          min_leads: { type: "integer", description: "Excluir grupos con menos de N leads (default 1)" },
+          fecha_desde: { type: "string" },
+          fecha_hasta: { type: "string" },
+          date_field: { type: "string", description: DATE_DESC },
+          filters: { type: "object", description: FILTER_DESC },
+        },
+        required: ["dimension", "metric"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "compare_entities",
+      description: `Compara 2+ valores específicos de una misma dimensión lado a lado (ej. "agente A vs agente B", "campaña X vs campaña Y", "Bogotá vs Medellín"). Devuelve métricas comparables.`,
+      parameters: {
+        type: "object",
+        properties: {
+          dimension: { type: "string", description: "Dimensión común (ej. agente_negocio, campana_mkt, ciudad, cliente)" },
+          values: { type: "array", items: { type: "string" }, description: "Lista de valores exactos a comparar" },
+          fecha_desde: { type: "string" },
+          fecha_hasta: { type: "string" },
+          date_field: { type: "string", description: DATE_DESC },
+          filters: { type: "object", description: FILTER_DESC },
+        },
+        required: ["dimension", "values"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "compare_periods",
+      description: `Compara dos rangos de fechas (ej. mes vs mes anterior, esta semana vs anterior). Útil para "compara abril vs marzo", "vs mes anterior".`,
+      parameters: {
+        type: "object",
+        properties: {
+          actual_desde: { type: "string", description: "YYYY-MM-DD inicio actual" },
+          actual_hasta: { type: "string", description: "YYYY-MM-DD fin actual" },
+          previo_desde: { type: "string", description: "YYYY-MM-DD inicio previo" },
+          previo_hasta: { type: "string", description: "YYYY-MM-DD fin previo" },
+          date_field: { type: "string", description: DATE_DESC },
+          filters: { type: "object", description: FILTER_DESC },
+        },
+        required: ["actual_desde", "actual_hasta", "previo_desde", "previo_hasta"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "contactability",
+      description: `Métricas de contactabilidad/efectividad por dimensión: % de leads contactados (con fch_prim_gestion), % con gestión final (fch_ultim_gestion), % con negocio, % conversión a venta, intensidad (gestiones/lead). Sinónimos: "contactabilidad", "efectividad de contacto", "tasa de respuesta", "intensidad", "ocupación".`,
+      parameters: {
+        type: "object",
+        properties: {
+          dimension: { type: "string", description: `Dimensión opcional para desglose (${DIM_DESC}). Omitir = global.` },
+          fecha_desde: { type: "string" },
+          fecha_hasta: { type: "string" },
+          date_field: { type: "string", description: DATE_DESC },
+          filters: { type: "object", description: FILTER_DESC },
+          limit: { type: "integer", description: "Default 30" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_dimension_values",
+      description: "Lista los valores únicos de una dimensión y cuenta de leads (útil para '¿cuántos agentes hay?', '¿qué campañas tengo?', '¿qué clientes están?'). NO requiere fecha.",
+      parameters: {
+        type: "object",
+        properties: {
+          dimension: { type: "string", description: DIM_DESC },
+          filters: { type: "object", description: FILTER_DESC },
+        },
+        required: ["dimension"],
       },
     },
   },
