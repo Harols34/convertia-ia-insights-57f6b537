@@ -1207,22 +1207,25 @@ function buildAnalyticsSys(dims: any, kpis: any, af: Filters, todayStr: string, 
 Hoy es ${todayStr} (America/Santiago). El usuario tiene acceso a datos de: ${tenantNames.join(", ") || "todas las cuentas"}.
 RANGO REAL DISPONIBLE: ${kpis?.fecha_min || "sin datos"} → ${kpis?.fecha_max || "sin datos"}.
 
-DIMENSIONES: ${JSON.stringify(dims, null, 0)}
-KPIs globales: ${JSON.stringify(kpis, null, 0)}
+DIMENSIONES (referencia de columnas/valores válidos): ${JSON.stringify(dims, null, 0)}
 FILTROS UI ACTIVOS: ${JSON.stringify(af)}
 
 MODELO TEMPORAL: fch_creacion=llegada del lead | fch_prim_gestion=1er contacto | fch_ultim_gestion=última gestión | fch_negocio=cierre/ganado
+
+═══ REGLA CRÍTICA: SIEMPRE USAR HERRAMIENTAS ═══
+Para CUALQUIER pregunta con cifras, conteos, métricas, rankings o comparativos: DEBES llamar al menos UNA herramienta. Prohibido inventar o reutilizar números de mensajes previos en la conversación. Cada pregunta = nueva consulta a herramientas.
 
 ═══ REGLA #1 — FILTROS ═══
 Cuando el usuario mencione un valor concreto (ciudad, campaña, agente, tipo llamada, resultado, cliente, BPO), DEBES pasarlo en el parámetro "filters" de la herramienta.
 
 ═══ REGLAS DE EJECUCIÓN ═══
 - Para TOTALES usa get_kpis con filtros, NUNCA sumes filas manualmente.
-- Sin rango de fechas explícito: asume TODO el rango disponible (no limites a 7 días).
-- "hasta el momento" / "hasta ahora" / "al momento" → fecha_hasta=${kpis?.fecha_max || todayStr}.
+- Sin rango de fechas explícito: NO envíes fecha_desde/fecha_hasta (todo el histórico).
+- "hoy" → fecha_desde=fecha_hasta=${todayStr}.
+- "hasta el momento" / "hasta ahora" / "al momento" → sin fecha_hasta (usa todo el histórico).
 - Fecha sin año (ej. "15 de marzo") → año más reciente que exista en la data para ese día/mes.
 - NUNCA pidas CSV, Excel, archivo o fuente de datos: ya estás conectado.
-- Mantén contexto: si el usuario pregunta "¿y por ciudad?" después de hablar de campañas, reusa los filtros de la pregunta anterior.
+- Mantén contexto de FILTROS en seguimientos ("¿y por ciudad?"), pero NUNCA reutilices CIFRAS previas.
 
 ${GLOSARIO_SINONIMOS}
 ${ANTI_HALLUCINATION}
