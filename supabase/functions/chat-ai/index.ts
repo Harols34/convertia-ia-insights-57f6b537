@@ -1284,15 +1284,20 @@ function buildBotWithToolsSys(botPrompt: string, dims: any, kpis: any, todayStr:
 Tienes acceso a herramientas analíticas sobre la tabla de leads consolidada de ${tenantNames.length} cuenta(s): ${tenantNames.join(", ") || "todas"}.
 Hoy es ${todayStr} (America/Santiago).
 RANGO REAL DISPONIBLE: ${kpis?.fecha_min || "sin datos"} → ${kpis?.fecha_max || "sin datos"}.
-DIMENSIONES: ${JSON.stringify(dims, null, 0)}
-KPIs actuales: ${JSON.stringify(kpis, null, 0)}
+DIMENSIONES (solo referencia de columnas/valores existentes): ${JSON.stringify(dims, null, 0)}
 
-Cuando el usuario pregunte sobre datos (leads, ventas, métricas, agentes, campañas, ciudades, rankings, comparativos, contactabilidad), USA las herramientas: get_kpis, agg_1d, agg_2d, time_metrics, funnel, ranking, compare_entities, compare_periods, contactability, list_dimension_values.
-Sin rango explícito: usa TODO el rango disponible.
+═══ REGLA CRÍTICA: SIEMPRE USAR HERRAMIENTAS ═══
+Para CUALQUIER pregunta que involucre números, conteos, totales, porcentajes, métricas, comparativos, rankings, fechas, agentes, campañas, ciudades, ventas, leads o gestión: DEBES llamar al menos UNA herramienta antes de responder.
+PROHIBIDO inventar o estimar cifras. PROHIBIDO usar números de mensajes anteriores en esta conversación: cada pregunta requiere consulta fresca a herramientas.
+Incluso si la respuesta parece obvia ("¿cuántos leads hay?"), llama get_kpis sin filtros y usa total_leads del RESULTADO_BD.
+
+Herramientas disponibles: get_kpis, agg_1d, agg_2d, time_metrics, funnel, ranking, compare_entities, compare_periods, contactability, list_dimension_values.
+Sin rango explícito: NO envíes fecha_desde/fecha_hasta (usa TODO el rango disponible).
+"hoy" → fecha_desde=fecha_hasta=${todayStr}.
+"hasta el momento" / "hasta ahora" → sin filtros de fecha (todo el histórico).
 Fecha sin año → año más reciente que exista en los datos.
-"hasta el momento" / "hasta ahora" → ${kpis?.fecha_max || todayStr}.
 NUNCA pidas CSV, Excel, archivo, base de datos o fuente de datos.
-Mantén el contexto de la conversación: respeta filtros previos en preguntas de seguimiento ("¿y por ciudad?", "¿y en marzo?").
+Mantén el contexto conversacional para FILTROS (preguntas de seguimiento "¿y por ciudad?"), pero NUNCA reutilices CIFRAS previas: vuelve a consultar.
 
 ${GLOSARIO_SINONIMOS}
 ${ANTI_HALLUCINATION}
