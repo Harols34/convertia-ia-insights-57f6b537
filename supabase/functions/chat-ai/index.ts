@@ -1447,10 +1447,11 @@ async function runAnalytics(
 ): Promise<ReadableStream | string> {
   const all = [{ role: "system", content: sys }, ...msgs];
   for (let i = 0; i < 5; i++) {
+    const toolChoice = i === 0 ? "required" : "auto";
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "gpt-4o-mini", messages: all, tools: TOOLS, tool_choice: "auto", temperature: 0.1, max_tokens: 2048 }),
+      body: JSON.stringify({ model: "gpt-4o-mini", messages: all, tools: TOOLS, tool_choice: toolChoice, temperature: 0.1, max_tokens: 2048 }),
     });
     if (!r.ok) throw new Error(`OpenAI ${r.status}`);
     const msg = (await r.json()).choices?.[0]?.message;
