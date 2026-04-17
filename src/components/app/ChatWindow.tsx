@@ -3,7 +3,7 @@ import { Send, Bot, User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import ReactMarkdown from "react-markdown";
+import { MarkdownWithRichTables } from "./MarkdownWithRichTables";
 import { motion, AnimatePresence } from "framer-motion";
 
 type Msg = { role: "user" | "assistant"; content: string };
@@ -64,9 +64,10 @@ export function ChatWindow({ messages, onSend, isLoading, placeholder = "Escribe
                   }`}
                 >
                   {msg.role === "assistant" ? (
-                    <div className="prose prose-sm dark:prose-invert max-w-none [&>p]:mb-2 [&>ul]:mb-2 [&>ol]:mb-2">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
-                    </div>
+                    <MarkdownWithRichTables
+                      content={msg.content}
+                      className="prose prose-sm dark:prose-invert max-w-none [&>p]:mb-2 [&>ul]:mb-2 [&>ol]:mb-2"
+                    />
                   ) : (
                     <p className="whitespace-pre-wrap">{msg.content}</p>
                   )}

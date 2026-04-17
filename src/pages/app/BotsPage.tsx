@@ -41,7 +41,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useIsSuperAdmin } from "@/hooks/use-app-access";
 import { Link } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
+import { MarkdownWithRichTables } from "@/components/app/MarkdownWithRichTables";
 import { cn } from "@/lib/utils";
 import { resolveWritableTenantId } from "@/lib/accessible-tenant";
 
@@ -804,9 +804,10 @@ export default function BotsPage() {
                         )}
                       >
                         {msg.role === "assistant" ? (
-                          <div className="prose prose-sm max-w-none text-foreground dark:prose-invert [&>p]:mb-2 [&_a]:text-primary dark:[&_a]:text-cyan-400">
-                            <ReactMarkdown>{msg.content}</ReactMarkdown>
-                          </div>
+                          <MarkdownWithRichTables
+                            content={msg.content}
+                            className="prose prose-sm max-w-none text-foreground dark:prose-invert [&>p]:mb-2 [&_a]:text-primary dark:[&_a]:text-cyan-400"
+                          />
                         ) : (
                           <p className="whitespace-pre-wrap">{msg.content}</p>
                         )}

@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { DashboardData } from "@/types/dashdinamics";
 import { KpiGrid } from "./KpiGrid";
 import { InsightList } from "./InsightList";
@@ -6,6 +7,7 @@ import { ArrowRight, Expand, Target, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { DashboardExportBar } from "./DashboardExportBar";
 
 interface DashboardRendererProps {
   message: string;
@@ -26,6 +28,7 @@ export function DashboardRenderer({
   isRegenerating,
 }: DashboardRendererProps) {
   const navigate = useNavigate();
+  const containerRef = useRef<HTMLDivElement>(null);
   const rawSteps = dashboard.recommended_next_steps as unknown;
   const nextSteps = Array.isArray(rawSteps)
     ? rawSteps.map(String)
@@ -40,7 +43,7 @@ export function DashboardRenderer({
   const insights = Array.isArray(dashboard.insights) ? dashboard.insights : [];
 
   return (
-    <div className="space-y-5">
+    <div ref={containerRef} className="space-y-5">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="space-y-1.5 min-w-0 flex-1">
@@ -52,20 +55,23 @@ export function DashboardRenderer({
             </span>
           )}
         </div>
-        {onRegenerateDashboard && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-1.5 shrink-0"
-            onClick={onRegenerateDashboard}
-            disabled={isRegenerating}
-            title="Reintenta la generación si algún gráfico quedó vacío"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", isRegenerating && "animate-spin")} />
-            Regenerar
-          </Button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          <DashboardExportBar containerRef={containerRef} dashboard={dashboard} />
+          {onRegenerateDashboard && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={onRegenerateDashboard}
+              disabled={isRegenerating}
+              title="Reintenta la generación si algún gráfico quedó vacío"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", isRegenerating && "animate-spin")} />
+              Regenerar
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Brief message */}
