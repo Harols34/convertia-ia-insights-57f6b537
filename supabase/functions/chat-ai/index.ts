@@ -1238,7 +1238,6 @@ Hoy es ${todayStr} (America/Santiago).
 RANGO REAL DISPONIBLE: ${kpis?.fecha_min || "sin datos"} → ${kpis?.fecha_max || "sin datos"}.
 
 DIMENSIONES (valores reales consolidados): ${JSON.stringify(dims, null, 0)}
-KPIs globales: ${JSON.stringify(kpis, null, 0)}
 FILTROS UI: ${JSON.stringify(af)}
 
 ═══ ZONA HORARIA ═══
