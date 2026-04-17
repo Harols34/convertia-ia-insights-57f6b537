@@ -40,7 +40,8 @@ export function DashboardExportBar({ containerRef, dashboard }: DashboardExportB
       const kpiData = dashboard.kpis.map((k) => ({
         Indicador: k.label,
         Valor: k.value,
-        Variación: k.delta ?? "",
+        Variación: k.change ?? "",
+        Tendencia: k.trend ?? "",
       }));
       const ws = XLSX.utils.json_to_sheet(kpiData);
       XLSX.utils.book_append_sheet(wb, ws, "KPIs");
@@ -82,7 +83,9 @@ export function DashboardExportBar({ containerRef, dashboard }: DashboardExportB
     if (dashboard.insights?.length) {
       const insightData = dashboard.insights.map((ins, i) => ({
         "#": i + 1,
-        Insight: typeof ins === "string" ? ins : (ins as any).text || JSON.stringify(ins),
+        Tipo: ins.type,
+        Título: ins.title,
+        Descripción: ins.description,
       }));
       const ws = XLSX.utils.json_to_sheet(insightData);
       XLSX.utils.book_append_sheet(wb, ws, "Insights");
