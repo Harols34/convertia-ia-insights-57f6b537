@@ -527,6 +527,128 @@ function funnelCalc(leads: any[]): any {
   };
 }
 
+function rankingCalc(leads: any[], dimension: string, dateField: string | null, metric: string, order: string, topN: number, minLeads: number): any[] {
+  const groups = new Map<string, { leads: number; ventas: number; contactados: number }>();
+  for (const l of leads) {
+    const key = getDimensionValue(l, dimension, dateField);
+    if (key === null) continue;
+    const g = groups.get(key) || { leads: 0, ventas: 0, contactados: 0 };
+    g.leads++;
+    if (l.es_venta) g.ventas++;
+    if (l.fch_prim_gestion) g.contactados++;
+    groups.set(key, g);
+  }
+  const arr = Array.from(groups.entries())
+    .filter(([_, g]) => g.leads >= Math.max(1, minLeads))
+    .map(([dim, g]) => ({
+      dimension: dim,
+      leads: g.leads,
+      ventas: g.ventas,
+      conv_pct: g.leads ? Math.round((g.ventas / g.leads) * 1000) / 10 : 0,
+      contactabilidad_pct: g.leads ? Math.round((g.contactados / g.leads) * 1000) / 10 : 0,
+    }));
+  const metricKey = metric === "contactabilidad" ? "contactabilidad_pct" : metric === "conv_pct" ? "conv_pct" : metric;
+  arr.sort((a: any, b: any) => order === "asc" ? (a[metricKey] - b[metricKey]) : (b[metricKey] - a[metricKey]));
+  return arr.slice(0, Math.max(1, topN));
+}
+
+function compareEntitiesCalc(leads: any[], dimension: string, values: string[], dateField: string | null): any[] {
+  return values.map(v => {
+    const subset = leads.filter(l => {
+      const dv = getDimensionValue(l, dimension, dateField);
+      return dv != null && String(dv).toLowerCase() === String(v).toLowerCase();
+    });
+    const n = subset.length;
+    const ventas = subset.filter(l => l.es_venta).length;
+    const contactados = subset.filter(l => l.fch_prim_gestion).length;
+    const conNegocio = subset.filter(l => l.fch_negocio).length;
+    return {
+      valor: v,
+      leads: n,
+      ventas,
+      con_gestion: contactados,
+      con_negocio: conNegocio,
+      contactabilidad_pct: n ? Math.round(contactados / n * 1000) / 10 : 0,
+      conv_pct: n ? Math.round(ventas / n * 1000) / 10 : 0,
+      tasa_negocio_pct: n ? Math.round(conNegocio / n * 1000) / 10 : 0,
+    };
+  });
+}
+
+function comparePeriodsCalc(allLeads: any[], dateField: string | null, ranges: { actual_desde: string; actual_hasta: string; previo_desde: string; previo_hasta: string }, baseFilters: Record<string, unknown>): any {
+  const filt = (desde: string, hasta: string) => {
+    const d1 = new Date(desde + "T00:00:00");
+    const d2 = new Date(hasta + "T23:59:59");
+    return allLeads.filter(l => {
+      const dt = getDateField(l, dateField);
+      if (!dt || dt < d1 || dt > d2) return false;
+      for (const [k, v] of Object.entries(baseFilters)) {
+        if (v == null || v === "") continue;
+        if (k === "es_venta") { if (!l.es_venta) return false; continue; }
+        if (l[k] == null || String(l[k]) !== String(v)) return false;
+      }
+      return true;
+    });
+  };
+  const summary = (s: any[]) => {
+    const v = s.filter(l => l.es_venta).length;
+    return {
+      leads: s.length, ventas: v, con_gestion: s.filter(l => l.fch_prim_gestion).length,
+      conv_pct: s.length ? Math.round(v / s.length * 1000) / 10 : 0,
+    };
+  };
+  const A = summary(filt(ranges.actual_desde, ranges.actual_hasta));
+  const P = summary(filt(ranges.previo_desde, ranges.previo_hasta));
+  const delta = (cur: number, prev: number) => prev === 0 ? (cur > 0 ? 100 : 0) : Math.round((cur - prev) / prev * 1000) / 10;
+  return {
+    rango_actual: { desde: ranges.actual_desde, hasta: ranges.actual_hasta, ...A },
+    rango_previo: { desde: ranges.previo_desde, hasta: ranges.previo_hasta, ...P },
+    variacion_pct: { leads: delta(A.leads, P.leads), ventas: delta(A.ventas, P.ventas), conv_pct: delta(A.conv_pct, P.conv_pct) },
+  };
+}
+
+function contactabilityCalc(leads: any[], dimension: string | null, dateField: string | null, limit: number): any {
+  const compute = (s: any[]) => {
+    const n = s.length;
+    const c = s.filter(l => l.fch_prim_gestion).length;
+    const u = s.filter(l => l.fch_ultim_gestion).length;
+    const ng = s.filter(l => l.fch_negocio).length;
+    const v = s.filter(l => l.es_venta).length;
+    const marc = s.filter(l => ["CONNECTED", "FINISHED"].includes(l.prim_resultado_marcadora)).length;
+    return {
+      leads: n, contactados: c, con_ultim_gestion: u, con_negocio: ng, ventas: v,
+      contactabilidad_pct: n ? Math.round(c / n * 1000) / 10 : 0,
+      contactabilidad_marcadora_pct: n ? Math.round(marc / n * 1000) / 10 : 0,
+      tasa_cierre_pct: n ? Math.round(ng / n * 1000) / 10 : 0,
+      conv_pct: n ? Math.round(v / n * 1000) / 10 : 0,
+    };
+  };
+  if (!dimension) return compute(leads);
+  const groups = new Map<string, any[]>();
+  for (const l of leads) {
+    const k = getDimensionValue(l, dimension, dateField);
+    if (k === null) continue;
+    const arr = groups.get(k) || [];
+    arr.push(l);
+    groups.set(k, arr);
+  }
+  const out = Array.from(groups.entries()).map(([dim, s]) => ({ dimension: dim, ...compute(s) }));
+  out.sort((a: any, b: any) => b.leads - a.leads);
+  return out.slice(0, Math.max(1, limit));
+}
+
+function listDimensionValuesCalc(leads: any[], dimension: string): any[] {
+  const counts = new Map<string, number>();
+  for (const l of leads) {
+    const k = getDimensionValue(l, dimension, null);
+    if (k === null) continue;
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([valor, leads]) => ({ valor, leads }))
+    .sort((a, b) => b.leads - a.leads);
+}
+
 /** Execute tool against in-memory leads */
 function executeToolInMemory(
   allLeads: any[],
@@ -537,15 +659,20 @@ function executeToolInMemory(
   temporalOverrides?: TemporalOverrides | null,
 ): string {
   const effectiveArgs = { ...(args || {}) };
-  if (temporalOverrides?.fecha_desde) effectiveArgs.fecha_desde = temporalOverrides.fecha_desde;
-  if (temporalOverrides?.fecha_hasta) effectiveArgs.fecha_hasta = temporalOverrides.fecha_hasta;
-  const filtered = applyFiltersToLeads(allLeads, effectiveArgs, af, forcedFilters);
+  if (temporalOverrides?.fecha_desde && !effectiveArgs.fecha_desde) effectiveArgs.fecha_desde = temporalOverrides.fecha_desde;
+  if (temporalOverrides?.fecha_hasta && !effectiveArgs.fecha_hasta) effectiveArgs.fecha_hasta = temporalOverrides.fecha_hasta;
+
+  // list_dimension_values y compare_periods no aplican filtros de fecha estándar
+  const skipDateFilter = name === "list_dimension_values" || name === "compare_periods";
+  const filtered = skipDateFilter
+    ? applyFiltersToLeads(allLeads, { filters: effectiveArgs.filters }, af, forcedFilters)
+    : applyFiltersToLeads(allLeads, effectiveArgs, af, forcedFilters);
   const df = effectiveArgs.date_field || null;
 
   console.log(`[EXEC-MEM] ${name} total=${allLeads.length} filtered=${filtered.length} filters=${JSON.stringify({ ...forcedFilters, ...effectiveArgs.filters })} overrides=${JSON.stringify(temporalOverrides || {})}`);
 
   try {
-    if (filtered.length === 0) {
+    if (filtered.length === 0 && name !== "compare_periods") {
       return `RESULTADO_BD: ${name} retornó 0 filas. No hay datos para estos filtros. NO inventes datos.`;
     }
 
@@ -556,6 +683,29 @@ function executeToolInMemory(
       case "agg_2d": data = agg2d(filtered, effectiveArgs.dim1, effectiveArgs.dim2, df, effectiveArgs.top_n || 10); break;
       case "time_metrics": data = timeMetrics(filtered, effectiveArgs.group_by || null, df); break;
       case "funnel": data = funnelCalc(filtered); break;
+      case "ranking":
+        data = rankingCalc(filtered, effectiveArgs.dimension, df, effectiveArgs.metric || "leads", effectiveArgs.order || "desc", effectiveArgs.top_n || 10, effectiveArgs.min_leads || 1);
+        break;
+      case "compare_entities":
+        data = compareEntitiesCalc(filtered, effectiveArgs.dimension, Array.isArray(effectiveArgs.values) ? effectiveArgs.values : [], df);
+        break;
+      case "compare_periods": {
+        const baseFilters: Record<string, unknown> = { ...forcedFilters };
+        if (effectiveArgs.filters && typeof effectiveArgs.filters === "object") Object.assign(baseFilters, effectiveArgs.filters);
+        data = comparePeriodsCalc(allLeads, df, {
+          actual_desde: effectiveArgs.actual_desde,
+          actual_hasta: effectiveArgs.actual_hasta,
+          previo_desde: effectiveArgs.previo_desde,
+          previo_hasta: effectiveArgs.previo_hasta,
+        }, baseFilters);
+        break;
+      }
+      case "contactability":
+        data = contactabilityCalc(filtered, effectiveArgs.dimension || null, df, effectiveArgs.limit || 30);
+        break;
+      case "list_dimension_values":
+        data = listDimensionValuesCalc(filtered, effectiveArgs.dimension);
+        break;
       default: return `ERROR: herramienta "${name}" no existe`;
     }
 
