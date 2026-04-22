@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,20 +20,35 @@ interface Lead {
 interface LeadsTableProps {
   leads: Lead[];
   pageSize?: number;
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
+  totalCount?: number;
+  serverPaginated?: boolean;
 }
 
-export function LeadsTable({ leads, pageSize = 15 }: LeadsTableProps) {
-  const [search, setSearch] = useState("");
+export function LeadsTable({
+  leads,
+  pageSize = 15,
+  searchValue,
+  onSearchChange,
+  totalCount,
+  serverPaginated = false,
+}: LeadsTableProps) {
+  const [internalSearch, setInternalSearch] = useState("");
   const [page, setPage] = useState(0);
+  const search = searchValue ?? internalSearch;
 
-  const filtered = leads.filter((l) =>
-    [l.cliente, l.id_lead, l.campana_mkt, l.bpo, l.ciudad, l.result_negocio]
-      .filter(Boolean)
-      .some((v) => v!.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filtered = useMemo(() => {
+    if (serverPaginated) return leads;
+    return leads.filter((l) =>
+      [l.cliente, l.id_lead, l.campana_mkt, l.bpo, l.ciudad, l.result_negocio]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(search.toLowerCase())),
+    );
+  }, [leads, search, serverPaginated]);
 
-  const totalPages = Math.ceil(filtered.length / pageSize);
-  const paged = filtered.slice(page * pageSize, (page + 1) * pageSize);
+  const totalPages = serverPaginated ? 1 : Math.ceil(filtered.length / pageSize);
+  const paged = serverPaginated ? filtered : filtered.slice(page * pageSize, (page + 1) * pageSize);
 
   return (
     <div className="rounded-xl border border-border bg-card">
@@ -43,11 +58,16 @@ export function LeadsTable({ leads, pageSize = 15 }: LeadsTableProps) {
           <Input
             placeholder="Buscar leads..."
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (onSearchChange) onSearchChange(value);
+              else setInternalSearch(value);
+              setPage(0);
+            }}
             className="pl-9"
           />
         </div>
-        <span className="text-xs text-muted-foreground">{filtered.length} registros</span>
+        <span className="text-xs text-muted-foreground">{(totalCount ?? filtered.length).toLocaleString("es")} registros</span>
       </div>
       <div className="overflow-auto max-h-[500px]">
         <Table>
@@ -87,7 +107,7 @@ export function LeadsTable({ leads, pageSize = 15 }: LeadsTableProps) {
           </TableBody>
         </Table>
       </div>
-      {totalPages > 1 && (
+      {!serverPaginated && totalPages > 1 && (
         <div className="p-3 border-t border-border flex items-center justify-between">
           <span className="text-xs text-muted-foreground">
             Página {page + 1} de {totalPages}

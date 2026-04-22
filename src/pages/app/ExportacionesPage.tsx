@@ -36,7 +36,7 @@ export default function ExportacionesPage() {
   const quickExport = async (type: "csv" | "xlsx") => {
     const { data, error } = await supabase.rpc("accessible_leads_report_page", {
       _page: 1,
-      _page_size: 200,
+      _page_size: 100,
       _search: null,
       _cliente: null,
       _bpo: null,
@@ -71,7 +71,7 @@ export default function ExportacionesPage() {
           export_type: type,
           source_module: "exportaciones",
           file_name: fileName,
-          metadata: { total_rows: leads.length, scope: "first_200" },
+          metadata: { total_rows: leads.length, scope: "first_100" },
         });
         const { data: updated } = await supabase.from("exports").select("*").order("created_at", { ascending: false }).limit(100);
         setExports((updated as any[]) || []);

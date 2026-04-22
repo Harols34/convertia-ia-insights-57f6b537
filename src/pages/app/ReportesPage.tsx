@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { FileBarChart, Loader2, Filter, Download } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -27,10 +27,13 @@ export default function ReportesPage() {
   const [rows, setRows] = useState<LeadReportRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<{ cliente?: string; bpo?: string }>({});
+  const [search, setSearch] = useState("");
   const [filterOpts, setFilterOpts] = useState<{ clientes: string[]; bpos: string[] }>({ clientes: [], bpos: [] });
   const [page, setPage] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
   const { toast } = useToast();
+  const pageSize = 25;
+  const debouncedSearch = useDeferredValue(search.trim());
 
   useEffect(() => {
     void (async () => {
@@ -53,8 +56,8 @@ export default function ReportesPage() {
     void (async () => {
       const { data, error } = await supabase.rpc("accessible_leads_report_page", {
         _page: page,
-        _page_size: 25,
-        _search: null,
+        _page_size: pageSize,
+        _search: debouncedSearch || null,
         _cliente: filters.cliente ?? null,
         _bpo: filters.bpo ?? null,
       });
@@ -73,7 +76,7 @@ export default function ReportesPage() {
     return () => {
       cancelled = true;
     };
-  }, [filters, page, toast]);
+  }, [debouncedSearch, filters, page, toast]);
 
   const exportCSV = async () => {
     if (rows.length === 0) return;
@@ -97,7 +100,7 @@ export default function ReportesPage() {
         export_type: "csv",
         source_module: "reportes",
         file_name: `reporte_leads_${new Date().toISOString().slice(0, 10)}.csv`,
-        metadata: { total_rows: rows.length, filters, scope: "page" },
+        metadata: { total_rows: rows.length, filters: { ...filters, search: debouncedSearch || null }, scope: "page" },
       });
       }
     }
@@ -150,12 +153,22 @@ export default function ReportesPage() {
             <div><span className="text-muted-foreground">Registros visibles:</span> <strong>{rows.length}</strong></div>
           </div>
         </div>
-        <LeadsTable leads={rows} pageSize={25} />
+        <LeadsTable
+          leads={rows}
+          pageSize={pageSize}
+          searchValue={search}
+          onSearchChange={(value) => {
+            setPage(1);
+            setSearch(value);
+          }}
+          totalCount={totalRows}
+          serverPaginated
+        />
         <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
-          <span>Mostrando {(rows.length > 0 ? ((page - 1) * 25) + 1 : 0).toLocaleString("es")}–{Math.min(page * 25, totalRows).toLocaleString("es")} de {totalRows.toLocaleString("es")}</span>
+          <span>Mostrando {(rows.length > 0 ? ((page - 1) * pageSize) + 1 : 0).toLocaleString("es")}–{Math.min(page * pageSize, totalRows).toLocaleString("es")} de {totalRows.toLocaleString("es")}</span>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage((p) => Math.max(1, p - 1))}>Anterior</Button>
-            <Button variant="outline" size="sm" disabled={page * 25 >= totalRows || loading} onClick={() => setPage((p) => p + 1)}>Siguiente</Button>
+            <Button variant="outline" size="sm" disabled={page * pageSize >= totalRows || loading} onClick={() => setPage((p) => p + 1)}>Siguiente</Button>
           </div>
         </div>
       </motion.div>
