@@ -137,7 +137,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     (async () => {
-      const { data: logs } = await supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(5);
+      const { data: logs } = await supabase
+        .from("audit_logs")
+        .select("id, action, module, created_at")
+        .order("created_at", { ascending: false })
+        .limit(5);
       setActivity(logs || []);
     })();
   }, []);

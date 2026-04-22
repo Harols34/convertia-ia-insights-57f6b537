@@ -10,7 +10,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ArrowUpDown, Search, Download } from "lucide-react";
-import * as XLSX from "xlsx";
 
 interface RichMarkdownTableProps {
   headers: string[];
@@ -45,7 +44,8 @@ export function RichMarkdownTable({ headers, rows }: RichMarkdownTableProps) {
     else { setSortCol(i); setSortAsc(true); }
   };
 
-  const exportXls = () => {
+  const exportXls = async () => {
+    const XLSX = await import("xlsx");
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Datos");
