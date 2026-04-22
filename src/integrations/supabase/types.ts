@@ -1035,6 +1035,61 @@ export type Database = {
     Functions: {
       _build_filters_where: { Args: { _f: Json }; Returns: string }
       _date_field_expr: { Args: { _d: string }; Returns: string }
+      accessible_leads_agg_2d: {
+        Args: {
+          _date_field?: string
+          _dim1: string
+          _dim2: string
+          _fecha_desde?: string
+          _fecha_hasta?: string
+          _filters?: Json
+          _top_n?: number
+        }
+        Returns: Json
+      }
+      accessible_leads_dimensions: { Args: never; Returns: Json }
+      accessible_leads_group_metrics: {
+        Args: {
+          _date_field?: string
+          _dimension: string
+          _fecha_desde?: string
+          _fecha_hasta?: string
+          _filters?: Json
+          _limit?: number
+        }
+        Returns: Json
+      }
+      accessible_leads_kpis: {
+        Args: {
+          _date_field?: string
+          _fecha_desde?: string
+          _fecha_hasta?: string
+          _filters?: Json
+        }
+        Returns: Json
+      }
+      accessible_leads_report_filters: { Args: never; Returns: Json }
+      accessible_leads_report_page: {
+        Args: {
+          _bpo?: string
+          _cliente?: string
+          _page?: number
+          _page_size?: number
+          _search?: string
+        }
+        Returns: {
+          bpo: string
+          campana_mkt: string
+          ciudad: string
+          cliente: string
+          fch_creacion: string
+          id: string
+          id_lead: string
+          result_negocio: string
+          result_prim_gestion: string
+          total_count: number
+        }[]
+      }
       admin_list_raw_table_columns: {
         Args: { p_table_name: string }
         Returns: {
