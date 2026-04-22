@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { FileBarChart, Loader2, Filter, Download } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -33,8 +33,7 @@ export default function ReportesPage() {
   const [totalRows, setTotalRows] = useState(0);
   const { toast } = useToast();
   const pageSize = 25;
-
-  const debouncedSearch = useMemo(() => search.trim(), [search]);
+  const debouncedSearch = useDeferredValue(search.trim());
 
   useEffect(() => {
     void (async () => {
