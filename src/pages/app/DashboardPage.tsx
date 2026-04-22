@@ -21,56 +21,6 @@ import {
   type LeadsDashboardFilters,
 } from "@/lib/dashboard-leads";
 
-interface LeadStats {
-  total: number;
-  conGestion: number;
-  conNegocio: number;
-  ventas: number;
-  tasaGestion: string;
-  tasaNegocio: string;
-  tasaConversion: string;
-  porCliente: { name: string; value: number }[];
-  porCampanaMkt: { name: string; value: number }[];
-  porCiudad: { name: string; value: number }[];
-  porResultNegocio: { name: string; value: number }[];
-  porResultPrimGestion: { name: string; value: number }[];
-}
-
-function countBy(arr: LeadRow[], key: keyof LeadRow): { name: string; value: number }[] {
-  const map: Record<string, number> = {};
-  arr.forEach((item) => {
-    const val = item[key];
-    const s = val == null || val === "" ? "" : String(val);
-    if (s) map[s] = (map[s] || 0) + 1;
-  });
-  return Object.entries(map)
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value);
-}
-
-function buildStats(leads: LeadRow[]): LeadStats | null {
-  if (!leads.length) return null;
-  const total = leads.length;
-  const conGestion = leads.filter((l) => l.result_prim_gestion && l.result_prim_gestion !== "").length;
-  const conNegocio = leads.filter((l) => l.result_negocio && l.result_negocio !== "").length;
-  const ventas = leads.filter((l) => l.es_venta).length;
-
-  return {
-    total,
-    conGestion,
-    conNegocio,
-    ventas,
-    tasaGestion: total > 0 ? ((conGestion / total) * 100).toFixed(1) : "0",
-    tasaNegocio: total > 0 ? ((conNegocio / total) * 100).toFixed(1) : "0",
-    tasaConversion: total > 0 ? ((ventas / total) * 100).toFixed(1) : "0",
-    porCliente: countBy(leads, "cliente"),
-    porCampanaMkt: countBy(leads, "campana_mkt"),
-    porCiudad: countBy(leads, "ciudad"),
-    porResultNegocio: countBy(leads, "result_negocio"),
-    porResultPrimGestion: countBy(leads, "result_prim_gestion"),
-  };
-}
-
 function DimensionMultiFilter({
   col,
   label,
@@ -193,7 +143,6 @@ export default function DashboardPage() {
   }, []);
 
   const filteredLeads = useMemo(() => applyLeadsDashboardFilters(allLeads, filters), [allLeads, filters]);
-  const stats = useMemo(() => buildStats(filteredLeads), [filteredLeads]);
 
   const setDimension = useCallback((col: keyof LeadRow, values: string[]) => {
     setFilters((prev) => {
@@ -331,7 +280,7 @@ export default function DashboardPage() {
         </motion.div>
       )}
 
-      {stats && stats.total > 0 ? (
+      {filteredLeads.length > 0 ? (
         <ExecutiveDashboardBody
           leads={filteredLeads}
           onCrossFilter={(payload) => {
