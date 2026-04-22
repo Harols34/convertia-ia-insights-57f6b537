@@ -24,8 +24,17 @@ import SoportePage from "./pages/app/SoportePage.tsx";
 import CuentasPage from "./pages/app/CuentasPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { RequireModule } from "./components/auth/RequireModule.tsx";
+import { LeadsDataProvider } from "@/contexts/LeadsDataContext";
+import { ArtifactsLoadingBadge } from "@/components/app/ArtifactsLoadingBadge";
 
 const queryClient = new QueryClient();
+
+const DashboardRoute = () => (
+  <LeadsDataProvider>
+    <DashboardPage />
+    <ArtifactsLoadingBadge />
+  </LeadsDataProvider>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -39,7 +48,7 @@ const App = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route path="/recuperar" element={<RecoverPage />} />
             <Route path="/app" element={<AppLayout />}>
-              <Route index element={<RequireModule moduleSlug="dashboard"><DashboardPage /></RequireModule>} />
+              <Route index element={<RequireModule moduleSlug="dashboard"><DashboardRoute /></RequireModule>} />
               <Route path="dashdinamics" element={<RequireModule moduleSlug="dashboards-ia"><DashDinamicsPage /></RequireModule>} />
               <Route path="dashdinamics/detail" element={<RequireModule moduleSlug="dashboards-ia"><ChartDetailPage /></RequireModule>} />
               <Route path="analytics" element={<RequireModule moduleSlug="analytics"><AnalyticsPage /></RequireModule>} />
