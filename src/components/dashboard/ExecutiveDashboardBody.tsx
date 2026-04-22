@@ -75,15 +75,14 @@ function DeltaText({ pct, label = "% vs periodo ant." }: { pct: number; label?: 
   );
 }
 
-const GlassCard = forwardRef<HTMLDivElement, {
-  children,
-  className,
-  noPad,
-}>(({
-  children: React.ReactNode;
-  className?: string;
-  noPad?: boolean;
-}, ref) => {
+const GlassCard = forwardRef<
+  HTMLDivElement,
+  {
+    children: React.ReactNode;
+    className?: string;
+    noPad?: boolean;
+  }
+>(({ children, className, noPad }, ref) => {
   return (
     <div
       ref={ref}
