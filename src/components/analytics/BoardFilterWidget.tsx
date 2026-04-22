@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, Filter } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { fetchAllIntegrationRows } from "@/components/integraciones/fetch-integration-table";
 import { useBoardCrossFilter } from "@/contexts/BoardCrossFilterContext";
 import { boardCrossFilterKey } from "@/lib/board-cross-filter";
 import type { BoardFilterWidgetConfig } from "@/types/analytics-pivot";
@@ -12,6 +11,7 @@ import { formatDateBucketChipLabel, isDateLikeType } from "@/lib/pivot-dates";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { fetchCachedIntegrationRows } from "@/lib/integration-rows-cache";
 
 export function BoardFilterWidget({
   config,
@@ -39,12 +39,7 @@ export function BoardFilterWidget({
       setLoading(true);
       setError(null);
       try {
-        const data = await fetchAllIntegrationRows(
-          supabase,
-          config.tableName,
-          undefined,
-          stripCols.length ? stripCols : undefined,
-        );
+        const data = await fetchCachedIntegrationRows(supabase, config.tableName, stripCols.length ? stripCols : undefined);
         if (!cancelled) setRows(data);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Error al cargar");

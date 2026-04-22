@@ -2,7 +2,6 @@ import { useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Download, Image as ImageIcon, FileSpreadsheet } from "lucide-react";
 import { toPng } from "html-to-image";
-import * as XLSX from "xlsx";
 import type { DashboardData } from "@/types/dashdinamics";
 
 interface DashboardExportBarProps {
@@ -32,7 +31,8 @@ export function DashboardExportBar({ containerRef, dashboard }: DashboardExportB
     }
   }, [containerRef, dashboard]);
 
-  const exportExcel = useCallback(() => {
+  const exportExcel = useCallback(async () => {
+    const XLSX = await import("xlsx");
     const wb = XLSX.utils.book_new();
 
     // KPIs sheet
