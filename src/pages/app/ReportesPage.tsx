@@ -136,7 +136,7 @@ export default function ReportesPage() {
               {filterOpts.bpos.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button onClick={exportCSV} disabled={leads.length === 0}>
+          <Button onClick={exportCSV} disabled={rows.length === 0}>
             <Download className="h-4 w-4 mr-2" /> Exportar CSV
           </Button>
         </div>
