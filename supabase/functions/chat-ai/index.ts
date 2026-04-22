@@ -210,36 +210,6 @@ const TOOLS = [
   },
 ];
 
-// ═══════════════════════════════════════════════════════════════════════════
-// MULTI-TENANT: fetch leads from ALL accessible tenants, execute tools in-memory
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function fetchAccessibleLeads(
-  admin: any,
-  tenantIds: string[],
-): Promise<any[]> {
-  if (!tenantIds.length) return [];
-  const allLeads: any[] = [];
-  for (const tid of tenantIds) {
-    let from = 0;
-    const pageSize = 1000;
-    while (true) {
-      const { data, error } = await admin
-        .from("leads")
-        .select("*")
-        .eq("tenant_id", tid)
-        .range(from, from + pageSize - 1);
-      if (error) { console.error(`leads fetch err tid=${tid}:`, error.message); break; }
-      if (!data || data.length === 0) break;
-      allLeads.push(...data);
-      if (data.length < pageSize) break;
-      from += pageSize;
-    }
-  }
-  console.log(`[MULTI] Fetched ${allLeads.length} leads from ${tenantIds.length} tenants`);
-  return allLeads;
-}
-
 interface TemporalOverrides {
   fecha_desde?: string;
   fecha_hasta?: string;
