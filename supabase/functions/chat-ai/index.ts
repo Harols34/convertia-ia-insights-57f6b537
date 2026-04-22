@@ -305,49 +305,6 @@ function applyFiltersToLeads(leads: any[], args: any, af: Filters, forcedFilters
 }
 
 // In-memory analytics functions
-function computeKpis(leads: any[]): any {
-  const total = leads.length;
-  const ventas = leads.filter(l => l.es_venta).length;
-  const conGestion = leads.filter(l => l.fch_prim_gestion).length;
-  const sinGestion = total - conGestion;
-  const conNegocio = leads.filter(l => l.fch_negocio).length;
-  const contactMarcadora = leads.filter(l => ["CONNECTED","FINISHED"].includes(l.prim_resultado_marcadora)).length;
-
-  const respTimes: number[] = [];
-  const cicloTimes: number[] = [];
-  for (const l of leads) {
-    if (l.fch_prim_gestion && l.fch_creacion) {
-      const diff = (new Date(l.fch_prim_gestion).getTime() - new Date(l.fch_creacion).getTime()) / 60000;
-      if (diff >= 0 && diff <= 43200) respTimes.push(diff);
-    }
-    if (l.fch_negocio && l.fch_creacion) {
-      const diff = (new Date(l.fch_negocio).getTime() - new Date(l.fch_creacion).getTime()) / 60000;
-      if (diff >= 0 && diff <= 43200) cicloTimes.push(diff);
-    }
-  }
-  const avg = (arr: number[]) => arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length*10)/10 : null;
-
-  // Date range
-  const dates = leads.map(l => l.fch_creacion).filter(Boolean).map((d: string) => new Date(d).getTime()).filter((t: number) => !isNaN(t));
-  const minDate = dates.length ? new Date(Math.min(...dates)).toISOString().slice(0,10) : null;
-  const maxDate = dates.length ? new Date(Math.max(...dates)).toISOString().slice(0,10) : null;
-
-  return {
-    total_leads: total,
-    total_ventas: ventas,
-    conv_pct: total ? Math.round(ventas/total*10000)/100 : 0,
-    contactabilidad_marcadora_pct: total ? Math.round(contactMarcadora/total*10000)/100 : 0,
-    con_gestion: conGestion,
-    sin_gestion: sinGestion,
-    con_negocio: conNegocio,
-    fecha_min: minDate,
-    fecha_max: maxDate,
-    tasa_contacto_pct: total ? Math.round(conGestion/total*10000)/100 : 0,
-    avg_resp_min: avg(respTimes),
-    avg_ciclo_min: avg(cicloTimes),
-  };
-}
-
 function getTramoHorario(hour: number): string {
   if (hour >= 8 && hour < 12) return "Mañana(08-12)";
   if (hour >= 12 && hour < 15) return "Mediodía(12-15)";
@@ -617,6 +574,96 @@ function listDimensionValuesCalc(leads: any[], dimension: string): any[] {
   return Array.from(counts.entries())
     .map(([valor, leads]) => ({ valor, leads }))
     .sort((a, b) => b.leads - a.leads);
+}
+
+function buildToolFilters(args: any, af: Filters, forcedFilters: Record<string, string>): Record<string, unknown> {
+  const allFilters: Record<string, unknown> = { ...forcedFilters };
+  if (af.campana_mkt) allFilters.campana_mkt = af.campana_mkt;
+  if (af.agente) allFilters.agente_negocio = af.agente;
+  if (af.tipo_llamada) allFilters.tipo_llamada = af.tipo_llamada;
+  if (af.ciudad) allFilters.ciudad = af.ciudad;
+  if (af.categoria_mkt) allFilters.categoria_mkt = af.categoria_mkt;
+  if (af.campana_inconcert) allFilters.campana_inconcert = af.campana_inconcert;
+  if (af.bpo) allFilters.bpo = af.bpo;
+  if (af.result_negocio) allFilters.result_negocio = af.result_negocio;
+  if (af.es_venta === true) allFilters.es_venta = true;
+  if (args?.filters && typeof args.filters === "object") {
+    for (const [k, v] of Object.entries(args.filters)) {
+      if (v !== undefined && v !== null && v !== "") allFilters[k] = v;
+    }
+  }
+  return allFilters;
+}
+
+async function executeToolViaRpc(
+  admin: any,
+  name: string,
+  args: any,
+  af: Filters,
+  forcedFilters: Record<string, string>,
+  temporalOverrides?: TemporalOverrides | null,
+): Promise<string> {
+  const effectiveArgs = { ...(args || {}) };
+  if (temporalOverrides?.fecha_desde && !effectiveArgs.fecha_desde) effectiveArgs.fecha_desde = temporalOverrides.fecha_desde;
+  if (temporalOverrides?.fecha_hasta && !effectiveArgs.fecha_hasta) effectiveArgs.fecha_hasta = temporalOverrides.fecha_hasta;
+
+  const filters = buildToolFilters(effectiveArgs, af, forcedFilters);
+  const common = {
+    _fecha_desde: effectiveArgs.fecha_desde ?? null,
+    _fecha_hasta: effectiveArgs.fecha_hasta ?? null,
+    _date_field: effectiveArgs.date_field || null,
+    _filters: Object.keys(filters).length ? filters : null,
+  };
+
+  try {
+    let data: any = null;
+    let error: any = null;
+    switch (name) {
+      case "get_kpis": ({ data, error } = await admin.rpc("accessible_leads_kpis", common)); break;
+      case "agg_1d": ({ data, error } = await admin.rpc("accessible_leads_group_metrics", { ...common, _dimension: effectiveArgs.dimension, _limit: effectiveArgs.limit || 50 })); break;
+      case "ranking": ({ data, error } = await admin.rpc("accessible_leads_group_metrics", { ...common, _dimension: effectiveArgs.dimension, _limit: Math.max(effectiveArgs.top_n || 10, 50) })); break;
+      case "contactability": ({ data, error } = await admin.rpc("accessible_leads_group_metrics", { ...common, _dimension: effectiveArgs.dimension || "campana_mkt", _limit: effectiveArgs.limit || 30 })); break;
+      case "list_dimension_values": ({ data, error } = await admin.rpc("accessible_leads_group_metrics", { ...common, _dimension: effectiveArgs.dimension, _limit: 500 })); break;
+      case "agg_2d": ({ data, error } = await admin.rpc("accessible_leads_agg_2d", { ...common, _dim1: effectiveArgs.dim1, _dim2: effectiveArgs.dim2, _top_n: effectiveArgs.top_n || 10 })); break;
+      default:
+        return `ERROR_SISTEMA: herramienta ${name} aún no fue optimizada para alto volumen. NO inventes datos.`;
+    }
+
+    if (error) {
+      console.error(`RPC ${name}:`, error);
+      return `ERROR_SISTEMA: ${name} falló: ${error.message}. NO inventes datos.`;
+    }
+
+    if (name === "ranking" && Array.isArray(data)) {
+      const metricKey = effectiveArgs.metric === "contactabilidad" ? "contactabilidad_pct" : effectiveArgs.metric || "leads";
+      const minLeads = Math.max(1, effectiveArgs.min_leads || 1);
+      data = data
+        .filter((row: any) => Number(row?.leads || 0) >= minLeads)
+        .sort((a: any, b: any) => (effectiveArgs.order === "asc" ? Number(a?.[metricKey] || 0) - Number(b?.[metricKey] || 0) : Number(b?.[metricKey] || 0) - Number(a?.[metricKey] || 0)))
+        .slice(0, Math.max(1, effectiveArgs.top_n || 10));
+    }
+
+    if (name === "contactability" && !effectiveArgs.dimension && data && !Array.isArray(data)) {
+      data = data;
+    }
+
+    if (name === "list_dimension_values" && Array.isArray(data)) {
+      data = data.map((row: any) => ({ valor: row.dimension, leads: row.leads }));
+    }
+
+    if (data === null || data === undefined || (Array.isArray(data) && data.length === 0)) {
+      return `RESULTADO_BD: ${name} retornó 0 filas. No hay datos para estos filtros. NO inventes datos.`;
+    }
+
+    const rowCount = Array.isArray(data) ? data.length : 1;
+    const totalLeads = Array.isArray(data)
+      ? data.reduce((s: number, r: any) => s + Number(r?.leads || 0), 0)
+      : Number(data.total_leads || data.total || data.n || 0);
+    return `RESULTADO_BD_REAL(${name}, filas=${rowCount}, total_leads=${totalLeads}):\n${JSON.stringify(data)}\nFIN_RESULTADO. Usa EXACTAMENTE estos números.`;
+  } catch (e) {
+    console.error(`CRASH ${name}:`, e);
+    return `ERROR_SISTEMA: ${name} crasheó: ${(e as Error).message}. NO inventes datos.`;
+  }
 }
 
 /** Execute tool against in-memory leads */
@@ -1614,11 +1661,19 @@ serve(async (req) => {
 
     if (!key) return new Response(JSON.stringify({ error: "OPENAI_API_KEY no configurada" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-    // Fetch ALL leads from ALL accessible tenants
-    const allLeads = await fetchAccessibleLeads(admin, tids);
-    const dims = buildDimensionsFromLeads(allLeads);
-    const kpis = computeKpis(allLeads);
-    const availableDates = extractAvailableCreationDates(allLeads);
+    const { data: dimsData, error: dimsError } = await admin.rpc("accessible_leads_dimensions");
+    const { data: kpisData, error: kpisError } = await admin.rpc("accessible_leads_kpis", {
+      _fecha_desde: null,
+      _fecha_hasta: null,
+      _date_field: "fch_creacion",
+      _filters: null,
+    });
+    if (dimsError) throw dimsError;
+    if (kpisError) throw kpisError;
+    const dims = dimsData || {};
+    const kpis = kpisData || {};
+    const rangeDates = Array.isArray((dims as any)?.rango_fechas) ? [] : [kpis?.fecha_min, kpis?.fecha_max].filter(Boolean) as string[];
+    const availableDates = rangeDates.length === 2 ? rangeDates : [kpis?.fecha_min, kpis?.fecha_max].filter(Boolean) as string[];
 
     let sys: string;
     let forcedFilters: Record<string, string> = {};
@@ -1629,7 +1684,7 @@ serve(async (req) => {
     const temporalOverrides = inferTemporalOverridesFromMessage(lastUserMsg, availableDates, todayChile, kpis?.fecha_min || null, kpis?.fecha_max || null);
     let unavailableEntityReason: string | null = null;
 
-    if (!allLeads.length) {
+    if (!Number(kpis?.total_leads || 0)) {
       const noData = "No hay leads accesibles para responder con datos reales.";
       if (isDash) {
         return new Response(JSON.stringify({ reply: buildNoDataDashReply(noData) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -1686,11 +1741,11 @@ serve(async (req) => {
       return new Response(buildSsePayload(unavailableEntityReason), { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
     }
 
-    console.log(`[MAIN] leads=${allLeads.length} dims=${JSON.stringify(dims).length}c mode=${mode} botTools=${botUsesTools}`);
+    console.log(`[MAIN] leads=${kpis?.total_leads || 0} dims=${JSON.stringify(dims).length}c mode=${mode} botTools=${botUsesTools}`);
 
     if (isDash) {
       try {
-        const msg = await runDash(key, sys, messages, allLeads, af, forcedFilters, temporalOverrides);
+        const msg = await runDash(key, sys, messages, admin, af, forcedFilters, temporalOverrides);
         const c = msg?.content || "{}";
         try {
           const parsed = JSON.parse(c);
@@ -1711,7 +1766,7 @@ serve(async (req) => {
     if (isBotChat) {
       try {
         if (botUsesTools) {
-          const res = await runBotWithTools(key, sys, messages, allLeads, af, forcedFilters, botModel, temporalOverrides);
+          const res = await runBotWithTools(key, sys, messages, admin, af, forcedFilters, botModel, temporalOverrides);
           if (typeof res === "string") {
             const sse = buildSsePayload(res);
             return new Response(sse, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
@@ -1729,7 +1784,7 @@ serve(async (req) => {
 
     // Analytics mode (default)
     try {
-      const res = await runAnalytics(key, sys, messages, allLeads, af, forcedFilters, temporalOverrides);
+      const res = await runAnalytics(key, sys, messages, admin, af, forcedFilters, temporalOverrides);
       if (typeof res === "string") {
         const sse = buildSsePayload(res);
         return new Response(sse, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
