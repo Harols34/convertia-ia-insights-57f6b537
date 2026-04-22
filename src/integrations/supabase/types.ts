@@ -1035,6 +1035,17 @@ export type Database = {
     Functions: {
       _build_filters_where: { Args: { _f: Json }; Returns: string }
       _date_field_expr: { Args: { _d: string }; Returns: string }
+      accessible_leads_agent_metrics: {
+        Args: {
+          _date_field?: string
+          _fecha_desde?: string
+          _fecha_hasta?: string
+          _field?: string
+          _filters?: Json
+          _limit?: number
+        }
+        Returns: Json
+      }
       accessible_leads_agg_2d: {
         Args: {
           _date_field?: string
@@ -1048,6 +1059,15 @@ export type Database = {
         Returns: Json
       }
       accessible_leads_dimensions: { Args: never; Returns: Json }
+      accessible_leads_funnel: {
+        Args: {
+          _date_field?: string
+          _fecha_desde?: string
+          _fecha_hasta?: string
+          _filters?: Json
+        }
+        Returns: Json
+      }
       accessible_leads_group_metrics: {
         Args: {
           _date_field?: string
@@ -1090,6 +1110,29 @@ export type Database = {
           total_count: number
         }[]
       }
+      accessible_leads_timeseries: {
+        Args: {
+          _date_field?: string
+          _fecha_desde?: string
+          _fecha_hasta?: string
+          _filters?: Json
+          _granularity?: string
+          _limit?: number
+          _match_column?: string
+          _match_token?: string
+          _metric?: string
+        }
+        Returns: Json
+      }
+      accessible_leads_weekday_metrics: {
+        Args: {
+          _date_field?: string
+          _fecha_desde?: string
+          _fecha_hasta?: string
+          _filters?: Json
+        }
+        Returns: Json
+      }
       admin_list_raw_table_columns: {
         Args: { p_table_name: string }
         Returns: {
@@ -1097,6 +1140,16 @@ export type Database = {
           data_type: string
           udt_name: string
         }[]
+      }
+      analytics_dimension_values: {
+        Args: {
+          p_date_granularity?: string
+          p_field: string
+          p_limit?: number
+          p_search?: string
+          p_table_name: string
+        }
+        Returns: Json
       }
       execute_leads_query: {
         Args: { _query: string; _tenant_id: string }
