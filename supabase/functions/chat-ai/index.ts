@@ -1331,7 +1331,7 @@ async function runDash(
   key: string,
   sys: string,
   msgs: any[],
-  allLeads: any[],
+  admin: any,
   af: Filters,
   ff: Record<string, string> = {},
   temporalOverrides?: TemporalOverrides | null,
@@ -1359,7 +1359,7 @@ async function runDash(
       msg.tool_calls.map(async (tc: any) => {
         const a = JSON.parse(tc.function.arguments || "{}");
         console.log(`[D] ${tc.function.name}(${JSON.stringify(a)})`);
-        const r = executeToolInMemory(allLeads, tc.function.name, a, af, ff, temporalOverrides);
+        const r = await executeToolViaRpc(admin, tc.function.name, a, af, ff, temporalOverrides);
         console.log(`[D] → ${r.substring(0, 150)}`);
         return { role: "tool", tool_call_id: tc.id, content: r };
       }),
@@ -1407,7 +1407,7 @@ async function runBotWithTools(
   key: string,
   sys: string,
   msgs: any[],
-  allLeads: any[],
+  admin: any,
   af: Filters,
   ff: Record<string, string>,
   model: string,
@@ -1434,7 +1434,7 @@ async function runBotWithTools(
       msg.tool_calls.map(async (tc: any) => {
         const a = JSON.parse(tc.function.arguments || "{}");
         console.log(`[B] ${tc.function.name}(${JSON.stringify(a)})`);
-        const r = executeToolInMemory(allLeads, tc.function.name, a, af, ff, temporalOverrides);
+        const r = await executeToolViaRpc(admin, tc.function.name, a, af, ff, temporalOverrides);
         console.log(`[B] → ${r.substring(0, 150)}`);
         return { role: "tool", tool_call_id: tc.id, content: r };
       }),
@@ -1457,7 +1457,7 @@ async function runAnalytics(
   key: string,
   sys: string,
   msgs: any[],
-  allLeads: any[],
+  admin: any,
   af: Filters,
   ff: Record<string, string> = {},
   temporalOverrides?: TemporalOverrides | null,
@@ -1482,7 +1482,7 @@ async function runAnalytics(
       msg.tool_calls.map(async (tc: any) => {
         const a = JSON.parse(tc.function.arguments || "{}");
         console.log(`[A] ${tc.function.name}(${JSON.stringify(a)})`);
-        const r = executeToolInMemory(allLeads, tc.function.name, a, af, ff, temporalOverrides);
+        const r = await executeToolViaRpc(admin, tc.function.name, a, af, ff, temporalOverrides);
         console.log(`[A] → ${r.substring(0, 150)}`);
         return { role: "tool", tool_call_id: tc.id, content: r };
       }),
