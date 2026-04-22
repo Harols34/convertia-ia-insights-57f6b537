@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { fetchAllIntegrationRows } from "@/components/integraciones/fetch-integration-table";
 import { useAuth } from "@/hooks/use-auth";
 import { resolveWritableTenantId } from "@/lib/accessible-tenant";
 
@@ -35,7 +34,18 @@ export default function ExportacionesPage() {
   }, []);
 
   const quickExport = async (type: "csv" | "xlsx") => {
-    const leads = (await fetchAllIntegrationRows(supabase, "leads")) as any[];
+    const { data, error } = await supabase.rpc("accessible_leads_report_page", {
+      _page: 1,
+      _page_size: 200,
+      _search: null,
+      _cliente: null,
+      _bpo: null,
+    });
+    if (error) {
+      toast({ title: "No se pudo preparar la exportación", description: error.message, variant: "destructive" });
+      return;
+    }
+    const leads = (data as any[]) ?? [];
     if (!leads || leads.length === 0) {
       toast({ title: "Sin datos", description: "No hay leads para exportar", variant: "destructive" });
       return;
@@ -61,7 +71,7 @@ export default function ExportacionesPage() {
           export_type: type,
           source_module: "exportaciones",
           file_name: fileName,
-          metadata: { total_rows: leads.length },
+          metadata: { total_rows: leads.length, scope: "first_200" },
         });
         const { data: updated } = await supabase.from("exports").select("*").order("created_at", { ascending: false }).limit(100);
         setExports((updated as any[]) || []);
