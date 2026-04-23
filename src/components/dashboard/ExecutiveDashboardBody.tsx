@@ -1,7 +1,8 @@
-import { forwardRef, useCallback, useEffect, useMemo, useState } from "react";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import { motion } from "framer-motion";
 import { format, parseISO, endOfISOWeek } from "date-fns";
+import { es } from "date-fns/locale";
 import {
   BarChart3,
   TrendingUp,
@@ -39,7 +40,10 @@ import {
   type ComparisonMetric,
   type ComparativeSeriesSpec,
   type DailyComparisonOverlayMode,
+  type DailyPoint,
+  type DiscoveredDimension,
 } from "@/lib/dashboard-leads-analytics";
+import type { DashboardExecutiveData } from "@/lib/dashboard-executive-rpc";
 import { ComparativaControlsProvider } from "@/contexts/ComparativaControlsContext";
 import { ComparativaDashboardSection } from "./ComparativaDashboardSection";
 import { EXEC, type TimeViz, type CatViz } from "./dashboard-chart-theme";
@@ -57,10 +61,27 @@ import {
 
 export type ExecutiveDashboardBodyProps = {
   leads: LeadRow[];
+  /** Agregados vía RPC (rápido). Si está presente, se usan para KPIs y gráficos fijos. */
+  rpcData?: DashboardExecutiveData | null;
+  /** True mientras se descarga el dataset al cliente para la sección Comparativa. */
+  isLeadsLoading?: boolean;
+  /** Aún no se ha iniciado la descarga del dataset (carga perezosa bajo demanda). */
+  comparativeDatasetIdle?: boolean;
+  /** Inicia la descarga del universo de filas (columnas mínimas) para comparativas. */
+  onRequestComparativeDataset?: () => void;
+  /** Fila consecutivas leídas durante la descarga (feedback en UI). */
+  comparativeRowsLoadedProgress?: number;
+  /** Error al descargar el dataset para la comparativa. */
+  comparativeDatasetErrorMessage?: string | null;
   /** Filtrado cruzado tipo Power BI: clic en categorías de gráficos. */
   onCrossFilter?: (payload: { column: keyof LeadRow; token: string }) => void;
   onFilterByDate?: (isoDay: string) => void;
   onFilterByWeekRange?: (desde: string, hasta: string) => void;
+  /** Fechas del panel: usadas al anclar la comparativa a «filtros del panel». */
+  filterDesde?: string;
+  filterHasta?: string;
+  /** totalLeads del bloque fijo (RPC) para avisar si el cliente y la ventana de la comparativa se contradicen. */
+  kpiTotalLeadsFromRpc?: number;
 };
 
 function DeltaText({ pct, label = "% vs periodo ant." }: { pct: number; label?: string }) {
@@ -126,10 +147,46 @@ function crossFilterHandlers(
 
 function ExecutiveDashboardBodyInner({
   leads,
+  rpcData,
+  isLeadsLoading = false,
+  comparativeDatasetIdle = false,
+  onRequestComparativeDataset,
+  comparativeRowsLoadedProgress = 0,
+  comparativeDatasetErrorMessage = null,
   onCrossFilter,
   onFilterByDate,
   onFilterByWeekRange,
+  filterDesde,
+  filterHasta,
+  kpiTotalLeadsFromRpc,
 }: ExecutiveDashboardBodyProps) {
+  const comparativeSentinelRef = useRef<HTMLDivElement | null>(null);
+  const comparativeRequestedRef = useRef(false);
+  const triggerComparativeLoad = useCallback(() => {
+    if (comparativeRequestedRef.current) return;
+    if (!onRequestComparativeDataset) return;
+    comparativeRequestedRef.current = true;
+    onRequestComparativeDataset();
+  }, [onRequestComparativeDataset]);
+
+  useEffect(() => {
+    if (!comparativeDatasetIdle || !onRequestComparativeDataset) return;
+    const el = comparativeSentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            triggerComparativeLoad();
+            break;
+          }
+        }
+      },
+      { root: null, rootMargin: "160px 0px", threshold: 0.02 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [comparativeDatasetIdle, onRequestComparativeDataset, triggerComparativeLoad]);
   const [timeVizDaily, setTimeVizDaily] = useState<TimeViz>("area");
   const [timeVizWeekly, setTimeVizWeekly] = useState<TimeViz>("combo");
   const [campViz, setCampViz] = useState<CatViz>("bar");
@@ -147,23 +204,117 @@ function ExecutiveDashboardBodyInner({
   const [compSectionOpen, setCompSectionOpen] = useState(true);
   const [fixedSectionOpen, setFixedSectionOpen] = useState(true);
 
-  const daily = useMemo(() => buildDailySeries(leads, 120), [leads]);
-  const weekly = useMemo(() => buildWeeklySeries(leads, 20), [leads]);
-  const cmp7 = useMemo(() => compareLast7VsPrevious7(leads), [leads]);
-  const cmpW = useMemo(() => compareThisWeekVsLastWeek(leads), [leads]);
-  const funnel = useMemo(() => funnelStages(leads), [leads]);
-  const weekday = useMemo(() => leadsByWeekday(leads), [leads]);
-  const discovered = useMemo(() => discoverDimensions(leads), [leads]);
+  const daily = useMemo((): DailyPoint[] => {
+    if (rpcData?.daily?.length) {
+      return rpcData.daily.map((d) => ({
+        date: d.date,
+        leads: d.leads,
+        ventas: d.ventas,
+        conGestion: 0,
+        conNegocio: 0,
+      }));
+    }
+    return buildDailySeries(leads, 120);
+  }, [leads, rpcData]);
+
+  const analisisFijoFechasLinea = useMemo(() => {
+    const fDesde = filterDesde?.trim();
+    const fHasta = filterHasta?.trim();
+    if (fDesde && fHasta) {
+      return `Filtro del panel: desde ${fDesde} · hasta ${fHasta} (mismo criterio que pide el RPC al servidor para KPIs, embudo, evolución, etc.).`;
+    }
+    if (fDesde) return `Filtro del panel: desde ${fDesde} (hasta: sin fijar en el panel).`;
+    if (fHasta) return `Filtro del panel: hasta ${fHasta} (desde: sin fijar en el panel).`;
+    return "Sin límite explícito desde/hasta en el panel: el backend usa su ventana por defecto; la serie se acota a los días con datos (hasta 120 puntos en el cliente).";
+  }, [filterDesde, filterHasta]);
+
+  const evolucionRangoMuestras = useMemo(() => {
+    if (daily.length === 0) return null;
+    const d0 = daily[0]!.date;
+    const d1 = daily[daily.length - 1]!.date;
+    return {
+      d0: format(parseISO(d0), "d MMM yyyy", { locale: es }),
+      d1: format(parseISO(d1), "d MMM yyyy", { locale: es }),
+    };
+  }, [daily]);
+
+  const weekly = useMemo(() => {
+    if (rpcData?.weekly?.length) return rpcData.weekly;
+    return buildWeeklySeries(leads, 20);
+  }, [leads, rpcData]);
+
+  const cmp7 = useMemo(() => {
+    if (rpcData) return rpcData.cmp7;
+    return compareLast7VsPrevious7(leads);
+  }, [leads, rpcData]);
+
+  const cmpW = useMemo(() => {
+    if (rpcData) {
+      return { total: rpcData.cmpWeek.total } as ReturnType<typeof compareThisWeekVsLastWeek>;
+    }
+    return compareThisWeekVsLastWeek(leads);
+  }, [leads, rpcData]);
+
+  const funnel = useMemo(() => {
+    if (rpcData) return rpcData.funnel;
+    return funnelStages(leads).map((s) => ({ name: s.name, value: s.value }));
+  }, [leads, rpcData]);
+
+  const weekday = useMemo(() => {
+    if (rpcData) return rpcData.weekday;
+    return leadsByWeekday(leads);
+  }, [leads, rpcData]);
+
+  const discovered = useMemo((): DiscoveredDimension[] => {
+    if (rpcData) {
+      return rpcData.discovered.map((d) => ({
+        key: d.key,
+        label: d.label,
+        cardinality: d.top.length,
+        top: d.top,
+      }));
+    }
+    return discoverDimensions(leads);
+  }, [leads, rpcData]);
 
   useEffect(() => {
     setExploreIdx((i) => (discovered.length === 0 ? 0 : Math.min(i, discovered.length - 1)));
   }, [discovered.length]);
-  const agents = useMemo(() => agentEffectivenessRows(leads), [leads]);
-  const bullets = useMemo(() => insightBullets(leads, cmp7), [leads, cmp7]);
-  const porCampana = useMemo(() => countByKey(leads, "campana_mkt").slice(0, 12), [leads]);
-  const porCiudad = useMemo(() => countByKey(leads, "ciudad"), [leads]);
 
-  const tasaVenta = leads.length ? (leads.filter((l) => l.es_venta).length / leads.length) * 100 : 0;
+  const agents = useMemo(() => {
+    if (rpcData) return rpcData.agents;
+    return agentEffectivenessRows(leads);
+  }, [leads, rpcData]);
+
+  const bullets = useMemo(() => {
+    if (rpcData) return rpcData.bullets;
+    return insightBullets(leads, cmp7);
+  }, [rpcData, leads, cmp7]);
+
+  const porCampana = useMemo(() => {
+    if (rpcData) return rpcData.porCampana;
+    return countByKey(leads, "campana_mkt").slice(0, 12);
+  }, [leads, rpcData]);
+
+  const porCiudad = useMemo(() => {
+    if (rpcData) return rpcData.porCiudad;
+    return countByKey(leads, "ciudad");
+  }, [leads, rpcData]);
+
+  const kpis = useMemo(() => {
+    if (rpcData) return rpcData.kpis;
+    const totalLeads = leads.length;
+    const totalVentas = leads.filter((l) => l.es_venta).length;
+    return {
+      totalLeads,
+      totalVentas,
+      convPct: totalLeads ? (totalVentas / totalLeads) * 100 : 0,
+      conGestion: leads.filter((l) => l.result_prim_gestion && l.result_prim_gestion !== "").length,
+      conNegocio: leads.filter((l) => l.result_negocio && l.result_negocio !== "").length,
+    };
+  }, [leads, rpcData]);
+
+  const tasaVenta = kpis.convPct;
   const sparkTotal = useMemo(() => sparklineFromDaily(daily, "leads", 14), [daily]);
   const sparkVentas = useMemo(() => sparklineFromDaily(daily, "ventas", 14), [daily]);
 
@@ -303,7 +454,9 @@ function ExecutiveDashboardBodyInner({
           <div className="flex justify-between items-start gap-2">
             <div>
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Total leads</p>
-              <p className="text-3xl font-display font-bold text-foreground mt-1 tabular-nums">{leads.length.toLocaleString("es")}</p>
+              <p className="text-3xl font-display font-bold text-foreground mt-1 tabular-nums">
+                {kpis.totalLeads.toLocaleString("es")}
+              </p>
               <div className="mt-2 flex items-center gap-2 flex-wrap">
                 <DeltaText pct={cmp7.total.deltaPct} label="(7d)" />
                 <span className="text-[10px] text-muted-foreground">vs semana previa</span>
@@ -320,7 +473,7 @@ function ExecutiveDashboardBodyInner({
             <div>
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Ventas</p>
               <p className="text-3xl font-display font-bold text-foreground mt-1 tabular-nums">
-                {leads.filter((l) => l.es_venta).length.toLocaleString("es")}
+                {kpis.totalVentas.toLocaleString("es")}
               </p>
               <div className="mt-2 flex items-center gap-2 flex-wrap">
                 <DeltaText pct={cmp7.ventas.deltaPct} label="(7d)" />
@@ -355,10 +508,10 @@ function ExecutiveDashboardBodyInner({
             <div>
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Con 1ª gestión</p>
               <p className="text-3xl font-display font-bold text-foreground mt-1 tabular-nums">
-                {leads.filter((l) => l.result_prim_gestion && l.result_prim_gestion !== "").length.toLocaleString("es")}
+                {kpis.conGestion.toLocaleString("es")}
               </p>
               <p className="text-[10px] text-muted-foreground mt-1">
-                {leads.length ? ((leads.filter((l) => l.result_prim_gestion).length / leads.length) * 100).toFixed(1) : 0}% del total
+                {kpis.totalLeads ? ((kpis.conGestion / kpis.totalLeads) * 100).toFixed(1) : "0.0"}% del total
               </p>
             </div>
             <div className="p-2 rounded-xl bg-sky-50 border border-sky-100">
@@ -391,11 +544,52 @@ function ExecutiveDashboardBodyInner({
         </GlassCard>
       )}
 
-      <ComparativaDashboardSection
-        leads={leads}
-        onFilterByDate={onFilterByDate}
-        onFilterByWeekRange={onFilterByWeekRange}
-      />
+      {leads.length > 0 ? (
+        <ComparativaDashboardSection
+          leads={leads}
+          onFilterByDate={onFilterByDate}
+          onFilterByWeekRange={onFilterByWeekRange}
+          filterDesde={filterDesde}
+          filterHasta={filterHasta}
+          rpcData={rpcData}
+          kpiTotalLeadsFromRpc={kpiTotalLeadsFromRpc}
+        />
+      ) : comparativeDatasetIdle && onRequestComparativeDataset ? (
+        <GlassCard>
+          <div ref={comparativeSentinelRef} className="h-1 w-full" aria-hidden="true" />
+          <div className="text-center py-8 px-4 space-y-3 max-w-md mx-auto">
+            <p className="text-sm text-muted-foreground">
+              El análisis comparativo usa el universo de leads <strong>en el navegador</strong> (más lento con mucho
+              volumen). Carga bajo demanda: solo al pulsar o al entrar en esta sección, sin bloquear el resto del
+              tablero.
+            </p>
+            <Button type="button" className="mt-1" onClick={triggerComparativeLoad}>
+              Cargar análisis comparativo
+            </Button>
+            <p className="text-[10px] text-muted-foreground">También se inicia al desplazarte hasta aquí.</p>
+          </div>
+        </GlassCard>
+      ) : (
+        <GlassCard>
+          <p className="text-sm text-muted-foreground text-center py-8 px-4">
+            {comparativeDatasetErrorMessage ? (
+              <>
+                <span className="text-destructive font-medium block mb-1">Error al descargar datos de comparativa</span>
+                {comparativeDatasetErrorMessage}
+              </>
+            ) : isLeadsLoading ? (
+              <>
+                Descargando filas (solo columnas necesarias)…
+                <span className="mt-2 block text-base font-display font-semibold text-foreground tabular-nums">
+                  {comparativeRowsLoadedProgress.toLocaleString("es")} filas recibidas
+                </span>
+              </>
+            ) : (
+              "No hay leads en el universo actual para comparativas avanzadas, o aún no hay datos disponibles."
+            )}
+          </p>
+        </GlassCard>
+      )}
         </CollapsibleContent>
       </Collapsible>
 
@@ -427,6 +621,21 @@ function ExecutiveDashboardBodyInner({
           <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
             Gráficos por categorías fijas (ciudad, campaña, embudo, etc.): cambia tipo de vista y usa el clic para
             filtrar. La comparación temporal detallada está en la sección <strong>Comparativa</strong>.
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-2 max-w-3xl space-y-1.5">
+            <span className="block">
+              {analisisFijoFechasLinea}{" "}
+              {evolucionRangoMuestras && (
+                <>
+                  Puntos de la <strong>evolución diaria</strong> en el gráfico: {evolucionRangoMuestras.d0} —{" "}
+                  {evolucionRangoMuestras.d1}.
+                </>
+              )}
+            </span>
+            <span className="block text-[10px] text-muted-foreground/90">
+              Eso no tiene por qué coincidir con el eje de <strong>Comparativa</strong> (mismo dashboard): allí se elige
+              una ventana fija de N días (7–28) y un anclaje; aquí se sigue el filtro y la serie agregada del RPC.
+            </span>
           </p>
         </div>
 

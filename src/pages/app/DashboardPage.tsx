@@ -1,9 +1,16 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Filter, Calendar, ChevronDown, X, LayoutDashboard } from "lucide-react";
+import { Filter, Calendar, ChevronDown, X, LayoutDashboard, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useLeadsData } from "@/contexts/LeadsDataContext";
 import { ExecutiveDashboardBody } from "@/components/dashboard/ExecutiveDashboardBody";
+import { ExecutiveDashboardSkeleton } from "@/components/dashboard/ExecutiveDashboardSkeleton";
+import { useDashboardLeadsDataset, DASHBOARD_LEADS_QUERY_KEY } from "@/hooks/use-dashboard-leads-dataset";
+import {
+  fetchExecutiveDashboardData,
+  fetchDashboardFilterOptions,
+  leadsFiltersQueryKey,
+} from "@/lib/dashboard-executive-rpc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -11,32 +18,42 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   LEADS_DASHBOARD_FILTER_COLUMNS,
   applyLeadsDashboardFilters,
   defaultLeadsDashboardFilters,
   formatFilterChipValue,
+  getDefaultMonthToDateRange,
   uniqueValuesForColumn,
   type LeadRow,
   type LeadsDashboardFilters,
 } from "@/lib/dashboard-leads";
 
+const EXECUTIVE_DASHBOARD_KEY = "executive-dashboard" as const;
+
 function DimensionMultiFilter({
   col,
   label,
   allLeads,
+  dimensionOptions,
   selected,
   onChange,
 }: {
   col: keyof LeadRow;
   label: string;
   allLeads: LeadRow[];
+  dimensionOptions?: Partial<Record<keyof LeadRow, string[]>>;
   selected: string[];
   onChange: (next: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const options = useMemo(() => uniqueValuesForColumn(allLeads, col), [allLeads, col]);
+  const options = useMemo(() => {
+    const fromRpc = dimensionOptions?.[col];
+    if (fromRpc && fromRpc.length > 0) return fromRpc;
+    return uniqueValuesForColumn(allLeads, col);
+  }, [allLeads, col, dimensionOptions]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return options;
@@ -130,10 +147,69 @@ function DimensionMultiFilter({
 }
 
 export default function DashboardPage() {
-  const { allLeads, loading, error: loadError, initialLoadDone } = useLeadsData();
+  const queryClient = useQueryClient();
+  const [comparativeFetchEnabled, setComparativeFetchEnabled] = useState(false);
+  const [comparativeRowsProgress, setComparativeRowsProgress] = useState(0);
+  const requestComparativeDataset = useCallback(() => {
+    setComparativeFetchEnabled(true);
+  }, []);
+
   const [activity, setActivity] = useState<unknown[]>([]);
   const [filters, setFilters] = useState<LeadsDashboardFilters>(defaultLeadsDashboardFilters);
   const [showFilters, setShowFilters] = useState(false);
+
+  const fchRango = useMemo(
+    () => ({ desde: filters.desde, hasta: filters.hasta }),
+    [filters.desde, filters.hasta],
+  );
+
+  const filterKey = useMemo(() => leadsFiltersQueryKey(filters), [filters]);
+
+  const {
+    data: allLeads = [],
+    isLoading: leadsLoading,
+    isError: leadsError,
+    error: leadsErr,
+  } = useDashboardLeadsDataset({
+    enabled: comparativeFetchEnabled,
+    onProgress: setComparativeRowsProgress,
+    fchRango,
+    panelFiltersKey: filterKey,
+  });
+
+  useEffect(() => {
+    if (!comparativeFetchEnabled) setComparativeRowsProgress(0);
+  }, [comparativeFetchEnabled]);
+  const executiveQuery = useQuery({
+    queryKey: [EXECUTIVE_DASHBOARD_KEY, filterKey] as const,
+    queryFn: () => fetchExecutiveDashboardData(filters),
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+
+  const dimensionQuery = useQuery({
+    queryKey: ["leads-dimension-options"] as const,
+    queryFn: fetchDashboardFilterOptions,
+    staleTime: 5 * 60_000,
+  });
+
+  useEffect(() => {
+    const ch = supabase
+      .channel("dashboard-leads-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "leads" },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: [EXECUTIVE_DASHBOARD_KEY] });
+          void queryClient.invalidateQueries({ queryKey: [...DASHBOARD_LEADS_QUERY_KEY] });
+          void queryClient.invalidateQueries({ queryKey: ["leads-dimension-options"] });
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [queryClient]);
 
   useEffect(() => {
     (async () => {
@@ -169,14 +245,35 @@ export default function DashboardPage() {
 
   const clearAllFilters = () => setFilters(defaultLeadsDashboardFilters());
 
-  if (loadError && initialLoadDone && allLeads.length === 0) {
+  const applyThisMonthRange = useCallback(() => {
+    setFilters((prev) => ({ ...prev, ...getDefaultMonthToDateRange() }));
+  }, []);
+
+  const universeCount = allLeads.length;
+  const hasActiveSlice =
+    activeFilterCount > 0 || Boolean(filters.desde) || Boolean(filters.hasta) || filters.esVenta !== "all";
+  const viewCount = executiveQuery.data?.kpis.totalLeads ?? filteredLeads.length;
+  const leadsErrorMessage = leadsError
+    ? leadsErr instanceof Error
+      ? leadsErr.message
+      : String(leadsErr)
+    : null;
+
+  if (executiveQuery.isError) {
+    const errMsg = executiveQuery.error instanceof Error ? executiveQuery.error.message : String(executiveQuery.error);
     return (
-      <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-center">
-        <p className="text-sm text-destructive font-medium">No se pudieron cargar los datos del panel</p>
-        <p className="text-xs text-muted-foreground mt-1">{loadError}</p>
+      <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-center space-y-2">
+        <p className="text-sm text-destructive font-medium">No se pudieron cargar los datos agregados del panel</p>
+        <p className="text-xs text-muted-foreground">{errMsg}</p>
+        <Button variant="outline" size="sm" onClick={() => void executiveQuery.refetch()}>
+          <RefreshCw className="h-3.5 w-3.5 mr-1" />
+          Reintentar
+        </Button>
       </div>
     );
   }
+
+  const isInitialExecLoading = executiveQuery.isLoading && !executiveQuery.data;
 
   return (
     <div className="space-y-6 rounded-2xl border border-border bg-card/50 p-4 md:p-6 shadow-sm">
@@ -188,21 +285,35 @@ export default function DashboardPage() {
           <div>
             <h1 className="text-2xl font-display font-bold tracking-tight text-foreground">Dashboard ejecutivo</h1>
             <p className="text-muted-foreground text-sm mt-0.5 max-w-2xl">
-              {!initialLoadDone && loading ? (
-                <span className="text-muted-foreground/80">Preparando universo de trabajo…</span>
-              ) : (
+              {leadsLoading && comparativeFetchEnabled && universeCount === 0 ? (
+                <span className="text-muted-foreground/80">
+                  Descargando filas en cliente: <strong className="text-foreground">{comparativeRowsProgress.toLocaleString("es")}</strong> leídas…
+                </span>
+              ) : allLeads.length > 0 ? (
                 <>
-                  Universo <strong className="text-foreground">{allLeads.length.toLocaleString("es")}</strong> leads
-                  (RLS).
+                  Universo <strong className="text-foreground">{universeCount.toLocaleString("es")}</strong> leads
+                  (RLS, en cliente para comparativa).
                 </>
+              ) : (
+                <span className="text-muted-foreground/90">
+                  Dataset en cliente no cargado: solo al usar el análisis comparativo detallado (KPIs y gráficos usan
+                  el servidor, rápido).
+                </span>
               )}
-              {filteredLeads.length !== allLeads.length && (
+              {leadsError && (
+                <span className="text-amber-700 dark:text-amber-500 ml-1">
+                  No se pudo actualizar el dataset completo: {leadsErr instanceof Error ? leadsErr.message : "error"}.
+                </span>
+              )}
+              {hasActiveSlice && (
                 <>
                   {" "}
-                  Vista filtrada: <strong className="text-teal-700">{filteredLeads.length.toLocaleString("es")}</strong>.
+                  Vista con filtros:{" "}
+                  <strong className="text-teal-700">{viewCount.toLocaleString("es")}</strong>
+                  {executiveQuery.isFetching && " (actualizando…)"}.
                 </>
               )}{" "}
-              BI interactivo: alterna tipos de gráfico, comparativas y dimensiones descubiertas automáticamente.
+              BI interactivo: alterna tipos de gráfico, comparativas y dimensiones.
             </p>
           </div>
         </div>
@@ -213,6 +324,19 @@ export default function DashboardPage() {
               Quitar filtros ({activeFilterCount})
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs h-9"
+            onClick={() => {
+              void executiveQuery.refetch();
+              void queryClient.invalidateQueries({ queryKey: [...DASHBOARD_LEADS_QUERY_KEY] });
+            }}
+            disabled={executiveQuery.isFetching}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${executiveQuery.isFetching ? "animate-spin" : ""}`} />
+            <span className="ml-1 hidden sm:inline">Actualizar</span>
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="gap-2 h-9">
             <Filter className="h-3.5 w-3.5" /> Filtros
           </Button>
@@ -225,49 +349,66 @@ export default function DashboardPage() {
           animate={{ opacity: 1, height: "auto" }}
           className="space-y-4 p-4 rounded-2xl border border-border bg-muted/40 shadow-sm"
         >
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <div className="space-y-0.5">
-                <Label className="text-[10px] text-muted-foreground">Fecha creación desde</Label>
-                <Input
-                  type="date"
-                  value={filters.desde || ""}
-                  onChange={(e) => setFilters({ ...filters, desde: e.target.value || undefined })}
-                  className="h-9 w-[150px] text-xs"
-                />
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <div className="space-y-0.5">
+                  <Label className="text-[10px] text-muted-foreground">Fecha creación desde</Label>
+                  <Input
+                    type="date"
+                    value={filters.desde || ""}
+                    onChange={(e) => setFilters({ ...filters, desde: e.target.value || undefined })}
+                    className="h-9 w-[150px] text-xs"
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px] text-muted-foreground">hasta</Label>
+                  <Input
+                    type="date"
+                    value={filters.hasta || ""}
+                    onChange={(e) => setFilters({ ...filters, hasta: e.target.value || undefined })}
+                    className="h-9 w-[150px] text-xs"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-9 text-xs shrink-0"
+                  onClick={applyThisMonthRange}
+                >
+                  Mes actual
+                </Button>
               </div>
               <div className="space-y-0.5">
-                <Label className="text-[10px] text-muted-foreground">hasta</Label>
-                <Input
-                  type="date"
-                  value={filters.hasta || ""}
-                  onChange={(e) => setFilters({ ...filters, hasta: e.target.value || undefined })}
-                  className="h-9 w-[150px] text-xs"
-                />
+                <Label className="text-[10px] text-muted-foreground">Es venta</Label>
+                <Select
+                  value={filters.esVenta}
+                  onValueChange={(v) => setFilters({ ...filters, esVenta: v as LeadsDashboardFilters["esVenta"] })}
+                >
+                  <SelectTrigger className="w-[140px] h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    <SelectItem value="yes">Sí</SelectItem>
+                    <SelectItem value="no">No</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-            <div className="space-y-0.5">
-              <Label className="text-[10px] text-muted-foreground">Es venta</Label>
-              <Select
-                value={filters.esVenta}
-                onValueChange={(v) => setFilters({ ...filters, esVenta: v as LeadsDashboardFilters["esVenta"] })}
-              >
-                <SelectTrigger className="w-[140px] h-9 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="yes">Sí</SelectItem>
-                  <SelectItem value="no">No</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <p className="text-[10px] text-muted-foreground max-w-3xl leading-snug">
+              Por defecto el tablero usa el <strong>mes en curso</strong> (día 1 → hoy): mismo rango en análisis fijo,
+              descarga de comparativa y eje. Si quita ambas fechas, la comparativa vuelve a descargar todo el histórico
+              visible (puede abarcar muchos meses).
+            </p>
           </div>
           <div>
             <p className="text-[11px] font-medium text-muted-foreground mb-2">
               Dimensiones (varios valores = OR dentro del campo; entre campos = AND)
             </p>
+            {dimensionQuery.isLoading && <Skeleton className="h-8 w-48" />}
             <div className="flex flex-wrap gap-2 max-h-[280px] overflow-y-auto pr-1">
               {LEADS_DASHBOARD_FILTER_COLUMNS.map(({ key, label }) => (
                 <DimensionMultiFilter
@@ -275,6 +416,7 @@ export default function DashboardPage() {
                   col={key}
                   label={label}
                   allLeads={allLeads}
+                  dimensionOptions={dimensionQuery.data}
                   selected={filters.dimensions[key] ?? []}
                   onChange={(next) => setDimension(key, next)}
                 />
@@ -284,9 +426,20 @@ export default function DashboardPage() {
         </motion.div>
       )}
 
-      {filteredLeads.length > 0 ? (
+      {isInitialExecLoading ? (
+        <ExecutiveDashboardSkeleton />
+      ) : executiveQuery.data ? (
         <ExecutiveDashboardBody
           leads={filteredLeads}
+          rpcData={executiveQuery.data}
+          kpiTotalLeadsFromRpc={executiveQuery.data.kpis.totalLeads}
+          isLeadsLoading={comparativeFetchEnabled && leadsLoading}
+          comparativeDatasetIdle={!comparativeFetchEnabled}
+          onRequestComparativeDataset={requestComparativeDataset}
+          comparativeRowsLoadedProgress={comparativeRowsProgress}
+          comparativeDatasetErrorMessage={leadsErrorMessage}
+          filterDesde={filters.desde}
+          filterHasta={filters.hasta}
           onCrossFilter={(payload) => {
             setFilters((prev) => ({
               ...prev,
@@ -302,13 +455,7 @@ export default function DashboardPage() {
         />
       ) : (
         <div className="rounded-2xl border border-border bg-muted/20 p-12 text-center">
-          <p className="text-muted-foreground text-sm">
-            {!initialLoadDone && loading
-              ? "Los gráficos aparecerán en cuanto terminemos de preparar el espacio de análisis."
-              : allLeads.length === 0
-                ? "No hay datos de leads disponibles aún"
-                : "Ningún lead cumple los filtros actuales"}
-          </p>
+          <p className="text-muted-foreground text-sm">No hay datos agregados disponibles aún.</p>
         </div>
       )}
 

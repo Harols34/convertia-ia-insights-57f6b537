@@ -75,6 +75,19 @@ function buildRpcFilters(filters: LeadsDashboardFilters): JsonObject | null {
   return Object.keys(out).length ? out : null;
 }
 
+/** Clave estable para React Query; debe coincidir con lo que aplica el RPC vía `buildRpcFilters`. */
+export function leadsFiltersQueryKey(filters: LeadsDashboardFilters): string {
+  const { esVenta, desde, hasta, dimensions } = filters;
+  const dimKeys = Object.keys(dimensions).sort() as (keyof LeadRow)[];
+  const dimPart = dimKeys
+    .map((k) => {
+      const vals = dimensions[k] ?? [];
+      return `${String(k)}=${[...vals].sort().join("\u0001")}`;
+    })
+    .join("\u0002");
+  return `v1|es:${esVenta}|d:${desde ?? ""}|h:${hasta ?? ""}|${dimPart}`;
+}
+
 function normalizeGroupRows(rows: unknown): { name: string; value: number; ventas: number }[] {
   if (!Array.isArray(rows)) return [];
   return rows

@@ -6,7 +6,6 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { RequireModule } from "./components/auth/RequireModule.tsx";
-import { LeadsDataProvider } from "@/contexts/LeadsDataContext";
 
 const Index = lazy(() => import("./pages/Index.tsx"));
 const LoginPage = lazy(() => import("./pages/LoginPage.tsx"));
@@ -46,12 +45,6 @@ const RouteFallback = () => (
   </div>
 );
 
-const DashboardRoute = () => (
-  <LeadsDataProvider>
-    <DashboardPage />
-  </LeadsDataProvider>
-);
-
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -65,7 +58,7 @@ const App = () => (
               <Route path="/login" element={<LoginPage />} />
               <Route path="/recuperar" element={<RecoverPage />} />
               <Route path="/app" element={<AppLayout />}>
-                <Route index element={<RequireModule moduleSlug="dashboard"><DashboardRoute /></RequireModule>} />
+                <Route index element={<RequireModule moduleSlug="dashboard"><DashboardPage /></RequireModule>} />
                 <Route path="dashdinamics" element={<RequireModule moduleSlug="dashboards-ia"><DashDinamicsPage /></RequireModule>} />
                 <Route path="dashdinamics/detail" element={<RequireModule moduleSlug="dashboards-ia"><ChartDetailPage /></RequireModule>} />
                 <Route path="analytics" element={<RequireModule moduleSlug="analytics"><AnalyticsPage /></RequireModule>} />

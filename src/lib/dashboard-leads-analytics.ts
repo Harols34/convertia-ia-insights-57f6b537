@@ -2,6 +2,8 @@ import {
   subDays,
   format,
   parseISO,
+  startOfDay,
+  endOfDay,
   startOfISOWeek,
   endOfISOWeek,
   eachDayOfInterval,
@@ -11,9 +13,11 @@ import {
   endOfMonth,
   setDate,
   getDate,
+  isSameDay,
 } from "date-fns";
 import { es } from "date-fns/locale";
 import {
+  fchCreacionToLocalYmd,
   formatFilterChipValue,
   rowMatchesDimensionToken,
   filterTokenFromChartLabel,
@@ -30,15 +34,138 @@ export type DailyPoint = {
   conNegocio: number;
 };
 
-function parseLeadDate(row: LeadRow): Date | null {
-  const s = row.fch_creacion;
-  if (!s) return null;
+/** Pasa `fch_creacion` a inicio del día calendario local (alineado con `fchCreacionToLocalYmd` / dataset normalizado). */
+export function parseLeadDate(row: LeadRow): Date | null {
+  const raw = row.fch_creacion;
+  if (raw == null) return null;
   try {
-    const d = parseISO(s.slice(0, 10));
-    return Number.isNaN(d.getTime()) ? null : d;
+    if (raw instanceof Date) {
+      return Number.isNaN(raw.getTime()) ? null : startOfDay(raw);
+    }
+    if (typeof raw === "string") {
+      const ymd = fchCreacionToLocalYmd(raw);
+      if (!ymd) return null;
+      const d = parseISO(ymd);
+      return Number.isNaN(d.getTime()) ? null : startOfDay(d);
+    }
+    return null;
   } catch {
     return null;
   }
+}
+
+export type ComparativaWindowAnchor =
+  | { type: "today" }
+  /** Últimos N días terminando en la mayor `fch_creacion` del corte (históricos / datos “viejos”). */
+  | { type: "maxLeadDate" }
+  /** Alinear a filtros de fecha del dashboard: `hasta` = fin de ventana, `desde` recorta inicio. */
+  | { type: "dashboardDateFilters" };
+
+export function getLeadsCreationDateBounds(leads: LeadRow[]): { min: Date | null; max: Date | null } {
+  let min: Date | null = null;
+  let max: Date | null = null;
+  for (const row of leads) {
+    const d = parseLeadDate(row);
+    if (!d) continue;
+    if (!min || d < min) min = d;
+    if (!max || d > max) max = d;
+  }
+  return { min, max };
+}
+
+export type CompareWindowOptions = {
+  anchor?: ComparativaWindowAnchor;
+  filterDesde?: string;
+  filterHasta?: string;
+};
+
+function hasLeadInCalendarWindow(leads: LeadRow[], start: Date, end: Date): boolean {
+  const a = startOfDay(start);
+  const b = endOfDay(end);
+  for (const row of leads) {
+    const d = parseLeadDate(row);
+    if (!d) continue;
+    const t = d.getTime();
+    if (t >= a.getTime() && t <= b.getTime()) return true;
+  }
+  return false;
+}
+
+/**
+ * @param windowDays días de la ventana (p. ej. 14 o 90) usados con anclaje «Hasta hoy» para comprobar solapamiento.
+ */
+function resolveComparisonWindowEnd(
+  leads: LeadRow[],
+  anchor: ComparativaWindowAnchor = { type: "maxLeadDate" },
+  filterHasta: string | undefined,
+  windowDays: number,
+): Date {
+  if (anchor.type === "today") {
+    const endT = endOfDay(new Date());
+    const startT = startOfDay(subDays(endT, windowDays - 1));
+    if (hasLeadInCalendarWindow(leads, startT, endT)) {
+      return endT;
+    }
+    const { max } = getLeadsCreationDateBounds(leads);
+    if (max) return endOfDay(max);
+    return endT;
+  }
+  if (anchor.type === "maxLeadDate") {
+    const { max } = getLeadsCreationDateBounds(leads);
+    if (max) return endOfDay(max);
+    return endOfDay(new Date());
+  }
+  if (anchor.type === "dashboardDateFilters") {
+    if (filterHasta?.trim()) {
+      const d = parseISO(filterHasta.slice(0, 10));
+      return Number.isNaN(d.getTime()) ? endOfDay(new Date()) : endOfDay(d);
+    }
+    return endOfDay(new Date());
+  }
+  return endOfDay(new Date());
+}
+
+function resolveComparisonWindowStart(
+  end: Date,
+  n: number,
+  anchor: ComparativaWindowAnchor = { type: "maxLeadDate" },
+  filterDesde?: string,
+): Date {
+  let curStart = startOfDay(subDays(end, n - 1));
+  if (anchor.type === "dashboardDateFilters" && filterDesde?.trim()) {
+    const d = startOfDay(parseISO(filterDesde.slice(0, 10)));
+    if (!Number.isNaN(d.getTime()) && d.getTime() > curStart.getTime()) {
+      curStart = d;
+    }
+  }
+  if (curStart.getTime() > end.getTime()) {
+    return startOfDay(end);
+  }
+  return curStart;
+}
+
+/** Inicio y fin (incl.) de la misma ventana de N días que usan las series comparativas. */
+export function getComparisonWindowBounds(
+  leads: LeadRow[],
+  n: number,
+  options?: CompareWindowOptions,
+): { start: Date; end: Date } {
+  const anchor = options?.anchor ?? { type: "today" };
+  const end = resolveComparisonWindowEnd(leads, anchor, options?.filterHasta, n);
+  const start = resolveComparisonWindowStart(end, n, anchor, options?.filterDesde);
+  return { start, end };
+}
+
+/** Solo filas cuya fch de creación cae en el rango (por día calendario local). */
+export function filterLeadsByCreationInRange(leads: LeadRow[], start: Date, end: Date): LeadRow[] {
+  const a = startOfDay(start);
+  const b = endOfDay(end);
+  return leads.filter((row) => {
+    const d = parseLeadDate(row);
+    if (!d) return false;
+    const t = d.getTime();
+    return t >= a.getTime() && t <= b.getTime();
+  });
 }
 
 export function countByKey(leads: LeadRow[], key: keyof LeadRow): NamedCount[] {
@@ -361,14 +488,15 @@ export const COMPARISON_METRIC_META: Record<ComparisonMetric, { label: string; s
 };
 
 /**
- * Serie comparativa en ventana de los últimos `n` días (hasta hoy).
- * `actual` = métrica en cada día; `anterior` según el modo elegido.
+ * Serie comparativa: últimos `n` días en una ventana cuyo fin depende de `options.anchor`
+ * (hoy, última fecha con datos, o filtros de fecha del dashboard).
  */
 export function buildComparisonSeries(
   leads: LeadRow[],
   n: number,
   metric: ComparisonMetric,
   mode: ComparisonMode,
+  options?: CompareWindowOptions,
 ): {
   points: ComparisonPoint[];
   meta: (typeof COMPARISON_MODE_META)[ComparisonMode];
@@ -377,10 +505,9 @@ export function buildComparisonSeries(
 } {
   const map = buildDailyStatsMap(leads);
   const meta = COMPARISON_MODE_META[mode];
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-  const curStart = subDays(end, n - 1);
-  curStart.setHours(0, 0, 0, 0);
+  const anchor = options?.anchor ?? { type: "today" };
+  const end = resolveComparisonWindowEnd(leads, anchor, options?.filterHasta, n);
+  const curStart = resolveComparisonWindowStart(end, n, anchor, options?.filterDesde);
   const daysCur = eachDayOfInterval({ start: curStart, end });
 
   const prevEnd = subDays(curStart, 1);
@@ -433,6 +560,7 @@ export function buildComparisonSeriesSpec(
   n: number,
   mode: ComparisonMode,
   spec: ComparativeSeriesSpec,
+  options?: CompareWindowOptions,
 ): {
   points: ComparisonPoint[];
   meta: (typeof COMPARISON_MODE_META)[ComparisonMode];
@@ -440,10 +568,9 @@ export function buildComparisonSeriesSpec(
 } {
   const aggMap = buildDayAggMap(leads, spec);
   const meta = COMPARISON_MODE_META[mode];
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-  const curStart = subDays(end, n - 1);
-  curStart.setHours(0, 0, 0, 0);
+  const anchor = options?.anchor ?? { type: "today" };
+  const end = resolveComparisonWindowEnd(leads, anchor, options?.filterHasta, n);
+  const curStart = resolveComparisonWindowStart(end, n, anchor, options?.filterDesde);
   const daysCur = eachDayOfInterval({ start: curStart, end });
 
   const prevEnd = subDays(curStart, 1);
@@ -487,14 +614,131 @@ export function buildComparisonSeriesSpec(
   return { points, meta, dateKeys };
 }
 
-/** Serie diaria larga (valores según spec) para tendencia. */
+/** Suma la serie “actual” (útil para detectar ventana sin datos de negocio en la comparativa). */
+export function sumComparisonSeriesActual(points: { actual: number }[]): number {
+  let s = 0;
+  for (const p of points) s += p.actual;
+  return s;
+}
+
+/**
+ * `true` si el rango [min, max] de fch de creación en el corte solapa con la ventana [start, end] de la comparativa
+ * (por tiempo de día, inclusive en extremos lógicos).
+ */
+export function leadDateBoundsOverlapComparisonWindow(
+  leads: LeadRow[],
+  n: number,
+  options?: CompareWindowOptions,
+): boolean {
+  const b = getLeadsCreationDateBounds(leads);
+  if (!b.min || !b.max) return false;
+  const w = getComparisonWindowBounds(leads, n, options);
+  return b.max.getTime() >= w.start.getTime() && b.min.getTime() <= w.end.getTime();
+}
+
+/**
+ * Con anclaje «Hasta hoy», el fin de ventana se rellenó con la **última fch** del corte (no hoy) por no haber datos en los últimos N días a hoy.
+ * Usar en UI de aviso; asume `options.anchor.type === "today"`.
+ */
+export function todayAnchorUsedMaxDataFallback(
+  leads: LeadRow[],
+  n: number,
+  options: CompareWindowOptions,
+): boolean {
+  const anchor = options.anchor ?? { type: "today" };
+  if (anchor.type !== "today") return false;
+  const w = getComparisonWindowBounds(leads, n, { ...options, anchor: { type: "today" } });
+  return !isSameDay(w.end, new Date());
+}
+
+export type RpcDailyRow = { date: string; leads: number; ventas: number };
+
+/**
+ * Misma lógica de comparación que en cliente, pero a partir de `daily` agregada en servidor (p. ej. análisis fijo).
+ * Usa las **últimas n filas** de `daily` (ordenado por `date`) como ventana “actual” y el resto de la serie
+ * para referencias; no depende de `fch` en filas de leads.
+ */
+export function buildComparisonFromRpcDaily(
+  daily: RpcDailyRow[],
+  n: number,
+  metric: ComparisonMetric,
+  mode: ComparisonMode,
+): { points: ComparisonPoint[]; meta: (typeof COMPARISON_MODE_META)[ComparisonMode]; dateKeys: string[] } {
+  const meta = COMPARISON_MODE_META[mode];
+  const sorted = [...daily]
+    .filter((r) => r.date && String(r.date).trim())
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (sorted.length === 0) {
+    return { points: [], meta, dateKeys: [] };
+  }
+
+  const map = new Map<string, DailyStats>();
+  for (const r of sorted) {
+    const key = r.date.slice(0, 10);
+    map.set(key, { leads: r.leads, ventas: r.ventas });
+  }
+
+  const a = sorted.length;
+  const takeN = Math.min(n, a);
+  const cur = sorted.slice(-takeN);
+  let prevBlock: RpcDailyRow[] = [];
+  if (a >= 2 * takeN) {
+    prevBlock = sorted.slice(a - 2 * takeN, a - takeN);
+  } else if (a > takeN) {
+    prevBlock = sorted.slice(0, a - takeN);
+  }
+  const avgByWeekday = mode === "avg_weekday_historical" ? weekdayMetricAverages(map, metric) : null;
+
+  const points: ComparisonPoint[] = cur.map((row, i) => {
+    const key = row.date.slice(0, 10);
+    const day = parseISO(key);
+    if (Number.isNaN(day.getTime())) {
+      return { label: key, actual: 0, anterior: 0 };
+    }
+    const st = map.get(key);
+    const actual = metricFromStats(metric, st);
+
+    let anterior = 0;
+    if (mode === "prev_block") {
+      const pRow = prevBlock[i];
+      if (pRow) anterior = metricFromStats(metric, map.get(pRow.date.slice(0, 10)));
+    } else if (mode === "prev_calendar_day") {
+      anterior = metricFromStats(metric, map.get(format(subDays(day, 1), "yyyy-MM-dd")));
+    } else if (mode === "same_weekday_prev_week") {
+      anterior = metricFromStats(metric, map.get(format(subDays(day, 7), "yyyy-MM-dd")));
+    } else if (mode === "avg_weekday_historical" && avgByWeekday) {
+      const iso = getISODay(day);
+      const idx = iso === 7 ? 6 : iso - 1;
+      anterior = avgByWeekday[idx] ?? 0;
+    } else if (mode === "same_dom_prev_month") {
+      const ref = sameDayInPreviousCalendarMonth(day);
+      anterior = metricFromStats(metric, map.get(format(ref, "yyyy-MM-dd")));
+    }
+
+    return {
+      label: format(day, "EEE d", { locale: es }),
+      actual,
+      anterior,
+    };
+  });
+  const dateKeys = cur.map((r) => r.date.slice(0, 10));
+  return { points, meta, dateKeys };
+}
+
+/** Serie diaria larga (valores según spec) para tendencia. Respeta anclaje de fin de ventana. */
 export function buildFullDailyTrendForSpec(
   leads: LeadRow[],
   maxDays: number,
   spec: ComparativeSeriesSpec,
+  options?: CompareWindowOptions,
 ): { date: string; value: number }[] {
   const m = buildDayAggMap(leads, spec);
-  const sorted = [...m.keys()].sort((a, b) => a.localeCompare(b));
+  const anchor = options?.anchor ?? { type: "today" };
+  const endD = resolveComparisonWindowEnd(leads, anchor, options?.filterHasta, maxDays);
+  const endKey = format(endD, "yyyy-MM-dd");
+  const sorted = [...m.keys()]
+    .filter((k) => k <= endKey)
+    .sort((a, b) => a.localeCompare(b));
   const slice = sorted.slice(-maxDays);
   return slice.map((date) => ({ date, value: dayValueFromAgg(m.get(date), spec) }));
 }

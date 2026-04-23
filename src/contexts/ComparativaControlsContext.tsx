@@ -1,19 +1,28 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import type { ComparisonMode } from "@/lib/dashboard-leads-analytics";
+import type { ComparisonMode, ComparativaWindowAnchor } from "@/lib/dashboard-leads-analytics";
 
 /** Solo lo que debe ser común a todos los bloques de comparativa en el dashboard. */
 type ComparativaControlsContextValue = {
   compareMode: ComparisonMode;
   setCompareMode: (v: ComparisonMode) => void;
-  compareDays: 7 | 14 | 21 | 28;
-  setCompareDays: (v: 7 | 14 | 21 | 28) => void;
+  compareDays: 7 | 14 | 21 | 28 | 31;
+  setCompareDays: (v: 7 | 14 | 21 | 28 | 31) => void;
+  windowAnchor: ComparativaWindowAnchor;
+  setWindowAnchor: (v: ComparativaWindowAnchor) => void;
 };
 
 const ComparativaControlsContext = createContext<ComparativaControlsContextValue | null>(null);
 
 export function ComparativaControlsProvider({ children }: { children: ReactNode }) {
   const [compareMode, setCompareMode] = useState<ComparisonMode>("prev_calendar_day");
-  const [compareDays, setCompareDays] = useState<7 | 14 | 21 | 28>(14);
+  const [compareDays, setCompareDays] = useState<7 | 14 | 21 | 28 | 31>(31);
+  /**
+   * Por defecto alineado al panel: el dashboard inicia con **mes en curso** (desde / hasta) y el análisis
+   * comparativo comparte el mismo criterio de eje.
+   */
+  const [windowAnchor, setWindowAnchor] = useState<ComparativaWindowAnchor>({
+    type: "dashboardDateFilters",
+  });
 
   const value = useMemo(
     () => ({
@@ -21,8 +30,10 @@ export function ComparativaControlsProvider({ children }: { children: ReactNode 
       setCompareMode,
       compareDays,
       setCompareDays,
+      windowAnchor,
+      setWindowAnchor,
     }),
-    [compareMode, compareDays],
+    [compareMode, compareDays, windowAnchor],
   );
 
   return (

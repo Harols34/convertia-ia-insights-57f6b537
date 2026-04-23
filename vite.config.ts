@@ -22,4 +22,15 @@ export default defineConfig(({ mode }) => ({
   optimizeDeps: {
     include: ["react", "react-dom", "react/jsx-runtime", "@tanstack/react-query"],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/echarts")) return "echarts";
+          if (id.includes("node_modules/zrender")) return "echarts";
+          if (id.includes("framer-motion")) return "framer";
+        },
+      },
+    },
+  },
 }));

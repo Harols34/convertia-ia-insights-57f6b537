@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactECharts from "echarts-for-react";
-import { format, parseISO, endOfISOWeek } from "date-fns";
+import { format, parseISO, endOfISOWeek, endOfDay, startOfDay, subDays, startOfMonth, endOfMonth } from "date-fns";
+import { es } from "date-fns/locale";
+import { Info } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { useComparativaControls } from "@/contexts/ComparativaControlsContext";
 import type { LeadRow } from "@/lib/dashboard-leads";
@@ -15,24 +18,40 @@ import {
 } from "@/lib/dashboard-leads";
 import {
   buildComparisonSeriesSpec,
+  buildComparisonFromRpcDaily,
   buildFullDailyTrendForSpec,
   buildWeeklySeriesForSpec,
   comparisonLineAlignedToDailySpec,
   weeklyPreviousPeriodValues,
+  getLeadsCreationDateBounds,
+  getComparisonWindowBounds,
+  filterLeadsByCreationInRange,
+  sumComparisonSeriesActual,
+  leadDateBoundsOverlapComparisonWindow,
+  todayAnchorUsedMaxDataFallback,
   COMPARISON_MODE_META,
   COMPARATIVE_DIMENSION_SUBJECTS,
   COMPARATIVE_BREAKDOWN_GROUPS,
   comparativeSpecTitle,
+  type CompareWindowOptions,
+  type ComparativaWindowAnchor,
   type ComparativeSeriesSpec,
   type ComparisonMode,
+  type ComparisonMetric,
   type DailyComparisonOverlayMode,
 } from "@/lib/dashboard-leads-analytics";
+import type { DashboardExecutiveData } from "@/lib/dashboard-executive-rpc";
 import {
   comparisonDualSeriesOption,
   weeklyScalarBarsOption,
   scalarTimeSeriesOption,
   type ComparisonViz,
 } from "./dashboard-chart-options";
+
+/**
+ * Fase D2: delegar series diarias/ comparativas a un RPC timeseries (p. ej. `accessible_leads_timeseries`) reduciría
+ * ancho de banda; el explorador y cortes finos por dimensión seguirían necesitando filas o endpoints dedicados.
+ */
 
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -164,21 +183,61 @@ export type ComparativaDashboardSectionProps = {
   leads: LeadRow[];
   onFilterByDate?: (isoDay: string) => void;
   onFilterByWeekRange?: (desde: string, hasta: string) => void;
+  /** Filtros de fecha del panel (anclaje «Alinear a filtros del panel»). */
+  filterDesde?: string;
+  filterHasta?: string;
+  /** Timeseries del ejecutivo: opción «como análisis fijo» en la ventana alineada. */
+  rpcData?: DashboardExecutiveData | null;
+  kpiTotalLeadsFromRpc?: number;
 };
+
+const ANCHOR_SELECT_ITEMS: { value: ComparativaWindowAnchor["type"]; label: string }[] = [
+  { value: "today", label: "Hasta hoy (si en los últimos N días no hay fch, el eje se ancla a la última fecha con datos en el corte)" },
+  { value: "maxLeadDate", label: "Hasta la última fch con datos en el corte (históricos / ejes en el pasado)" },
+  { value: "dashboardDateFilters", label: "Filtros de fecha del panel (recomendado si usas Desde / Hasta)" },
+];
 
 export function ComparativaDashboardSection({
   leads,
   onFilterByDate,
   onFilterByWeekRange,
+  filterDesde,
+  filterHasta,
+  rpcData,
+  kpiTotalLeadsFromRpc,
 }: ComparativaDashboardSectionProps) {
-  const { compareMode, setCompareMode, compareDays, setCompareDays } = useComparativaControls();
+  const { compareMode, setCompareMode, compareDays, setCompareDays, windowAnchor, setWindowAnchor } =
+    useComparativaControls();
+
+  const filterFchKey = useMemo(() => {
+    const d = filterDesde?.trim() ?? "";
+    const h = filterHasta?.trim() ?? "";
+    return `${d}\u0000${h}`;
+  }, [filterDesde, filterHasta]);
+  const lastAutoAnchorFilterKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const hasPanelDates = Boolean((filterDesde?.trim() ?? "") || (filterHasta?.trim() ?? ""));
+    if (!hasPanelDates) {
+      lastAutoAnchorFilterKeyRef.current = null;
+      return;
+    }
+    if (lastAutoAnchorFilterKeyRef.current === filterFchKey) return;
+    lastAutoAnchorFilterKeyRef.current = filterFchKey;
+    setWindowAnchor({ type: "dashboardDateFilters" });
+  }, [filterFchKey, filterDesde, filterHasta, setWindowAnchor]);
 
   const [historicTab, setHistoricTab] = useState<"window" | "trend">("window");
 
   const [alBase, setAlBase] = useState<BaseKind>("leads");
   const [alDimId, setAlDimId] = useState(COMPARATIVE_DIMENSION_SUBJECTS[0]!.id);
   const [alDimTok, setAlDimTok] = useState(LEADS_FILTER_EMPTY_TOKEN);
+  /** Ventana alineada: mismos agregados que el análisis fijo (RPC) frente a filas en cliente. */
+  const [alDataSource, setAlDataSource] = useState<"client" | "rpc">("client");
   const [dailyViz, setDailyViz] = useState<ComparisonViz>("area");
+
+  useEffect(() => {
+    if (alBase === "dimension") setAlDataSource("client");
+  }, [alBase]);
 
   const [trBase, setTrBase] = useState<BaseKind>("leads");
   const [trDimId, setTrDimId] = useState(COMPARATIVE_DIMENSION_SUBJECTS[0]!.id);
@@ -213,18 +272,126 @@ export function ComparativaDashboardSection({
   const titleTr = useMemo(() => comparativeSpecTitle(specTr, trDimSubj.label), [specTr, trDimSubj.label]);
   const titleWk = useMemo(() => comparativeSpecTitle(specWk, wkDimSubj.label), [specWk, wkDimSubj.label]);
 
+  const compareWindowOptions = useMemo<CompareWindowOptions>(
+    () => ({
+      anchor: windowAnchor,
+      filterDesde,
+      filterHasta,
+    }),
+    [windowAnchor, filterDesde, filterHasta],
+  );
+
+  /** Misma ventana que el eje diario: la semana ISO ya no mezcla semanas fuera de ese rango. */
+  const compareWindowBounds = useMemo(
+    () => getComparisonWindowBounds(leads, compareDays, compareWindowOptions),
+    [leads, compareDays, compareWindowOptions],
+  );
+  const leadsInCompareWindow = useMemo(
+    () => filterLeadsByCreationInRange(leads, compareWindowBounds.start, compareWindowBounds.end),
+    [leads, compareWindowBounds],
+  );
+
+  const dateBounds = useMemo(() => getLeadsCreationDateBounds(leads), [leads]);
+
   const yAl = specAl.kind === "efectividad";
   const yTr = specTr.kind === "efectividad";
   const yWk = specWk.kind === "efectividad";
 
-  const comparisonAl = useMemo(
-    () => buildComparisonSeriesSpec(leads, compareDays, compareMode, specAl),
-    [leads, compareDays, compareMode, specAl],
+  const comparisonAl = useMemo(() => {
+    const metric: ComparisonMetric | null =
+      specAl.kind === "leads"
+        ? "leads"
+        : specAl.kind === "ventas"
+          ? "ventas"
+          : specAl.kind === "efectividad"
+            ? "efectividad"
+            : null;
+    const useRpcLine =
+      alDataSource === "rpc" && Boolean(rpcData?.daily?.length) && metric != null && specAl.kind !== "match_column";
+    if (useRpcLine && rpcData?.daily) {
+      return buildComparisonFromRpcDaily(rpcData.daily, compareDays, metric, compareMode);
+    }
+    return buildComparisonSeriesSpec(leads, compareDays, compareMode, specAl, compareWindowOptions);
+  }, [alDataSource, rpcData, leads, compareDays, compareMode, specAl, compareWindowOptions]);
+
+  const sumActualInWindow = useMemo(
+    () => sumComparisonSeriesActual(comparisonAl.points),
+    [comparisonAl.points],
   );
 
+  const windowOverlapsCorte = useMemo(
+    () => leadDateBoundsOverlapComparisonWindow(leads, compareDays, compareWindowOptions),
+    [leads, compareDays, compareWindowOptions],
+  );
+  const todayFallbackToMaxFch = useMemo(
+    () => todayAnchorUsedMaxDataFallback(leads, compareDays, compareWindowOptions),
+    [leads, compareDays, compareWindowOptions],
+  );
+  const kpiMismatchLeads =
+    kpiTotalLeadsFromRpc != null &&
+    kpiTotalLeadsFromRpc > 0 &&
+    specAl.kind === "leads" &&
+    alDataSource === "client" &&
+    leads.length > 0 &&
+    sumActualInWindow === 0;
+
+  const hasNoValidFch = leads.length > 0 && dateBounds.max == null;
+  const windowShowsAllZeros = leads.length > 0 && dateBounds.max != null && sumActualInWindow === 0;
+  const windowAxisVsCorte = windowShowsAllZeros && !hasNoValidFch && !windowOverlapsCorte;
+
+  const anchorShortLabel = useMemo(() => {
+    if (windowAnchor.type === "today") return "Hasta hoy";
+    if (windowAnchor.type === "maxLeadDate") return "Hasta la última fch con datos (en el corte descargado)";
+    return "Alineado a filtros de fecha del panel (Desde / Hasta)";
+  }, [windowAnchor.type]);
+
+  const resumenComparativa = useMemo(() => {
+    if (leads.length === 0) return null;
+    const eje =
+      comparisonAl.dateKeys.length === 0
+        ? "—"
+        : `${format(parseISO(comparisonAl.dateKeys[0]!), "d MMM yyyy", { locale: es })} — ${format(
+            parseISO(comparisonAl.dateKeys[comparisonAl.dateKeys.length - 1]!),
+            "d MMM yyyy",
+            { locale: es },
+          )}`;
+    const corteFch =
+      dateBounds.min && dateBounds.max
+        ? `${format(dateBounds.min, "d MMM yyyy", { locale: es })} — ${format(
+            dateBounds.max,
+            "d MMM yyyy",
+            { locale: es },
+          )}`
+        : dateBounds.max
+          ? format(dateBounds.max, "d MMM yyyy", { locale: es })
+          : "—";
+    const origen = alDataSource === "rpc" ? "Origen de la serie: agregado servidor (mismo criterio que análisis fijo)." : "Origen: filas en cliente (corte y ventana con la lógica de anclaje).";
+    return `Anclaje: ${anchorShortLabel}. Eje: ${eje}. Registros en el corte: ${leads.length.toLocaleString("es")}. fch mín.–máx. (filas actuales): ${corteFch}. ${origen}`;
+  }, [leads.length, comparisonAl.dateKeys, dateBounds.min, dateBounds.max, anchorShortLabel, alDataSource]);
+
+  /** Referencia: mes calendario y “últimos N días” hacia hoy (solo calendario, sin anclaje de la comparativa). */
+  const currentMonthContext = useMemo(() => {
+    const endD = new Date();
+    const sM = startOfMonth(endD);
+    const eM = endOfMonth(endD);
+    const hoyE = endOfDay(endD);
+    const naive = startOfDay(subDays(hoyE, compareDays - 1));
+    const m0 = startOfDay(sM);
+    const winStart = naive.getTime() < m0.getTime() ? m0 : naive;
+    const monthLabel = format(sM, "MMMM yyyy", { locale: es });
+    return {
+      monthLine: `Mes en curso (${monthLabel}): del ${format(sM, "d MMM", { locale: es })} al ${format(eM, "d MMM yyyy", { locale: es })}.`,
+      rollingInMonth: `Sobre el calendario de este mes, los últimos ${compareDays} días hacia hoy (referencia, sin mirar anclaje) son: ${format(
+        winStart,
+        "d MMM",
+        { locale: es },
+      )} — ${format(hoyE, "d MMM yyyy", { locale: es })} (si aún no hay N días en el mes, se cuenta desde el día 1).`,
+    };
+  }, [compareDays]);
+
   const comparisonTrWindow = useMemo(
-    () => buildComparisonSeriesSpec(leads, compareDays, compareMode, specTr),
-    [leads, compareDays, compareMode, specTr],
+    () => buildComparisonSeriesSpec(leads, compareDays, compareMode, specTr, compareWindowOptions),
+    [leads, compareDays, compareMode, specTr, compareWindowOptions],
   );
 
   const optAligned = useMemo(
@@ -251,7 +418,10 @@ export function ComparativaDashboardSection({
     [comparisonTrWindow, compareDays, titleTr, yTr, trendViz],
   );
 
-  const trend = useMemo(() => buildFullDailyTrendForSpec(leads, 90, specTr), [leads, specTr]);
+  const trend = useMemo(
+    () => buildFullDailyTrendForSpec(leads, 90, specTr, compareWindowOptions),
+    [leads, specTr, compareWindowOptions],
+  );
   const trendOverlayData = useMemo(() => {
     if (trendOverlay === "off" || trend.length === 0) return undefined;
     const data = comparisonLineAlignedToDailySpec(leads, trend, specTr, trendOverlay);
@@ -275,7 +445,10 @@ export function ComparativaDashboardSection({
     [trend, titleTr, trendViz, yTr, trendOverlayData],
   );
 
-  const weekly = useMemo(() => buildWeeklySeriesForSpec(leads, 20, specWk), [leads, specWk]);
+  const weekly = useMemo(
+    () => buildWeeklySeriesForSpec(leadsInCompareWindow, 20, specWk),
+    [leadsInCompareWindow, specWk],
+  );
   const weekPrev = useMemo(
     () => (weekCompare ? weeklyPreviousPeriodValues(weekly) : []),
     [weekCompare, weekly],
@@ -395,8 +568,8 @@ export function ComparativaDashboardSection({
   );
 
   const exComparison = useMemo(
-    () => buildComparisonSeriesSpec(exSlice, compareDays, compareMode, exInnerSpec),
-    [exSlice, compareDays, compareMode, exInnerSpec],
+    () => buildComparisonSeriesSpec(exSlice, compareDays, compareMode, exInnerSpec, compareWindowOptions),
+    [exSlice, compareDays, compareMode, exInnerSpec, compareWindowOptions],
   );
 
   const exTitle = useMemo(
@@ -442,8 +615,9 @@ export function ComparativaDashboardSection({
 
       <Card className="p-4 md:p-5">
         <p className="text-[11px] text-muted-foreground mb-3">
-          Estos dos controles aplican a <strong>todos</strong> los gráficos de comparativa (ventana alineada, histórico
-          «ventana global», semanal y explorador).
+          Modo de comparación, duración (N días) y anclaje temporal de la ventana aplican a{" "}
+          <strong>todos</strong> los gráficos de comparativa (ventana alineada, histórico «ventana global», longitud de
+          tendencia y explorador). Semanas ISO agregan por calendario completo, independiente del anclaje.
         </p>
         <div className="flex flex-wrap gap-4 items-end">
           <div className="space-y-1">
@@ -462,8 +636,11 @@ export function ComparativaDashboardSection({
             </Select>
           </div>
           <div className="space-y-1">
-            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Ventana</p>
-            <Select value={String(compareDays)} onValueChange={(v) => setCompareDays(Number(v) as 7 | 14 | 21 | 28)}>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Ventana (N días)</p>
+            <Select
+              value={String(compareDays)}
+              onValueChange={(v) => setCompareDays(Number(v) as 7 | 14 | 21 | 28 | 31)}
+            >
               <SelectTrigger className="h-9 w-[120px] text-xs">
                 <SelectValue />
               </SelectTrigger>
@@ -472,30 +649,162 @@ export function ComparativaDashboardSection({
                 <SelectItem value="14">14 días</SelectItem>
                 <SelectItem value="21">21 días</SelectItem>
                 <SelectItem value="28">28 días</SelectItem>
+                <SelectItem value="31">31 días (mes completo)</SelectItem>
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-1 max-w-md">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Anclaje de la ventana</p>
+            <Select
+              value={windowAnchor.type}
+              onValueChange={(v) => setWindowAnchor({ type: v as ComparativaWindowAnchor["type"] })}
+            >
+              <SelectTrigger className="h-9 min-w-[280px] max-w-[min(100vw-2rem,420px)] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ANCHOR_SELECT_ITEMS.map((it) => (
+                  <SelectItem key={it.value} value={it.value} className="text-xs">
+                    {it.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {windowAnchor.type === "dashboardDateFilters" && !filterHasta?.trim() && !filterDesde?.trim() && (
+              <p className="text-[10px] text-amber-700 dark:text-amber-500 mt-1">
+                Define al menos <strong>desde</strong> o <strong>hasta</strong> en el panel de filtros, o el fin de
+                ventana seguirá siendo hoy.
+              </p>
+            )}
+          </div>
         </div>
+        {resumenComparativa && (
+          <p className="text-[11px] text-foreground font-medium mt-3 border-t border-border/50 pt-3 leading-snug">
+            {resumenComparativa}
+          </p>
+        )}
+        <p className="text-[11px] text-muted-foreground mt-2 space-y-1">
+          <span className="block">Referencia calendario: {currentMonthContext.monthLine}</span>
+          <span className="block">{currentMonthContext.rollingInMonth}</span>
+        </p>
+        <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
+          En «Análisis fijo» el diario sigue <em>desde / hasta</em> del panel. Aquí la ventana mide {compareDays} días con
+          el anclaje elegido. Cortes finos por dimensión requieren filas en cliente: la opción “como análisis fijo”
+          aplica a leads / ventas / efectividad con la agregación del servidor.
+        </p>
+        {windowAnchor.type === "today" && todayFallbackToMaxFch && (
+          <p className="text-[10px] text-amber-800 dark:text-amber-400 mt-2 leading-snug">
+            El eje se ha anclado a la <strong>última fecha con datos</strong> de este corte (no a hoy) porque en los
+            últimos {compareDays} días hacia hoy no hay <code className="text-[10px]">fch_creacion</code> en las filas
+            descargadas. Para forzar un mes u otro rango, ajusta filtros o el anclaje.
+          </p>
+        )}
       </Card>
+
+      {hasNoValidFch && (
+        <Alert variant="destructive">
+          <Info className="h-4 w-4" />
+          <AlertTitle>Sin fechas de creación válidas</AlertTitle>
+          <AlertDescription>
+            Hay {leads.length} filas en el corte, pero no se pudo leer <code className="text-xs">fch_creacion</code> en
+            ninguna. Revisa el formato de fecha en la base o el mapeo del cliente: la agregación diaria se descarta sin
+            fecha.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {windowAxisVsCorte && dateBounds.min && dateBounds.max && (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>Sin fechas de creación en el eje de la ventana</AlertTitle>
+          <AlertDescription>
+            En el rango de fechas de este eje (según anclaje y {compareDays} días) no entra ninguna{" "}
+            <code className="text-xs">fch</code> con la métrica. El corte trae fch mín.{" "}
+            <strong>{format(dateBounds.min, "d MMM yyyy", { locale: es })}</strong> — máx.{" "}
+            <strong>{format(dateBounds.max, "d MMM yyyy", { locale: es })}</strong>. Revisa filtros de fechas, dimensiones
+            o anclaje.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {kpiMismatchLeads && (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>Discrepancia con el análisis fijo (leads)</AlertTitle>
+          <AlertDescription>
+            En el servidor el filtro aún arroja <strong>leads</strong> (KPI), pero en la ventana de este gráfico (datos
+            en cliente) la suma de la serie &quot;actual&quot; de leads es 0. Prueba otra anclaje o rango, o comprobar que
+            el universo descargado cubre el mismo corte, o use la fuente <strong>como análisis fijo</strong> en «Ventana
+            alineada».
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {!windowAxisVsCorte && windowShowsAllZeros && !hasNoValidFch && !kpiMismatchLeads && (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>La ventana de la gráfica no refleja datos para esta métrica</AlertTitle>
+          <AlertDescription>
+            {windowAnchor.type === "today" ? (
+              <>
+                Ningún lead del corte cae en la ventana calendario usada para el eje (con el anclaje y modo actuales) para
+                la métrica elegida. Prueba anclar a <strong>última fch con datos</strong> o a los <strong>filtros del
+                panel</strong>, o cambia dimensión/valor o modo de comparación.
+              </>
+            ) : (
+              <>
+                Con el anclaje y la métrica actuales, la suma de la serie en la ventana es 0. Revisa el valor de dimensión
+                (si aplica), el modo de comparación o el rango de fechas en el panel.
+              </>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid lg:grid-cols-2 gap-4">
         <Card className="p-4 space-y-3">
-          <div className="flex flex-wrap items-end justify-between gap-2">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <p className="text-xs font-semibold text-foreground">Ventana alineada</p>
-            <div className="space-y-1">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Vista</p>
-              <Select value={dailyViz} onValueChange={(v) => setDailyViz(v as ComparisonViz)}>
-                <SelectTrigger className="h-8 w-[120px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="area">Área</SelectItem>
-                  <SelectItem value="line">Líneas</SelectItem>
-                  <SelectItem value="bar">Barras</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex flex-wrap gap-3 items-end">
+              {(alBase === "leads" || alBase === "ventas" || alBase === "efectividad") &&
+                Boolean(rpcData?.daily?.length) && (
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Fuente</p>
+                    <Select
+                      value={alDataSource}
+                      onValueChange={(v) => setAlDataSource(v as "client" | "rpc")}
+                    >
+                      <SelectTrigger className="h-8 min-w-[200px] max-w-[min(100vw-2rem,320px)] text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="client">Universo en cliente</SelectItem>
+                        <SelectItem value="rpc">Como análisis fijo (servidor)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              <div className="space-y-1">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Vista</p>
+                <Select value={dailyViz} onValueChange={(v) => setDailyViz(v as ComparisonViz)}>
+                  <SelectTrigger className="h-8 w-[120px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="area">Área</SelectItem>
+                    <SelectItem value="line">Líneas</SelectItem>
+                    <SelectItem value="bar">Barras</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
+          {alDataSource === "rpc" && (alBase === "leads" || alBase === "ventas" || alBase === "efectividad") && (
+            <p className="text-[10px] text-muted-foreground leading-snug">
+              Serie alineada al timeseries del ejecutivo (últimos {compareDays} puntos del agregado diario). Explorador y
+              cortes por dimensión siguen usando filas en cliente.
+            </p>
+          )}
           <MetricSelectors
             leads={leads}
             baseKind={alBase}
@@ -509,7 +818,7 @@ export function ComparativaDashboardSection({
           <p className="text-[11px] text-muted-foreground">Clic en punto filtra por día</p>
           <ChartFrame>
             <ReactECharts
-              key={`al-${compareMode}-${compareDays}-${dailyViz}-${titleAl}`}
+              key={`al-${alDataSource}-${windowAnchor.type}-${compareMode}-${compareDays}-${dailyViz}-${titleAl}`}
               option={optAligned}
               style={{ height: 300, width: "100%" }}
               notMerge
@@ -568,7 +877,7 @@ export function ComparativaDashboardSection({
               </p>
               <ChartFrame>
                 <ReactECharts
-                  key={`tr-win-${compareMode}-${compareDays}-${trendViz}-${titleTr}`}
+                  key={`tr-win-${windowAnchor.type}-${compareMode}-${compareDays}-${trendViz}-${titleTr}`}
                   option={optHistoricWindow}
                   style={{ height: 300, width: "100%" }}
                   notMerge
@@ -598,7 +907,7 @@ export function ComparativaDashboardSection({
               <p className="text-[11px] text-muted-foreground">Serie larga sin acotar a la ventana global · Clic filtra por día</p>
               <ChartFrame>
                 <ReactECharts
-                  key={`tr-trend-${compareMode}-${compareDays}-${trendViz}-${trendOverlay}-${titleTr}`}
+                  key={`tr-trend-${windowAnchor.type}-${compareMode}-${compareDays}-${trendViz}-${trendOverlay}-${titleTr}`}
                   option={optTrend}
                   style={{ height: 300, width: "100%" }}
                   notMerge
@@ -752,7 +1061,7 @@ export function ComparativaDashboardSection({
           </p>
           <ChartFrame>
             <ReactECharts
-              key={`ex-${exFilterCol}-${exFilterTok}-${exViz}-${compareMode}-${compareDays}-${exTitle}`}
+              key={`ex-${windowAnchor.type}-${exFilterCol}-${exFilterTok}-${exViz}-${compareMode}-${compareDays}-${exTitle}`}
               option={optExplorer}
               style={{ height: 320, width: "100%" }}
               notMerge

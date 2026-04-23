@@ -11,6 +11,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import logoImg from "@/assets/logo.ico";
+import { prefetchAppRouteByPath } from "@/lib/app-route-prefetch";
 
 type MenuItem = {
   title: string;
@@ -84,6 +85,8 @@ export function AppSidebar() {
                         end={item.url === "/app"}
                         className="hover:bg-sidebar-accent/50"
                         activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                        onMouseEnter={() => prefetchAppRouteByPath(item.url)}
+                        onFocus={() => prefetchAppRouteByPath(item.url)}
                       >
                         <item.icon className="mr-2 h-4 w-4 flex-shrink-0" />
                         {!collapsed && <span className="truncate">{item.title}</span>}

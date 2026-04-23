@@ -1,5 +1,5 @@
+import { endOfDay, format, parseISO, startOfMonth } from "date-fns";
 import type { Database } from "@/integrations/supabase/types";
-
 export type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
 
 /** Columnas filtrables (etiqueta en UI). Excluye ids/timestamps internos. */
@@ -38,9 +38,21 @@ export type LeadsDashboardFilters = {
   dimensions: Partial<Record<keyof LeadRow, string[]>>;
 };
 
+/**
+ * Rango por defecto del panel: **mes en curso** (día 1 del mes calendario local → hoy, inclusive).
+ * Alinea la descarga PostgREST de comparativa, el RPC de análisis fijo y el eje con `fchRango` explícito.
+ */
+export function getDefaultMonthToDateRange(now: Date = new Date()): { desde: string; hasta: string } {
+  return {
+    desde: format(startOfMonth(now), "yyyy-MM-dd"),
+    hasta: format(endOfDay(now), "yyyy-MM-dd"),
+  };
+}
+
 export const defaultLeadsDashboardFilters = (): LeadsDashboardFilters => ({
   esVenta: "all",
   dimensions: {},
+  ...getDefaultMonthToDateRange(),
 });
 
 function rowScalar(row: LeadRow, key: keyof LeadRow): string {
@@ -50,9 +62,50 @@ function rowScalar(row: LeadRow, key: keyof LeadRow): string {
   return String(v);
 }
 
-function datePartCreacion(iso: string | null | undefined): string {
-  if (!iso) return "";
-  return iso.slice(0, 10);
+/**
+ * Pasa un valor de `fch_creacion` (texto, ISO con Z, etc.) al **día calendario local** `yyyy-MM-dd`.
+ * Necesario para comparar con "hoy" y con filtros del panel: no usar `slice(0,10)` en timestamps UTC.
+ */
+export function fchCreacionToLocalYmd(raw: string | null | undefined): string {
+  if (raw == null || raw === "") return "";
+  const s = String(raw).trim();
+  if (!s) return "";
+  try {
+    let d: Date;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      d = parseISO(s);
+    } else {
+      d = new Date(s);
+    }
+    if (Number.isNaN(d.getTime())) {
+      const p = parseISO(s.length >= 10 ? s.slice(0, 10) : s);
+      d = p;
+    }
+    if (Number.isNaN(d.getTime())) return "";
+    return format(d, "yyyy-MM-dd");
+  } catch {
+    return "";
+  }
+}
+
+/** Misma semántica que `fchCreacionToLocalYmd` (alias usado en filtros). */
+export function datePartCreacion(raw: string | null | undefined): string {
+  return fchCreacionToLocalYmd(raw);
+}
+
+/**
+ * Sobre cada fila recibida de la BD, fija `fch_creacion` al día local ya normalizado
+ * (comparables con la fecha actual y con ventanas de gráficos).
+ */
+export function normalizeLeadRowFchForDashboard<T extends LeadRow>(row: T): T {
+  const ymd = fchCreacionToLocalYmd(row.fch_creacion);
+  if (!ymd) return row;
+  return { ...row, fch_creacion: ymd };
+}
+
+/** Aplicar al terminar de descargar el dataset de comparativa (una vez, en el hook). */
+export function normalizeLeadsDatasetForDashboard(leads: LeadRow[]): LeadRow[] {
+  return leads.map(normalizeLeadRowFchForDashboard);
 }
 
 /** Aplica filtros en memoria sobre el dataset completo. */
