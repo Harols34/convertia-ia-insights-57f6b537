@@ -7,7 +7,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { RequireModule } from "./components/auth/RequireModule.tsx";
 import { LeadsDataProvider } from "@/contexts/LeadsDataContext";
-import { ArtifactsLoadingBadge } from "@/components/app/ArtifactsLoadingBadge";
 
 const Index = lazy(() => import("./pages/Index.tsx"));
 const LoginPage = lazy(() => import("./pages/LoginPage.tsx"));
@@ -50,7 +49,6 @@ const RouteFallback = () => (
 const DashboardRoute = () => (
   <LeadsDataProvider>
     <DashboardPage />
-    <ArtifactsLoadingBadge />
   </LeadsDataProvider>
 );
 
