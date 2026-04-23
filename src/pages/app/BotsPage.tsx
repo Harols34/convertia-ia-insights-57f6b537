@@ -122,7 +122,10 @@ export default function BotsPage() {
   }, []);
 
   const fetchBots = async () => {
-    const { data } = await supabase.from("bots").select("*").order("created_at", { ascending: false });
+    const { data } = await supabase
+      .from("bots")
+      .select("id, tenant_id, name, channel, model, system_prompt, updated_at, created_at, n8n_workflow_id, config, is_active")
+      .order("created_at", { ascending: false });
     setBots((data as BotRow[]) || []);
     setLoading(false);
   };
@@ -161,7 +164,7 @@ export default function BotsPage() {
   const loadMessages = async (convId: string) => {
     const { data: msgs } = await supabase
       .from("bot_messages")
-      .select("*")
+      .select("id, role, content, created_at")
       .eq("conversation_id", convId)
       .order("created_at", { ascending: true });
     if (msgs) {
