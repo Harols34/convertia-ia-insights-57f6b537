@@ -14,12 +14,18 @@ export async function fetchAllIntegrationRows(
   tableName: string,
   onProgress?: (loaded: number) => void,
   stripColumnNames?: string[],
+  selectColumns?: string[],
+  orderBy?: { column: string; ascending?: boolean },
 ): Promise<Record<string, unknown>[]> {
   const out: Record<string, unknown>[] = [];
   let from = 0;
+  const selectClause = selectColumns?.length ? selectColumns.join(",") : "*";
 
   for (;;) {
-    const q = client.from(tableName as keyof Database["public"]["Tables"]).select("*");
+    let q = client.from(tableName as keyof Database["public"]["Tables"]).select(selectClause);
+    if (orderBy?.column) {
+      q = q.order(orderBy.column, { ascending: orderBy.ascending ?? true });
+    }
     const { data, error } = await q.range(from, from + PAGE - 1);
     if (error) throw error;
     let batch = (data ?? []) as Record<string, unknown>[];
