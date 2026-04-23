@@ -29,6 +29,7 @@ export function BoardFilterWidget({
     () => mergeHiddenDataColumns(config.hiddenDataColumns, sourceHiddenColumns),
     [config.hiddenDataColumns, sourceHiddenColumns],
   );
+  const selectColumns = useMemo(() => [config.field], [config.field]);
   const sliceKey = boardCrossFilterKey(config.tableName, config.field);
   const activeSet = useMemo(() => new Set(slices[sliceKey] ?? []), [slices, sliceKey]);
   const hasFilter = activeSet.size > 0;
@@ -39,7 +40,12 @@ export function BoardFilterWidget({
       setLoading(true);
       setError(null);
       try {
-        const data = await fetchCachedIntegrationRows(supabase, config.tableName, stripCols.length ? stripCols : undefined);
+        const data = await fetchCachedIntegrationRows(
+          supabase,
+          config.tableName,
+          stripCols.length ? stripCols : undefined,
+          config.tableName === "leads" ? selectColumns : undefined,
+        );
         if (!cancelled) setRows(data);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Error al cargar");
@@ -50,7 +56,7 @@ export function BoardFilterWidget({
     return () => {
       cancelled = true;
     };
-  }, [config.tableName, stripCols.join("\0")]);
+  }, [config.tableName, stripCols.join("\0"), selectColumns]);
 
   const { data: colMeta } = useQuery({
     queryKey: ["integration-columns", config.tableName],
