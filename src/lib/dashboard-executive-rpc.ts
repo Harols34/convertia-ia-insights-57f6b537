@@ -1,8 +1,9 @@
-import { endOfISOWeek, format, parseISO } from "date-fns";
+import { endOfISOWeek, format, parseISO, startOfISOWeek, subDays } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 import { LEADS_FILTER_EMPTY_TOKEN, type LeadRow, type LeadsDashboardFilters } from "@/lib/dashboard-leads";
 
-type JsonObject = Record<string, unknown>;
+type JsonObject = Record<string, Json | undefined>;
 
 export type KpiSummary = {
   totalLeads: number;
@@ -168,14 +169,12 @@ export async function fetchExecutiveDashboardData(filters: LeadsDashboardFilters
 
   const now = new Date();
   const end = format(now, "yyyy-MM-dd");
-  const start7 = format(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000), "yyyy-MM-dd");
-  const prevEnd = format(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), "yyyy-MM-dd");
-  const prevStart = format(new Date(now.getTime() - 13 * 24 * 60 * 60 * 1000), "yyyy-MM-dd");
-  const curWeekStart = format(parseISO(format(now, "yyyy-MM-dd")).setDate ? new Date(format(now, "yyyy-MM-dd")) : now, "yyyy-MM-dd");
-  const weekStartDate = format(parseISO(format(now, "yyyy-MM-dd")), "yyyy-MM-dd");
-  const currentIsoWeekStart = format(parseISO(weekStartDate), "yyyy-MM-dd");
-  const previousIsoWeekEnd = format(new Date(parseISO(currentIsoWeekStart).getTime() - 24 * 60 * 60 * 1000), "yyyy-MM-dd");
-  const previousIsoWeekStart = format(new Date(parseISO(currentIsoWeekStart).getTime() - 7 * 24 * 60 * 60 * 1000), "yyyy-MM-dd");
+  const start7 = format(subDays(now, 6), "yyyy-MM-dd");
+  const prevEnd = format(subDays(now, 7), "yyyy-MM-dd");
+  const prevStart = format(subDays(now, 13), "yyyy-MM-dd");
+  const currentIsoWeekStart = format(startOfISOWeek(now), "yyyy-MM-dd");
+  const previousIsoWeekEnd = format(subDays(parseISO(currentIsoWeekStart), 1), "yyyy-MM-dd");
+  const previousIsoWeekStart = format(startOfISOWeek(parseISO(previousIsoWeekEnd)), "yyyy-MM-dd");
   const currentIsoWeekEnd = format(endOfISOWeek(parseISO(currentIsoWeekStart)), "yyyy-MM-dd");
 
   const [
