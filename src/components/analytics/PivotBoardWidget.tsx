@@ -43,6 +43,18 @@ export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidg
   );
   const dateMeta = config.dateFields ?? [];
   const gran = config.fieldDateGranularity ?? {};
+  const selectColumns = useMemo(() => {
+    const cols = new Set<string>([
+      ...config.rowFields,
+      ...config.colFields,
+      ...config.filterFields,
+      ...(config.dateFields ?? []),
+    ]);
+    for (const measure of config.measures) {
+      if (measure.kind === "field") cols.add(measure.field);
+    }
+    return [...cols];
+  }, [config.rowFields, config.colFields, config.filterFields, config.dateFields, config.measures]);
   const appearance = useMemo(
     () => sanitizeWidgetAppearance(config.appearance),
     [JSON.stringify(config.appearance ?? null)],
@@ -54,7 +66,12 @@ export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidg
       setLoading(true);
       setError(null);
       try {
-        const data = await fetchCachedIntegrationRows(supabase, config.tableName, stripCols.length ? stripCols : undefined);
+        const data = await fetchCachedIntegrationRows(
+          supabase,
+          config.tableName,
+          stripCols.length ? stripCols : undefined,
+          config.tableName === "leads" ? selectColumns : undefined,
+        );
         if (!cancelled) setRows(data);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Error al cargar datos");
@@ -65,7 +82,7 @@ export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidg
     return () => {
       cancelled = true;
     };
-  }, [config.tableName, stripCols.join("\0")]);
+  }, [config.tableName, stripCols.join("\0"), selectColumns]);
 
   const crossForTable = useMemo(() => crossSlicesForTable(slices, config.tableName), [slices, config.tableName]);
 

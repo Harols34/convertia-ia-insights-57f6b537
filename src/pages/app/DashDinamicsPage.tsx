@@ -215,7 +215,7 @@ export default function DashDinamicsPage() {
 
     const { data: sessionsData } = await supabase
       .from("dashboard_sessions")
-      .select("*")
+      .select("id, title, created_at")
       .eq("user_id", user.id)
       .eq("status", "active")
       .order("created_at", { ascending: false })
@@ -232,7 +232,7 @@ export default function DashDinamicsPage() {
   const loadSessionMessages = async (sid: string) => {
     const { data: msgs } = await supabase
       .from("dashboard_messages")
-      .select("*")
+      .select("id, role, content, created_at, structured")
       .eq("session_id", sid)
       .order("created_at", { ascending: true });
 

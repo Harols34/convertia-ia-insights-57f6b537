@@ -29,7 +29,17 @@ const SoportePage = lazy(() => import("./pages/app/SoportePage.tsx"));
 const CuentasPage = lazy(() => import("./pages/app/CuentasPage.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: 1,
+    },
+  },
+});
 
 const RouteFallback = () => (
   <div className="flex min-h-[40vh] items-center justify-center">
