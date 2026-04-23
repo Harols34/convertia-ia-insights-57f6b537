@@ -26,7 +26,11 @@ export default function ExportacionesPage() {
 
   useEffect(() => {
     const fetch = async () => {
-      const { data } = await supabase.from("exports").select("*").order("created_at", { ascending: false }).limit(100);
+      const { data } = await supabase
+        .from("exports")
+        .select("id, export_type, source_module, file_name, created_at, metadata")
+        .order("created_at", { ascending: false })
+        .limit(100);
       setExports((data as any[]) || []);
       setLoading(false);
     };
@@ -73,7 +77,11 @@ export default function ExportacionesPage() {
           file_name: fileName,
           metadata: { total_rows: leads.length, scope: "first_100" },
         });
-        const { data: updated } = await supabase.from("exports").select("*").order("created_at", { ascending: false }).limit(100);
+        const { data: updated } = await supabase
+          .from("exports")
+          .select("id, export_type, source_module, file_name, created_at, metadata")
+          .order("created_at", { ascending: false })
+          .limit(100);
         setExports((updated as any[]) || []);
       }
     }

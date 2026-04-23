@@ -28,7 +28,7 @@ export async function fetchAllIntegrationRows(
     }
     const { data, error } = await q.range(from, from + PAGE - 1);
     if (error) throw error;
-    let batch = (data ?? []) as Record<string, unknown>[];
+    let batch = ((data ?? []) as unknown) as Record<string, unknown>[];
     if (stripColumnNames?.length) {
       batch = stripRowKeys(batch, stripColumnNames);
     }
