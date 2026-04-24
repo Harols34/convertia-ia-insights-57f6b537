@@ -338,3 +338,66 @@ export async function fetchDashboardFilterOptions(): Promise<Partial<Record<keyo
   }
   return map;
 }
+
+/**
+ * Calcula una serie "overlay" (línea de comparación) alineada a la tendencia diaria del RPC.
+ * Permite que los gráficos de Comparativa muestren la línea de "día anterior", "−7 días", etc.
+ * sin necesidad de descargar el universo de leads en cliente.
+ */
+export type RpcOverlayMode =
+  | "prev_calendar_day"
+  | "same_weekday_prev_week"
+  | "same_dom_prev_month"
+  | "avg_weekday_historical";
+
+export function comparisonLineFromRpcDaily(
+  daily: { date: string; leads: number; ventas: number }[],
+  trend: { date: string; value: number }[],
+  metric: "leads" | "ventas" | "efectividad",
+  mode: RpcOverlayMode,
+): number[] {
+  const map = new Map<string, { leads: number; ventas: number }>();
+  for (const row of daily) {
+    map.set(row.date.slice(0, 10), { leads: row.leads, ventas: row.ventas });
+  }
+  const valueOf = (key: string): number => {
+    const r = map.get(key);
+    if (!r) return 0;
+    if (metric === "leads") return r.leads;
+    if (metric === "ventas") return r.ventas;
+    return r.leads > 0 ? (r.ventas / r.leads) * 100 : 0;
+  };
+
+  // Promedios por día de semana (lun=0..dom=6) para modo histórico.
+  let avgByWeekday: number[] | null = null;
+  if (mode === "avg_weekday_historical") {
+    const sums = new Array<number>(7).fill(0);
+    const counts = new Array<number>(7).fill(0);
+    for (const row of daily) {
+      const d = parseISO(row.date.slice(0, 10));
+      if (Number.isNaN(d.getTime())) continue;
+      const iso = getISODay(d);
+      const idx = iso === 7 ? 6 : iso - 1;
+      sums[idx]! += metric === "leads" ? row.leads : metric === "ventas" ? row.ventas : (row.leads > 0 ? (row.ventas / row.leads) * 100 : 0);
+      counts[idx]! += 1;
+    }
+    avgByWeekday = sums.map((s, i) => (counts[i]! > 0 ? s / counts[i]! : 0));
+  }
+
+  return trend.map((pt) => {
+    const day = parseISO(pt.date);
+    if (Number.isNaN(day.getTime())) return 0;
+    if (mode === "prev_calendar_day") return valueOf(format(subDays(day, 1), "yyyy-MM-dd"));
+    if (mode === "same_weekday_prev_week") return valueOf(format(subDays(day, 7), "yyyy-MM-dd"));
+    if (mode === "same_dom_prev_month") {
+      const prev = new Date(day.getFullYear(), day.getMonth() - 1, day.getDate());
+      return valueOf(format(prev, "yyyy-MM-dd"));
+    }
+    if (mode === "avg_weekday_historical" && avgByWeekday) {
+      const iso = getISODay(day);
+      const idx = iso === 7 ? 6 : iso - 1;
+      return avgByWeekday[idx] ?? 0;
+    }
+    return 0;
+  });
+}
