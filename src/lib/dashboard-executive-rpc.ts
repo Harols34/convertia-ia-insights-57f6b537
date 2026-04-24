@@ -21,7 +21,7 @@ export type DeltaSummary = {
 
 export type DashboardExecutiveData = {
   kpis: KpiSummary;
-  cmp7: { total: DeltaSummary; ventas: DeltaSummary };
+  cmp7: { total: DeltaSummary; ventas: DeltaSummary; tasaVenta: DeltaSummary };
   cmpWeek: { total: DeltaSummary };
   daily: { date: string; leads: number; ventas: number }[];
   weekly: { weekStart: string; label: string; leads: number; ventas: number }[];
@@ -284,9 +284,12 @@ export async function fetchExecutiveDashboardData(filters: LeadsDashboardFilters
   const cmpWeekCur = (cmpWeekCurRes.data ?? {}) as Record<string, unknown>;
   const cmpWeekPrev = (cmpWeekPrevRes.data ?? {}) as Record<string, unknown>;
 
+  const curConv = toNumber(cmp7Cur.total_leads) > 0 ? (toNumber(cmp7Cur.total_ventas) / toNumber(cmp7Cur.total_leads)) * 100 : 0;
+  const prevConv = toNumber(cmp7Prev.total_leads) > 0 ? (toNumber(cmp7Prev.total_ventas) / toNumber(cmp7Prev.total_leads)) * 100 : 0;
   const cmp7 = {
     total: toDelta(toNumber(cmp7Cur.total_leads), toNumber(cmp7Prev.total_leads)),
     ventas: toDelta(toNumber(cmp7Cur.total_ventas), toNumber(cmp7Prev.total_ventas)),
+    tasaVenta: toDelta(curConv, prevConv),
   };
   const cmpWeek = {
     total: toDelta(toNumber(cmpWeekCur.total_leads), toNumber(cmpWeekPrev.total_leads)),
