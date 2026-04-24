@@ -399,10 +399,20 @@ export function ComparativaDashboardSection({
     };
   }, [compareDays]);
 
-  const comparisonTrWindow = useMemo(
-    () => buildComparisonSeriesSpec(leads, compareDays, compareMode, specTr, compareWindowOptions),
-    [leads, compareDays, compareMode, specTr, compareWindowOptions],
-  );
+  const comparisonTrWindow = useMemo(() => {
+    const metric: ComparisonMetric | null =
+      specTr.kind === "leads"
+        ? "leads"
+        : specTr.kind === "ventas"
+          ? "ventas"
+          : specTr.kind === "efectividad"
+            ? "efectividad"
+            : null;
+    if (leads.length === 0 && rpcData?.daily?.length && metric != null && specTr.kind !== "match_column") {
+      return buildComparisonFromRpcDaily(rpcData.daily, compareDays, metric, compareMode);
+    }
+    return buildComparisonSeriesSpec(leads, compareDays, compareMode, specTr, compareWindowOptions);
+  }, [leads, compareDays, compareMode, specTr, compareWindowOptions, rpcData]);
 
   const optAligned = useMemo(
     () =>
