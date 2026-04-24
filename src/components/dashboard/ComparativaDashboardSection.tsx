@@ -231,13 +231,23 @@ export function ComparativaDashboardSection({
   const [alBase, setAlBase] = useState<BaseKind>("leads");
   const [alDimId, setAlDimId] = useState(COMPARATIVE_DIMENSION_SUBJECTS[0]!.id);
   const [alDimTok, setAlDimTok] = useState(LEADS_FILTER_EMPTY_TOKEN);
-  /** Ventana alineada: mismos agregados que el análisis fijo (RPC) frente a filas en cliente. */
-  const [alDataSource, setAlDataSource] = useState<"client" | "rpc">("client");
+  /** Ventana alineada: por defecto usa los agregados del servidor (rpc) si están disponibles
+   *  para que el bloque renderice de inmediato sin esperar la descarga del dataset. */
+  const [alDataSource, setAlDataSource] = useState<"client" | "rpc">(() =>
+    rpcData?.daily?.length ? "rpc" : "client",
+  );
   const [dailyViz, setDailyViz] = useState<ComparisonViz>("area");
 
   useEffect(() => {
     if (alBase === "dimension") setAlDataSource("client");
   }, [alBase]);
+
+  /** Si llegan los agregados del servidor más tarde y aún no hay leads, cambia a "rpc" para mostrar datos. */
+  useEffect(() => {
+    if (rpcData?.daily?.length && leads.length === 0 && alBase !== "dimension") {
+      setAlDataSource("rpc");
+    }
+  }, [rpcData, leads.length, alBase]);
 
   const [trBase, setTrBase] = useState<BaseKind>("leads");
   const [trDimId, setTrDimId] = useState(COMPARATIVE_DIMENSION_SUBJECTS[0]!.id);
