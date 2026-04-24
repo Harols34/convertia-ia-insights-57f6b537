@@ -408,11 +408,18 @@ export function ComparativaDashboardSection({
           : specTr.kind === "efectividad"
             ? "efectividad"
             : null;
-    if (leads.length === 0 && rpcData?.daily?.length && metric != null && specTr.kind !== "match_column") {
+    // Usa RPC si la fuente alineada está en RPC, o si simplemente no hay leads cargados
+    // (modo inicial: el dataset comparativo se descarga de forma diferida).
+    const useRpcLine =
+      metric != null &&
+      specTr.kind !== "match_column" &&
+      Boolean(rpcData?.daily?.length) &&
+      (alDataSource === "rpc" || leads.length === 0);
+    if (useRpcLine && rpcData?.daily) {
       return buildComparisonFromRpcDaily(rpcData.daily, compareDays, metric, compareMode);
     }
     return buildComparisonSeriesSpec(leads, compareDays, compareMode, specTr, compareWindowOptions);
-  }, [leads, compareDays, compareMode, specTr, compareWindowOptions, rpcData]);
+  }, [leads, compareDays, compareMode, specTr, compareWindowOptions, rpcData, alDataSource]);
 
   const optAligned = useMemo(
     () =>
@@ -438,10 +445,17 @@ export function ComparativaDashboardSection({
     [comparisonTrWindow, compareDays, titleTr, yTr, trendViz],
   );
 
+  /** Tendencia ~90 días: si la fuente alineada usa RPC o no hay leads, deriva del agregado servidor. */
+  const trendUsingRpc = useMemo(
+    () =>
+      Boolean(rpcData?.daily?.length) &&
+      specTr.kind !== "match_column" &&
+      (alDataSource === "rpc" || leads.length === 0),
+    [rpcData, specTr.kind, alDataSource, leads.length],
+  );
   const trend = useMemo(() => {
-    if (leads.length === 0 && rpcData?.daily?.length && specTr.kind !== "match_column") {
-      const key: "leads" | "ventas" =
-        specTr.kind === "ventas" ? "ventas" : "leads";
+    if (trendUsingRpc && rpcData?.daily) {
+      const key: "leads" | "ventas" = specTr.kind === "ventas" ? "ventas" : "leads";
       return rpcData.daily.map((d) => ({
         date: d.date,
         value: specTr.kind === "efectividad"
@@ -450,15 +464,25 @@ export function ComparativaDashboardSection({
       }));
     }
     return buildFullDailyTrendForSpec(leads, 90, specTr, compareWindowOptions);
-  }, [leads, specTr, compareWindowOptions, rpcData]);
+  }, [trendUsingRpc, rpcData, leads, specTr, compareWindowOptions]);
   const trendOverlayData = useMemo(() => {
     if (trendOverlay === "off" || trend.length === 0) return undefined;
-    const data = comparisonLineAlignedToDailySpec(leads, trend, specTr, trendOverlay);
+    const metric: "leads" | "ventas" | "efectividad" | null =
+      specTr.kind === "leads" ? "leads"
+      : specTr.kind === "ventas" ? "ventas"
+      : specTr.kind === "efectividad" ? "efectividad"
+      : null;
+    let data: number[];
+    if (trendUsingRpc && rpcData?.daily && metric) {
+      data = comparisonLineFromRpcDaily(rpcData.daily, trend, metric, trendOverlay as RpcOverlayMode);
+    } else {
+      data = comparisonLineAlignedToDailySpec(leads, trend, specTr, trendOverlay);
+    }
     return {
       name: COMPARISON_MODE_META[trendOverlay].comparisonLegend,
       data,
     };
-  }, [leads, trend, specTr, trendOverlay]);
+  }, [leads, trend, specTr, trendOverlay, trendUsingRpc, rpcData]);
 
   const optTrend = useMemo(
     () =>
@@ -475,9 +499,12 @@ export function ComparativaDashboardSection({
   );
 
   const weekly = useMemo(() => {
-    if (leads.length === 0 && rpcData?.weekly?.length && specWk.kind !== "match_column") {
-      const key: "leads" | "ventas" =
-        specWk.kind === "ventas" ? "ventas" : "leads";
+    const useRpc =
+      Boolean(rpcData?.weekly?.length) &&
+      specWk.kind !== "match_column" &&
+      (alDataSource === "rpc" || leads.length === 0);
+    if (useRpc && rpcData?.weekly) {
+      const key: "leads" | "ventas" = specWk.kind === "ventas" ? "ventas" : "leads";
       return rpcData.weekly.map((w) => ({
         weekStart: w.weekStart,
         label: w.label,
@@ -487,7 +514,7 @@ export function ComparativaDashboardSection({
       }));
     }
     return buildWeeklySeriesForSpec(leadsInCompareWindow, 20, specWk);
-  }, [leads.length, leadsInCompareWindow, specWk, rpcData]);
+  }, [leads.length, leadsInCompareWindow, specWk, rpcData, alDataSource]);
   const weekPrev = useMemo(
     () => (weekCompare ? weeklyPreviousPeriodValues(weekly) : []),
     [weekCompare, weekly],
