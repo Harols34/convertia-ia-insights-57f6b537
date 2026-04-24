@@ -440,6 +440,22 @@ function timeMetrics(leads: any[], groupBy: string | null, dateField: string | n
   return result.slice(0, 30);
 }
 
+function computeKpis(leads: any[]): any {
+  const total = leads.length;
+  const ventas = leads.filter(l => l.es_venta).length;
+  const conPrimGestion = leads.filter(l => l.fch_prim_gestion).length;
+  const conNegocio = leads.filter(l => l.fch_negocio).length;
+  return {
+    total_leads: total,
+    total_ventas: ventas,
+    conv_pct: total ? Math.round((ventas / total) * 1000) / 10 : 0,
+    con_gestion: conPrimGestion,
+    con_negocio: conNegocio,
+    tasa_contacto: total ? Math.round((conPrimGestion / total) * 1000) / 10 : 0,
+    tasa_negocio: total ? Math.round((conNegocio / total) * 1000) / 10 : 0,
+  };
+}
+
 function funnelCalc(leads: any[]): any {
   const total = leads.length;
   const conPrimGestion = leads.filter(l => l.fch_prim_gestion).length;
