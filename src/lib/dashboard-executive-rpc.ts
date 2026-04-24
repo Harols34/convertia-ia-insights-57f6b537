@@ -17,6 +17,7 @@ export type DeltaSummary = {
   current: number;
   previous: number;
   deltaPct: number;
+  label: string;
 };
 
 export type DashboardExecutiveData = {
@@ -55,11 +56,12 @@ function toNumber(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function toDelta(current: number, previous: number): DeltaSummary {
+function toDelta(current: number, previous: number, label = ""): DeltaSummary {
   return {
     current,
     previous,
     deltaPct: previous === 0 ? (current > 0 ? 100 : 0) : ((current - previous) / previous) * 100,
+    label,
   };
 }
 
