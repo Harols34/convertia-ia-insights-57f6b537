@@ -901,13 +901,29 @@ function extractKeywordScopedValue(userMsg: string, patterns: RegExp[]): string 
     const raw = match?.[1]?.trim();
     if (!raw) continue;
     const cleaned = raw.replace(/^["'“”]+|["'“”]+$/g, "").trim();
+
+    // Validar que no sea una palabra de fecha o métrica genérica
+    const token = normalizeText(cleaned);
+    const skip = [
+      "ayer", "hoy", "manana", "mañana", "lunes", "martes", "miercoles", "miércoles", "jueves", "viernes", "sabado", "sábado", "domingo",
+      "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "setiembre", "octubre", "noviembre", "diciembre",
+      "mes", "semana", "ano", "año", "dia", "día", "dias", "días", "momento", "ahora", "total", "totales", "lead", "leads", "venta", "ventas",
+      "efectividad", "conversion", "conversión", "performance", "rendimiento", "ranking", "top", "peores", "mejores"
+    ];
+    if (skip.includes(token)) continue;
+
+    // Evitar frases como "de ayer", "esta semana", etc.
+    if (/^(?:de|del|el|la|los|las|esta|este|proximo|proxima|próximo|próxima|ultimo|ultima|último|última|pasado|pasada)\s+(?:ayer|hoy|mañana|manana|mes|semana|año|ano|dia|día|lunes|martes|miercoles|jueves|viernes|sabado|domingo|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i.test(cleaned)) {
+      continue;
+    }
+
     if (cleaned.length >= 2) return cleaned;
   }
   return null;
 }
 
 function campaignKeywordPattern(flags = "i"): RegExp {
-  return new RegExp(String.raw`\bcam(?:p|ap)a(?:ñ|n)a\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con|solo|unicamente|únicamente)\b|[?.!,;]|$)`, flags);
+  return new RegExp(String.raw`\bcam(?:p|ap)a(?:ñ|n)a\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con|solo|unicamente|únicamente|ayer|hoy|mañana|manana|esta|este|ultimo|ultima|último|última|pasado|pasada|proximo|proxima|próximo|próxima)\b|[?.!,;]|$)`, flags);
 }
 
 function collectLooseEntityCandidates(userMsg: string): string[] {
@@ -1057,7 +1073,7 @@ function extractFiltersFromMessage(userMsg: string, dims: any): Record<string, s
   }
   if (!found.cliente && Array.isArray(dims.clientes)) {
     const clientTerm = extractKeywordScopedValue(scrubbed, [
-      /\b(?:cliente|cuenta)\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con)\b|[?.!,;]|$)/i,
+      /\b(?:cliente|cuenta)\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con|ayer|hoy|mañana|manana|esta|este|ultimo|ultima|último|última|pasado|pasada|proximo|proxima|próximo|próxima)\b|[?.!,;]|$)/i,
     ]);
     if (clientTerm) {
       const match = findBestDimensionMatch(clientTerm, dims.clientes as string[]);
@@ -1150,7 +1166,7 @@ function detectUnavailableEntityRequest(userMsg: string, dims: any, matchedFilte
 
   if (!matchedFilters.cliente && Array.isArray(dims.clientes)) {
     const clientTerm = extractKeywordScopedValue(scrubbed, [
-      /\b(?:cliente|cuenta)\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con)\b|[?.!,;]|$)/i,
+      /\b(?:cliente|cuenta)\s+([a-z0-9áéíóúñü._\-\s]+?)(?=\s+(?:del?|desde|hasta|por|en|para|y|con|ayer|hoy|mañana|manana|esta|este|ultimo|ultima|último|última|pasado|pasada|proximo|proxima|próximo|próxima)\b|[?.!,;]|$)/i,
     ]);
     if (clientTerm && !findBestDimensionMatch(clientTerm, dims.clientes as string[])) {
       return `No hay datos para el cliente "${clientTerm}" en las cuentas accesibles.`;
