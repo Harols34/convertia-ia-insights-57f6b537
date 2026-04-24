@@ -40,7 +40,7 @@ import {
   type ComparisonMetric,
   type DailyComparisonOverlayMode,
 } from "@/lib/dashboard-leads-analytics";
-import type { DashboardExecutiveData } from "@/lib/dashboard-executive-rpc";
+import { type DashboardExecutiveData, comparisonLineFromRpcDaily, type RpcOverlayMode } from "@/lib/dashboard-executive-rpc";
 import {
   comparisonDualSeriesOption,
   weeklyScalarBarsOption,
