@@ -612,7 +612,7 @@ function buildToolFilters(args: any, af: Filters, forcedFilters: Record<string, 
 }
 
 async function executeToolViaRpc(
-  admin: any,
+  sb: any,
   name: string,
   args: any,
   af: Filters,
@@ -635,12 +635,12 @@ async function executeToolViaRpc(
     let data: any = null;
     let error: any = null;
     switch (name) {
-      case "get_kpis": ({ data, error } = await admin.rpc("accessible_leads_kpis", common)); break;
-      case "agg_1d": ({ data, error } = await admin.rpc("accessible_leads_group_metrics", { ...common, _dimension: effectiveArgs.dimension, _limit: effectiveArgs.limit || 50 })); break;
-      case "ranking": ({ data, error } = await admin.rpc("accessible_leads_group_metrics", { ...common, _dimension: effectiveArgs.dimension, _limit: Math.max(effectiveArgs.top_n || 10, 50) })); break;
-      case "contactability": ({ data, error } = await admin.rpc("accessible_leads_group_metrics", { ...common, _dimension: effectiveArgs.dimension || "campana_mkt", _limit: effectiveArgs.limit || 30 })); break;
-      case "list_dimension_values": ({ data, error } = await admin.rpc("accessible_leads_group_metrics", { ...common, _dimension: effectiveArgs.dimension, _limit: 500 })); break;
-      case "agg_2d": ({ data, error } = await admin.rpc("accessible_leads_agg_2d", { ...common, _dim1: effectiveArgs.dim1, _dim2: effectiveArgs.dim2, _top_n: effectiveArgs.top_n || 10 })); break;
+      case "get_kpis": ({ data, error } = await sb.rpc("accessible_leads_kpis", common)); break;
+      case "agg_1d": ({ data, error } = await sb.rpc("accessible_leads_group_metrics", { ...common, _dimension: effectiveArgs.dimension, _limit: effectiveArgs.limit || 50 })); break;
+      case "ranking": ({ data, error } = await sb.rpc("accessible_leads_group_metrics", { ...common, _dimension: effectiveArgs.dimension, _limit: Math.max(effectiveArgs.top_n || 10, 50) })); break;
+      case "contactability": ({ data, error } = await sb.rpc("accessible_leads_group_metrics", { ...common, _dimension: effectiveArgs.dimension || "campana_mkt", _limit: effectiveArgs.limit || 30 })); break;
+      case "list_dimension_values": ({ data, error } = await sb.rpc("accessible_leads_group_metrics", { ...common, _dimension: effectiveArgs.dimension, _limit: 500 })); break;
+      case "agg_2d": ({ data, error } = await sb.rpc("accessible_leads_agg_2d", { ...common, _dim1: effectiveArgs.dim1, _dim2: effectiveArgs.dim2, _top_n: effectiveArgs.top_n || 10 })); break;
       default:
         return `ERROR_SISTEMA: herramienta ${name} aún no fue optimizada para alto volumen. NO inventes datos.`;
     }
@@ -1347,7 +1347,7 @@ async function runDash(
   key: string,
   sys: string,
   msgs: any[],
-  admin: any,
+  sb: any,
   af: Filters,
   ff: Record<string, string> = {},
   temporalOverrides?: TemporalOverrides | null,
@@ -1375,7 +1375,7 @@ async function runDash(
       msg.tool_calls.map(async (tc: any) => {
         const a = JSON.parse(tc.function.arguments || "{}");
         console.log(`[D] ${tc.function.name}(${JSON.stringify(a)})`);
-        const r = await executeToolViaRpc(admin, tc.function.name, a, af, ff, temporalOverrides);
+        const r = await executeToolViaRpc(sb, tc.function.name, a, af, ff, temporalOverrides);
         console.log(`[D] → ${r.substring(0, 150)}`);
         return { role: "tool", tool_call_id: tc.id, content: r };
       }),
@@ -1423,7 +1423,7 @@ async function runBotWithTools(
   key: string,
   sys: string,
   msgs: any[],
-  admin: any,
+  sb: any,
   af: Filters,
   ff: Record<string, string>,
   model: string,
@@ -1450,7 +1450,7 @@ async function runBotWithTools(
       msg.tool_calls.map(async (tc: any) => {
         const a = JSON.parse(tc.function.arguments || "{}");
         console.log(`[B] ${tc.function.name}(${JSON.stringify(a)})`);
-        const r = await executeToolViaRpc(admin, tc.function.name, a, af, ff, temporalOverrides);
+        const r = await executeToolViaRpc(sb, tc.function.name, a, af, ff, temporalOverrides);
         console.log(`[B] → ${r.substring(0, 150)}`);
         return { role: "tool", tool_call_id: tc.id, content: r };
       }),
@@ -1677,8 +1677,8 @@ serve(async (req) => {
 
     if (!key) return new Response(JSON.stringify({ error: "OPENAI_API_KEY no configurada" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-    const { data: dimsData, error: dimsError } = await admin.rpc("accessible_leads_dimensions");
-    const { data: kpisData, error: kpisError } = await admin.rpc("accessible_leads_kpis", {
+    const { data: dimsData, error: dimsError } = await sb.rpc("accessible_leads_dimensions");
+    const { data: kpisData, error: kpisError } = await sb.rpc("accessible_leads_kpis", {
       _fecha_desde: null,
       _fecha_hasta: null,
       _date_field: "fch_creacion",
@@ -1761,7 +1761,7 @@ serve(async (req) => {
 
     if (isDash) {
       try {
-        const msg = await runDash(key, sys, messages, admin, af, forcedFilters, temporalOverrides);
+        const msg = await runDash(key, sys, messages, sb, af, forcedFilters, temporalOverrides);
         const c = msg?.content || "{}";
         try {
           const parsed = JSON.parse(c);
@@ -1782,7 +1782,7 @@ serve(async (req) => {
     if (isBotChat) {
       try {
         if (botUsesTools) {
-          const res = await runBotWithTools(key, sys, messages, admin, af, forcedFilters, botModel, temporalOverrides);
+          const res = await runBotWithTools(key, sys, messages, sb, af, forcedFilters, botModel, temporalOverrides);
           if (typeof res === "string") {
             const sse = buildSsePayload(res);
             return new Response(sse, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
