@@ -1040,7 +1040,7 @@ export function ComparativaDashboardSection({
         </ChartFrame>
       </Card>
 
-      {leads.length > 0 && (
+      {leads.length > 0 ? (
         <Card className="p-4 md:p-5 space-y-4">
           <div>
             <h3 className="text-base font-display font-semibold text-foreground">Explorador comparativo por dimensión</h3>
@@ -1135,6 +1135,15 @@ export function ComparativaDashboardSection({
               onEvents={evExplorerDay}
             />
           </ChartFrame>
+        </Card>
+      ) : (
+        <Card className="p-6 md:p-8 text-center space-y-2">
+          <h3 className="text-base font-display font-semibold text-foreground">Explorador comparativo por dimensión</h3>
+          <p className="text-xs text-muted-foreground max-w-2xl mx-auto">
+            Para cortes finos por valor (ciudad, campaña, agente, etc.) se necesita el universo de leads en cliente.
+            Carga el dataset con el botón <strong>“Cargar análisis comparativo detallado”</strong> al inicio de esta
+            sección y volverá automáticamente con el explorador.
+          </p>
         </Card>
       )}
     </section>
