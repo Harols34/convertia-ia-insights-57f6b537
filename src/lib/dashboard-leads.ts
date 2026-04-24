@@ -39,8 +39,8 @@ export type LeadsDashboardFilters = {
 };
 
 /**
- * Rango por defecto del panel: **mes en curso** (día 1 del mes calendario local → hoy, inclusive).
- * Alinea la descarga PostgREST de comparativa, el RPC de análisis fijo y el eje con `fchRango` explícito.
+ * Rango del **mes en curso** (día 1 → hoy) para el atajo "Mes actual" o cuando el usuario
+ * elige un mes explícitamente, no para el reset inicial.
  */
 export function getDefaultMonthToDateRange(now: Date = new Date()): { desde: string; hasta: string } {
   return {
@@ -49,10 +49,26 @@ export function getDefaultMonthToDateRange(now: Date = new Date()): { desde: str
   };
 }
 
+/**
+ * Días de evolución diaria mostrados en análisis fijo cuando el panel no aplica
+ * corte de fechas ni dimensiones: KPIs y rankings usan el histórico completo; la serie
+ * temporal se acorta solo a efectos visuales.
+ */
+export const DASHBOARD_DEFAULT_CHART_DAYS = 15;
+
+/**
+ * Barras semanales ISO a mostrar en la misma vista resumida (~15 días calendario).
+ */
+export const DASHBOARD_DEFAULT_WEEK_BARS = 3;
+
+/**
+ * Filtro inicial: sin rango de fechas (el servidor de KPIs/embudo/rankings agrega
+ * **todo** el histórico visible bajo RLS). Las fechas/ dimensiones se añaden solo al
+ * filtrar con el panel.
+ */
 export const defaultLeadsDashboardFilters = (): LeadsDashboardFilters => ({
   esVenta: "all",
   dimensions: {},
-  ...getDefaultMonthToDateRange(),
 });
 
 function rowScalar(row: LeadRow, key: keyof LeadRow): string {

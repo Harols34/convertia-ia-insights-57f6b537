@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
+  defaultLeadsDashboardFilters,
   fchCreacionToLocalYmd,
   getDefaultMonthToDateRange,
   normalizeLeadsDatasetForDashboard,
   type LeadRow,
 } from "./dashboard-leads";
+
+describe("defaultLeadsDashboardFilters", () => {
+  it("no aplica corte de fechas en el arranque (histórico completo vía agregados)", () => {
+    const f = defaultLeadsDashboardFilters();
+    expect(f.desde).toBeUndefined();
+    expect(f.hasta).toBeUndefined();
+    expect(f.esVenta).toBe("all");
+    expect(f.dimensions).toEqual({});
+  });
+});
 
 describe("getDefaultMonthToDateRange", () => {
   it("inicia en día 1 del mes y termina hoy (inclusive) en el mismo mes", () => {

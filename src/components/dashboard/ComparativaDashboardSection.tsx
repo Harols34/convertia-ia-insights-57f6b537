@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactECharts from "echarts-for-react";
-import { format, parseISO, endOfISOWeek, endOfDay, startOfDay, subDays, startOfMonth, endOfMonth } from "date-fns";
+import { format, parseISO, endOfISOWeek, endOfDay, startOfDay, subDays, startOfMonth } from "date-fns";
 import { es } from "date-fns/locale";
 import { Info } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -189,13 +190,12 @@ export type ComparativaDashboardSectionProps = {
   /** Timeseries del ejecutivo: opción «como análisis fijo» en la ventana alineada. */
   rpcData?: DashboardExecutiveData | null;
   kpiTotalLeadsFromRpc?: number;
+  /** Aún no se ha iniciado la descarga del universo de filas (explorador por dimensión requiere leads en cliente). */
+  comparativeDatasetIdle?: boolean;
+  isLeadsLoading?: boolean;
+  comparativeRowsLoadedProgress?: number;
+  onRequestComparativeDataset?: () => void;
 };
-
-const ANCHOR_SELECT_ITEMS: { value: ComparativaWindowAnchor["type"]; label: string }[] = [
-  { value: "today", label: "Hasta hoy (si en los últimos N días no hay fch, el eje se ancla a la última fecha con datos en el corte)" },
-  { value: "maxLeadDate", label: "Hasta la última fch con datos en el corte (históricos / ejes en el pasado)" },
-  { value: "dashboardDateFilters", label: "Filtros de fecha del panel (recomendado si usas Desde / Hasta)" },
-];
 
 export function ComparativaDashboardSection({
   leads,
@@ -205,6 +205,10 @@ export function ComparativaDashboardSection({
   filterHasta,
   rpcData,
   kpiTotalLeadsFromRpc,
+  comparativeDatasetIdle = false,
+  isLeadsLoading = false,
+  comparativeRowsLoadedProgress = 0,
+  onRequestComparativeDataset,
 }: ComparativaDashboardSectionProps) {
   const { compareMode, setCompareMode, compareDays, setCompareDays, windowAnchor, setWindowAnchor } =
     useComparativaControls();
@@ -349,54 +353,19 @@ export function ComparativaDashboardSection({
   const windowShowsAllZeros = leads.length > 0 && dateBounds.max != null && sumActualInWindow === 0;
   const windowAxisVsCorte = windowShowsAllZeros && !hasNoValidFch && !windowOverlapsCorte;
 
-  const anchorShortLabel = useMemo(() => {
-    if (windowAnchor.type === "today") return "Hasta hoy";
-    if (windowAnchor.type === "maxLeadDate") return "Hasta la última fch con datos (en el corte descargado)";
-    return "Alineado a filtros de fecha del panel (Desde / Hasta)";
-  }, [windowAnchor.type]);
-
-  const resumenComparativa = useMemo(() => {
-    if (leads.length === 0) return null;
-    const eje =
-      comparisonAl.dateKeys.length === 0
-        ? "—"
-        : `${format(parseISO(comparisonAl.dateKeys[0]!), "d MMM yyyy", { locale: es })} — ${format(
-            parseISO(comparisonAl.dateKeys[comparisonAl.dateKeys.length - 1]!),
-            "d MMM yyyy",
-            { locale: es },
-          )}`;
-    const corteFch =
-      dateBounds.min && dateBounds.max
-        ? `${format(dateBounds.min, "d MMM yyyy", { locale: es })} — ${format(
-            dateBounds.max,
-            "d MMM yyyy",
-            { locale: es },
-          )}`
-        : dateBounds.max
-          ? format(dateBounds.max, "d MMM yyyy", { locale: es })
-          : "—";
-    const origen = alDataSource === "rpc" ? "Origen de la serie: agregado servidor (mismo criterio que análisis fijo)." : "Origen: filas en cliente (corte y ventana con la lógica de anclaje).";
-    return `Anclaje: ${anchorShortLabel}. Eje: ${eje}. Registros en el corte: ${leads.length.toLocaleString("es")}. fch mín.–máx. (filas actuales): ${corteFch}. ${origen}`;
-  }, [leads.length, comparisonAl.dateKeys, dateBounds.min, dateBounds.max, anchorShortLabel, alDataSource]);
-
-  /** Referencia: mes calendario y “últimos N días” hacia hoy (solo calendario, sin anclaje de la comparativa). */
-  const currentMonthContext = useMemo(() => {
+  /** Referencia: “últimos N días” hacia hoy (solo calendario, sin anclaje de la comparativa). */
+  const rollingCalendarHint = useMemo(() => {
     const endD = new Date();
     const sM = startOfMonth(endD);
-    const eM = endOfMonth(endD);
     const hoyE = endOfDay(endD);
     const naive = startOfDay(subDays(hoyE, compareDays - 1));
     const m0 = startOfDay(sM);
     const winStart = naive.getTime() < m0.getTime() ? m0 : naive;
-    const monthLabel = format(sM, "MMMM yyyy", { locale: es });
-    return {
-      monthLine: `Mes en curso (${monthLabel}): del ${format(sM, "d MMM", { locale: es })} al ${format(eM, "d MMM yyyy", { locale: es })}.`,
-      rollingInMonth: `Sobre el calendario de este mes, los últimos ${compareDays} días hacia hoy (referencia, sin mirar anclaje) son: ${format(
-        winStart,
-        "d MMM",
-        { locale: es },
-      )} — ${format(hoyE, "d MMM yyyy", { locale: es })} (si aún no hay N días en el mes, se cuenta desde el día 1).`,
-    };
+    return `Sobre el calendario de este mes, los últimos ${compareDays} días hacia hoy (referencia, sin mirar anclaje) son: ${format(
+      winStart,
+      "d MMM",
+      { locale: es },
+    )} — ${format(hoyE, "d MMM yyyy", { locale: es })} (si aún no hay N días en el mes, se cuenta desde el día 1).`;
   }, [compareDays]);
 
   const comparisonTrWindow = useMemo(() => {
@@ -719,44 +688,9 @@ export function ComparativaDashboardSection({
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1 max-w-md">
-            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Anclaje de la ventana</p>
-            <Select
-              value={windowAnchor.type}
-              onValueChange={(v) => setWindowAnchor({ type: v as ComparativaWindowAnchor["type"] })}
-            >
-              <SelectTrigger className="h-9 min-w-[280px] max-w-[min(100vw-2rem,420px)] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ANCHOR_SELECT_ITEMS.map((it) => (
-                  <SelectItem key={it.value} value={it.value} className="text-xs">
-                    {it.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {windowAnchor.type === "dashboardDateFilters" && !filterHasta?.trim() && !filterDesde?.trim() && (
-              <p className="text-[10px] text-amber-700 dark:text-amber-500 mt-1">
-                Define al menos <strong>desde</strong> o <strong>hasta</strong> en el panel de filtros, o el fin de
-                ventana seguirá siendo hoy.
-              </p>
-            )}
-          </div>
         </div>
-        {resumenComparativa && (
-          <p className="text-[11px] text-foreground font-medium mt-3 border-t border-border/50 pt-3 leading-snug">
-            {resumenComparativa}
-          </p>
-        )}
         <p className="text-[11px] text-muted-foreground mt-2 space-y-1">
-          <span className="block">Referencia calendario: {currentMonthContext.monthLine}</span>
-          <span className="block">{currentMonthContext.rollingInMonth}</span>
-        </p>
-        <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
-          En «Análisis fijo» el diario sigue <em>desde / hasta</em> del panel. Aquí la ventana mide {compareDays} días con
-          el anclaje elegido. Cortes finos por dimensión requieren filas en cliente: la opción “como análisis fijo”
-          aplica a leads / ventas / efectividad con la agregación del servidor.
+          <span className="block">{rollingCalendarHint}</span>
         </p>
         {windowAnchor.type === "today" && todayFallbackToMaxFch && (
           <p className="text-[10px] text-amber-800 dark:text-amber-400 mt-2 leading-snug">
@@ -865,12 +799,6 @@ export function ComparativaDashboardSection({
               </div>
             </div>
           </div>
-          {alDataSource === "rpc" && (alBase === "leads" || alBase === "ventas" || alBase === "efectividad") && (
-            <p className="text-[10px] text-muted-foreground leading-snug">
-              Serie alineada al timeseries del ejecutivo (últimos {compareDays} puntos del agregado diario). Explorador y
-              cortes por dimensión siguen usando filas en cliente.
-            </p>
-          )}
           <MetricSelectors
             leads={leads}
             baseKind={alBase}
@@ -1137,13 +1065,27 @@ export function ComparativaDashboardSection({
           </ChartFrame>
         </Card>
       ) : (
-        <Card className="p-6 md:p-8 text-center space-y-2">
+        <Card className="p-6 md:p-8 text-center space-y-4">
           <h3 className="text-base font-display font-semibold text-foreground">Explorador comparativo por dimensión</h3>
           <p className="text-xs text-muted-foreground max-w-2xl mx-auto">
-            Para cortes finos por valor (ciudad, campaña, agente, etc.) se necesita el universo de leads en cliente.
-            Carga el dataset con el botón <strong>“Cargar análisis comparativo detallado”</strong> al inicio de esta
-            sección y volverá automáticamente con el explorador.
+            Para cortes finos por valor (ciudad, campaña, agente, etc.) hace falta el universo de leads en el navegador.
+            {comparativeDatasetIdle && onRequestComparativeDataset
+              ? " Puedes iniciar la descarga aquí o con «Cargar análisis comparativo» / «Cargar dataset para cortes finos» arriba en esta sección."
+              : " Usa el botón de carga bajo demanda al inicio de Análisis comparativo; al terminar, el explorador se activará solo."}
           </p>
+          {isLeadsLoading && (
+            <p className="text-[11px] text-muted-foreground">
+              Descargando filas:{" "}
+              <strong className="tabular-nums">
+                {comparativeRowsLoadedProgress.toLocaleString("es")} recibidas…
+              </strong>
+            </p>
+          )}
+          {comparativeDatasetIdle && onRequestComparativeDataset && !isLeadsLoading && (
+            <Button type="button" size="sm" onClick={onRequestComparativeDataset}>
+              Cargar dataset para el explorador
+            </Button>
+          )}
         </Card>
       )}
     </section>

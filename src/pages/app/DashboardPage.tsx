@@ -20,6 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  DASHBOARD_DEFAULT_CHART_DAYS,
   LEADS_DASHBOARD_FILTER_COLUMNS,
   applyLeadsDashboardFilters,
   defaultLeadsDashboardFilters,
@@ -249,9 +250,18 @@ export default function DashboardPage() {
     setFilters((prev) => ({ ...prev, ...getDefaultMonthToDateRange() }));
   }, []);
 
+  /** Sin fechas, sin dimensiones, sin "es venta": agregados completos; evolución diaria/semanal acotada a ~15d en análisis fijo. */
+  const isDefaultUnfilteredView = useMemo(() => {
+    if (filters.desde?.trim() || filters.hasta?.trim()) return false;
+    if (filters.esVenta !== "all") return false;
+    for (const vals of Object.values(filters.dimensions)) {
+      if (vals?.length) return false;
+    }
+    return true;
+  }, [filters]);
+
   const universeCount = allLeads.length;
-  const hasActiveSlice =
-    activeFilterCount > 0 || Boolean(filters.desde) || Boolean(filters.hasta) || filters.esVenta !== "all";
+  const hasActiveSlice = activeFilterCount > 0;
   const viewCount = executiveQuery.data?.kpis.totalLeads ?? filteredLeads.length;
   const leadsErrorMessage = leadsError
     ? leadsErr instanceof Error
@@ -399,9 +409,11 @@ export default function DashboardPage() {
               </div>
             </div>
             <p className="text-[10px] text-muted-foreground max-w-3xl leading-snug">
-              Por defecto el tablero usa el <strong>mes en curso</strong> (día 1 → hoy): mismo rango en análisis fijo,
-              descarga de comparativa y eje. Si quita ambas fechas, la comparativa vuelve a descargar todo el histórico
-              visible (puede abarcar muchos meses).
+              Sin <strong>desde / hasta</strong>, los KPIs, embudo y rankings usan <strong>todo el histórico</strong>{" "}
+              visible (RLS). La evolución diaria y semanal en análisis fijo muestran un resumen de los{" "}
+              <strong>últimos {DASHBOARD_DEFAULT_CHART_DAYS} días</strong> (o semanas recientes) hasta que fije fechas
+              o otros filtros; entonces se muestra el periodo o el corte elegido. Use <strong>Mes actual</strong> para
+              acotar al mes en curso.
             </p>
           </div>
           <div>
@@ -438,6 +450,7 @@ export default function DashboardPage() {
           onRequestComparativeDataset={requestComparativeDataset}
           comparativeRowsLoadedProgress={comparativeRowsProgress}
           comparativeDatasetErrorMessage={leadsErrorMessage}
+          isDefaultUnfilteredView={isDefaultUnfilteredView}
           filterDesde={filters.desde}
           filterHasta={filters.hasta}
           onCrossFilter={(payload) => {

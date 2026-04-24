@@ -20,7 +20,11 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { LeadRow } from "@/lib/dashboard-leads";
-import { filterTokenFromChartLabel } from "@/lib/dashboard-leads";
+import {
+  DASHBOARD_DEFAULT_CHART_DAYS,
+  DASHBOARD_DEFAULT_WEEK_BARS,
+  filterTokenFromChartLabel,
+} from "@/lib/dashboard-leads";
 import {
   buildDailySeries,
   buildWeeklySeries,
@@ -80,6 +84,11 @@ export type ExecutiveDashboardBodyProps = {
   /** Fechas del panel: usadas al anclar la comparativa a «filtros del panel». */
   filterDesde?: string;
   filterHasta?: string;
+  /**
+   * Vista inicial sin rango de fechas ni dimensiones: KPIs/rankings con histórico completo;
+   * evolución diaria/semanal recortada visualmente a ~15 días.
+   */
+  isDefaultUnfilteredView?: boolean;
   /** totalLeads del bloque fijo (RPC) para avisar si el cliente y la ventana de la comparativa se contradicen. */
   kpiTotalLeadsFromRpc?: number;
 };
@@ -158,6 +167,7 @@ function ExecutiveDashboardBodyInner({
   onFilterByWeekRange,
   filterDesde,
   filterHasta,
+  isDefaultUnfilteredView = false,
   kpiTotalLeadsFromRpc,
 }: ExecutiveDashboardBodyProps) {
   const comparativeSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -217,6 +227,24 @@ function ExecutiveDashboardBodyInner({
     return buildDailySeries(leads, 120);
   }, [leads, rpcData]);
 
+  /** Serie mostrada en evolución diaria/semanal: en vista sin filtros, solo los últimos N días (KPIs siguen globales). */
+  const dailyForCharts = useMemo(() => {
+    if (!isDefaultUnfilteredView) return daily;
+    if (daily.length <= DASHBOARD_DEFAULT_CHART_DAYS) return daily;
+    return daily.slice(-DASHBOARD_DEFAULT_CHART_DAYS);
+  }, [daily, isDefaultUnfilteredView]);
+
+  const weekly = useMemo(() => {
+    if (rpcData?.weekly?.length) return rpcData.weekly;
+    return buildWeeklySeries(leads, 20);
+  }, [leads, rpcData]);
+
+  const weeklyForCharts = useMemo(() => {
+    if (!isDefaultUnfilteredView) return weekly;
+    if (weekly.length <= DASHBOARD_DEFAULT_WEEK_BARS) return weekly;
+    return weekly.slice(-DASHBOARD_DEFAULT_WEEK_BARS);
+  }, [weekly, isDefaultUnfilteredView]);
+
   const analisisFijoFechasLinea = useMemo(() => {
     const fDesde = filterDesde?.trim();
     const fHasta = filterHasta?.trim();
@@ -225,23 +253,21 @@ function ExecutiveDashboardBodyInner({
     }
     if (fDesde) return `Filtro del panel: desde ${fDesde} (hasta: sin fijar en el panel).`;
     if (fHasta) return `Filtro del panel: hasta ${fHasta} (desde: sin fijar en el panel).`;
-    return "Sin límite explícito desde/hasta en el panel: el backend usa su ventana por defecto; la serie se acota a los días con datos (hasta 120 puntos en el cliente).";
-  }, [filterDesde, filterHasta]);
+    if (isDefaultUnfilteredView) {
+      return `Sin rango de fechas en el panel: KPIs, embudo y rankings usan todo el histórico; la evolución diaria y semanal muestran solo los últimos ${DASHBOARD_DEFAULT_CHART_DAYS} días (o ~${DASHBOARD_DEFAULT_WEEK_BARS} semanas ISO) para lectura rápida.`;
+    }
+    return "Serie temporal alineada al corte actual (incluye filtros de dimensión u “es venta”).";
+  }, [filterDesde, filterHasta, isDefaultUnfilteredView]);
 
   const evolucionRangoMuestras = useMemo(() => {
-    if (daily.length === 0) return null;
-    const d0 = daily[0]!.date;
-    const d1 = daily[daily.length - 1]!.date;
+    if (dailyForCharts.length === 0) return null;
+    const d0 = dailyForCharts[0]!.date;
+    const d1 = dailyForCharts[dailyForCharts.length - 1]!.date;
     return {
       d0: format(parseISO(d0), "d MMM yyyy", { locale: es }),
       d1: format(parseISO(d1), "d MMM yyyy", { locale: es }),
     };
-  }, [daily]);
-
-  const weekly = useMemo(() => {
-    if (rpcData?.weekly?.length) return rpcData.weekly;
-    return buildWeeklySeries(leads, 20);
-  }, [leads, rpcData]);
+  }, [dailyForCharts]);
 
   const cmp7 = useMemo(() => {
     if (rpcData) return rpcData.cmp7;
@@ -315,15 +341,26 @@ function ExecutiveDashboardBodyInner({
   }, [leads, rpcData]);
 
   const tasaVenta = kpis.convPct;
-  const sparkTotal = useMemo(() => sparklineFromDaily(daily, "leads", 14), [daily]);
-  const sparkVentas = useMemo(() => sparklineFromDaily(daily, "ventas", 14), [daily]);
+  const sparkTotal = useMemo(
+    () => sparklineFromDaily(dailyForCharts, "leads", DASHBOARD_DEFAULT_CHART_DAYS),
+    [dailyForCharts],
+  );
+  const sparkVentas = useMemo(
+    () => sparklineFromDaily(dailyForCharts, "ventas", DASHBOARD_DEFAULT_CHART_DAYS),
+    [dailyForCharts],
+  );
 
   const dailyChartOpts = useMemo(() => {
     const base = timeVizDaily === "combo" ? {} : { primaryMetric: dailyMetric };
     if (dailyOverlay === "off" || timeVizDaily === "combo") {
       return { ...base };
     }
-    const data = comparisonLineAlignedToDailySpec(leads, daily, comparisonMetricToSpec(dailyMetric), dailyOverlay);
+    const data = comparisonLineAlignedToDailySpec(
+      leads,
+      dailyForCharts,
+      comparisonMetricToSpec(dailyMetric),
+      dailyOverlay,
+    );
     return {
       ...base,
       overlayLine: {
@@ -332,11 +369,11 @@ function ExecutiveDashboardBodyInner({
         isPercent: dailyMetric === "efectividad",
       },
     };
-  }, [dailyOverlay, dailyMetric, daily, leads, timeVizDaily]);
+  }, [dailyOverlay, dailyMetric, dailyForCharts, leads, timeVizDaily]);
 
   const optDaily = useMemo(
-    () => timeSeriesOption(daily, timeVizDaily, "Tendencia diaria", dailyChartOpts),
-    [daily, timeVizDaily, dailyChartOpts],
+    () => timeSeriesOption(dailyForCharts, timeVizDaily, "Tendencia diaria", dailyChartOpts),
+    [dailyForCharts, timeVizDaily, dailyChartOpts],
   );
 
   const weekCompareOpts = useMemo(() => {
@@ -344,14 +381,14 @@ function ExecutiveDashboardBodyInner({
     return {
       compareLine: {
         name: `Semana ISO anterior (${weekCompareField})`,
-        data: weeklyPreviousWeekLine(weekly, weekCompareField),
+        data: weeklyPreviousWeekLine(weeklyForCharts, weekCompareField),
       },
     };
-  }, [weekCompare, weekly, weekCompareField]);
+  }, [weekCompare, weeklyForCharts, weekCompareField]);
 
   const optWeekly = useMemo(
-    () => weeklyBarsOption(weekly, timeVizWeekly, weekCompareOpts),
-    [weekly, timeVizWeekly, weekCompareOpts],
+    () => weeklyBarsOption(weeklyForCharts, timeVizWeekly, weekCompareOpts),
+    [weeklyForCharts, timeVizWeekly, weekCompareOpts],
   );
 
   const optFunnel = useMemo(() => funnelOption(funnel.map((f) => ({ name: f.name, value: f.value }))), [funnel]);
@@ -386,7 +423,7 @@ function ExecutiveDashboardBodyInner({
 
   const evDailyDay = useMemo(() => {
     if (!onFilterByDate) return undefined;
-    const keys = daily.map((d) => d.date);
+    const keys = dailyForCharts.map((d) => d.date);
     return {
       click: (params: { dataIndex?: number }) => {
         const i = params.dataIndex;
@@ -394,26 +431,27 @@ function ExecutiveDashboardBodyInner({
         onFilterByDate(keys[i]!);
       },
     };
-  }, [onFilterByDate, daily]);
+  }, [onFilterByDate, dailyForCharts]);
 
   const evWeekly = useMemo(() => {
     if (!onFilterByWeekRange) return undefined;
     return {
       click: (params: { dataIndex?: number }) => {
         const i = params.dataIndex;
-        if (typeof i !== "number" || i < 0 || i >= weekly.length) return;
-        const start = parseISO(weekly[i]!.weekStart);
+        if (typeof i !== "number" || i < 0 || i >= weeklyForCharts.length) return;
+        const start = parseISO(weeklyForCharts[i]!.weekStart);
         const end = endOfISOWeek(start);
         onFilterByWeekRange(format(start, "yyyy-MM-dd"), format(end, "yyyy-MM-dd"));
       },
     };
-  }, [onFilterByWeekRange, weekly]);
+  }, [onFilterByWeekRange, weeklyForCharts]);
 
   const hasCross = Boolean(onCrossFilter || onFilterByDate || onFilterByWeekRange);
 
   const chartKey = useCallback(
-    (base: string) => `${base}-${gaugeMax}-${dailyOverlay}-${dailyMetric}-${weekCompare}`,
-    [gaugeMax, dailyOverlay, dailyMetric, weekCompare],
+    (base: string) =>
+      `${base}-${isDefaultUnfilteredView ? "def" : "cut"}-${gaugeMax}-${dailyOverlay}-${dailyMetric}-${weekCompare}`,
+    [isDefaultUnfilteredView, gaugeMax, dailyOverlay, dailyMetric, weekCompare],
   );
 
   return (
@@ -554,6 +592,10 @@ function ExecutiveDashboardBodyInner({
             filterHasta={filterHasta}
             rpcData={rpcData}
             kpiTotalLeadsFromRpc={kpiTotalLeadsFromRpc}
+            comparativeDatasetIdle={comparativeDatasetIdle}
+            isLeadsLoading={isLeadsLoading}
+            comparativeRowsLoadedProgress={comparativeRowsLoadedProgress}
+            onRequestComparativeDataset={onRequestComparativeDataset}
           />
           {leads.length === 0 && comparativeDatasetIdle && onRequestComparativeDataset && (
             <GlassCard>
@@ -639,20 +681,7 @@ function ExecutiveDashboardBodyInner({
           <h2 className="text-lg font-display font-bold text-foreground tracking-tight">
             Exploración y distribución
           </h2>
-          <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
-            Gráficos por categorías fijas (ciudad, campaña, embudo, etc.): cambia tipo de vista y usa el clic para
-            filtrar. La comparación temporal detallada está en la sección <strong>Comparativa</strong>.
-          </p>
           <p className="text-[11px] text-muted-foreground mt-2 max-w-3xl space-y-1.5">
-            <span className="block">
-              {analisisFijoFechasLinea}{" "}
-              {evolucionRangoMuestras && (
-                <>
-                  Puntos de la <strong>evolución diaria</strong> en el gráfico: {evolucionRangoMuestras.d0} —{" "}
-                  {evolucionRangoMuestras.d1}.
-                </>
-              )}
-            </span>
             <span className="block text-[10px] text-muted-foreground/90">
               Eso no tiene por qué coincidir con el eje de <strong>Comparativa</strong> (mismo dashboard): allí se elige
               una ventana fija de N días (7–28) y un anclaje; aquí se sigue el filtro y la serie agregada del RPC.
@@ -906,13 +935,19 @@ function ExecutiveDashboardBodyInner({
           <p className="text-[10px] text-muted-foreground">Combinado barras + línea</p>
         </div>
         <div className="p-4">
-          <ReactECharts
-            option={optAgent}
-            style={{ height: 340, width: "100%" }}
-            notMerge
-            lazyUpdate
-            onEvents={evAgent}
-          />
+          {agents.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-12 px-2">
+              No hay agentes con 1ª gestión en el filtro actual (o sin datos agregados). Ajusta fechas o dimensiones.
+            </p>
+          ) : (
+            <ReactECharts
+              option={optAgent}
+              style={{ height: 340, width: "100%" }}
+              notMerge
+              lazyUpdate
+              onEvents={evAgent}
+            />
+          )}
         </div>
       </GlassCard>
 

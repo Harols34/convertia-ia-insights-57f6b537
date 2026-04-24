@@ -90,14 +90,21 @@ export function leadsFiltersQueryKey(filters: LeadsDashboardFilters): string {
   return `v1|es:${esVenta}|d:${desde ?? ""}|h:${hasta ?? ""}|${dimPart}`;
 }
 
+/**
+ * Acepta el JSON de `accessible_leads_group_metrics` (dimension, leads, ventas)
+ * y el de `accessible_leads_agent_metrics` (name, value, ventas).
+ */
 function normalizeGroupRows(rows: unknown): { name: string; value: number; ventas: number }[] {
   if (!Array.isArray(rows)) return [];
   return rows
     .map((row) => {
       const item = row as Record<string, unknown>;
+      const nameRaw = item.dimension ?? item.name;
+      const hasLeads = item.leads !== undefined && item.leads !== null;
+      const value = toNumber(hasLeads ? item.leads : item.value);
       return {
-        name: String(item.dimension ?? "(vacío)"),
-        value: toNumber(item.leads),
+        name: nameRaw != null && String(nameRaw) !== "" ? String(nameRaw) : "(vacío)",
+        value,
         ventas: toNumber(item.ventas),
       };
     })
