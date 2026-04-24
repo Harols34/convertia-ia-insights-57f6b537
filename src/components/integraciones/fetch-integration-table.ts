@@ -19,10 +19,10 @@ export async function fetchAllIntegrationRows(
   stripColumnNames?: string[],
   selectColumns?: string[],
   orderBy?: { column: string; ascending?: boolean },
-  pageSize: number = DEFAULT_PAGE,
+  pageSize: number = 5000,
   fchCreacionRango?: { desde?: string; hasta?: string },
 ): Promise<Record<string, unknown>[]> {
-  const limit = pageSize > 0 ? pageSize : DEFAULT_PAGE;
+  const limit = Math.min(pageSize > 0 ? pageSize : 5000, 5000); // Enforce safety limit (Supabase default max_rows is 5000)
   const selectClause = selectColumns?.length ? selectColumns.join(",") : "*";
 
   // Helper to apply filters consistently
@@ -69,8 +69,15 @@ export async function fetchAllIntegrationRows(
     
     let q = client.from(tableName as keyof Database["public"]["Tables"]).select(selectClause);
     q = applyFilters(q);
+    
+    // Stability: always add a unique tie-breaker if possible to avoid missing rows in offset pagination
     if (orderBy?.column) {
       q = q.order(orderBy.column, { ascending: orderBy.ascending ?? true });
+      if (orderBy.column !== "id_lead" && tableName === "leads") {
+        q = q.order("id_lead", { ascending: true });
+      }
+    } else if (tableName === "leads") {
+      q = q.order("id_lead", { ascending: true });
     }
 
     const fetchChunk = async (retries = 3): Promise<void> => {
