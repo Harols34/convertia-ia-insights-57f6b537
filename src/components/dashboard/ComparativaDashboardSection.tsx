@@ -438,10 +438,19 @@ export function ComparativaDashboardSection({
     [comparisonTrWindow, compareDays, titleTr, yTr, trendViz],
   );
 
-  const trend = useMemo(
-    () => buildFullDailyTrendForSpec(leads, 90, specTr, compareWindowOptions),
-    [leads, specTr, compareWindowOptions],
-  );
+  const trend = useMemo(() => {
+    if (leads.length === 0 && rpcData?.daily?.length && specTr.kind !== "match_column") {
+      const key: "leads" | "ventas" =
+        specTr.kind === "ventas" ? "ventas" : "leads";
+      return rpcData.daily.map((d) => ({
+        date: d.date,
+        value: specTr.kind === "efectividad"
+          ? (d.leads > 0 ? (d.ventas / d.leads) * 100 : 0)
+          : d[key],
+      }));
+    }
+    return buildFullDailyTrendForSpec(leads, 90, specTr, compareWindowOptions);
+  }, [leads, specTr, compareWindowOptions, rpcData]);
   const trendOverlayData = useMemo(() => {
     if (trendOverlay === "off" || trend.length === 0) return undefined;
     const data = comparisonLineAlignedToDailySpec(leads, trend, specTr, trendOverlay);
@@ -465,10 +474,20 @@ export function ComparativaDashboardSection({
     [trend, titleTr, trendViz, yTr, trendOverlayData],
   );
 
-  const weekly = useMemo(
-    () => buildWeeklySeriesForSpec(leadsInCompareWindow, 20, specWk),
-    [leadsInCompareWindow, specWk],
-  );
+  const weekly = useMemo(() => {
+    if (leads.length === 0 && rpcData?.weekly?.length && specWk.kind !== "match_column") {
+      const key: "leads" | "ventas" =
+        specWk.kind === "ventas" ? "ventas" : "leads";
+      return rpcData.weekly.map((w) => ({
+        weekStart: w.weekStart,
+        label: w.label,
+        value: specWk.kind === "efectividad"
+          ? (w.leads > 0 ? (w.ventas / w.leads) * 100 : 0)
+          : w[key],
+      }));
+    }
+    return buildWeeklySeriesForSpec(leadsInCompareWindow, 20, specWk);
+  }, [leads.length, leadsInCompareWindow, specWk, rpcData]);
   const weekPrev = useMemo(
     () => (weekCompare ? weeklyPreviousPeriodValues(weekly) : []),
     [weekCompare, weekly],
