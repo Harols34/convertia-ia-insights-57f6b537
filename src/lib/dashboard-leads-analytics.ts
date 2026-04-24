@@ -36,7 +36,7 @@ export type DailyPoint = {
 
 /** Pasa `fch_creacion` a inicio del día calendario local (alineado con `fchCreacionToLocalYmd` / dataset normalizado). */
 export function parseLeadDate(row: LeadRow): Date | null {
-  const raw = row.fch_creacion;
+  const raw: unknown = row.fch_creacion;
   if (raw == null) return null;
   try {
     if (raw instanceof Date) {
