@@ -740,7 +740,7 @@ export function ComparativaDashboardSection({
         )}
       </Card>
 
-      {hasNoValidFch && (
+      {hasNoValidFch && leads.length > 0 && (
         <Alert variant="destructive">
           <Info className="h-4 w-4" />
           <AlertTitle>Sin fechas de creación válidas</AlertTitle>
