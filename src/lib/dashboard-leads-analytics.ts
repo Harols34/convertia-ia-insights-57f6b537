@@ -77,6 +77,7 @@ export type CompareWindowOptions = {
   anchor?: ComparativaWindowAnchor;
   filterDesde?: string;
   filterHasta?: string;
+  overrideEndDate?: Date;
 };
 
 function hasLeadInCalendarWindow(leads: LeadRow[], start: Date, end: Date): boolean {
@@ -99,7 +100,11 @@ function resolveComparisonWindowEnd(
   anchor: ComparativaWindowAnchor = { type: "maxLeadDate" },
   filterHasta: string | undefined,
   windowDays: number,
+  overrideEndDate?: Date,
 ): Date {
+  if (overrideEndDate) {
+    return endOfDay(overrideEndDate);
+  }
   if (anchor.type === "today") {
     const endT = endOfDay(new Date());
     const startT = startOfDay(subDays(endT, windowDays - 1));
@@ -120,7 +125,14 @@ function resolveComparisonWindowEnd(
       const d = parseISO(filterHasta.slice(0, 10));
       return Number.isNaN(d.getTime()) ? endOfDay(new Date()) : endOfDay(d);
     }
-    return endOfDay(new Date());
+    const endT = endOfDay(new Date());
+    const startT = startOfDay(subDays(endT, windowDays - 1));
+    if (hasLeadInCalendarWindow(leads, startT, endT)) {
+      return endT;
+    }
+    const { max } = getLeadsCreationDateBounds(leads);
+    if (max) return endOfDay(max);
+    return endT;
   }
   return endOfDay(new Date());
 }
@@ -151,7 +163,7 @@ export function getComparisonWindowBounds(
   options?: CompareWindowOptions,
 ): { start: Date; end: Date } {
   const anchor = options?.anchor ?? { type: "today" };
-  const end = resolveComparisonWindowEnd(leads, anchor, options?.filterHasta, n);
+  const end = resolveComparisonWindowEnd(leads, anchor, options?.filterHasta, n, options?.overrideEndDate);
   const start = resolveComparisonWindowStart(end, n, anchor, options?.filterDesde);
   return { start, end };
 }
@@ -506,7 +518,7 @@ export function buildComparisonSeries(
   const map = buildDailyStatsMap(leads);
   const meta = COMPARISON_MODE_META[mode];
   const anchor = options?.anchor ?? { type: "today" };
-  const end = resolveComparisonWindowEnd(leads, anchor, options?.filterHasta, n);
+  const end = resolveComparisonWindowEnd(leads, anchor, options?.filterHasta, n, options?.overrideEndDate);
   const curStart = resolveComparisonWindowStart(end, n, anchor, options?.filterDesde);
   const daysCur = eachDayOfInterval({ start: curStart, end });
 
@@ -569,7 +581,7 @@ export function buildComparisonSeriesSpec(
   const aggMap = buildDayAggMap(leads, spec);
   const meta = COMPARISON_MODE_META[mode];
   const anchor = options?.anchor ?? { type: "today" };
-  const end = resolveComparisonWindowEnd(leads, anchor, options?.filterHasta, n);
+  const end = resolveComparisonWindowEnd(leads, anchor, options?.filterHasta, n, options?.overrideEndDate);
   const curStart = resolveComparisonWindowStart(end, n, anchor, options?.filterDesde);
   const daysCur = eachDayOfInterval({ start: curStart, end });
 
@@ -734,7 +746,7 @@ export function buildFullDailyTrendForSpec(
 ): { date: string; value: number }[] {
   const m = buildDayAggMap(leads, spec);
   const anchor = options?.anchor ?? { type: "today" };
-  const endD = resolveComparisonWindowEnd(leads, anchor, options?.filterHasta, maxDays);
+  const endD = resolveComparisonWindowEnd(leads, anchor, options?.filterHasta, maxDays, options?.overrideEndDate);
   const endKey = format(endD, "yyyy-MM-dd");
   const sorted = [...m.keys()]
     .filter((k) => k <= endKey)

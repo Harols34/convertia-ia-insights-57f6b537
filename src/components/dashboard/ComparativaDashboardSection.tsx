@@ -323,7 +323,14 @@ export function ComparativaDashboardSection({
     const useRpcLine =
       alDataSource === "rpc" && Boolean(rpcData?.daily?.length) && metric != null && specAl.kind !== "match_column";
     if (useRpcLine && rpcData?.daily) {
-      return buildComparisonFromRpcDaily(rpcData.daily, compareDays, metric, compareMode);
+      let daily = rpcData.daily;
+      const hasPanelDates = Boolean((filterDesde?.trim() ?? "") || (filterHasta?.trim() ?? ""));
+      if (!hasPanelDates) {
+        let end = daily.length - 1;
+        while (end >= 0 && daily[end].leads === 0 && daily[end].ventas === 0) end--;
+        if (end >= 0) daily = daily.slice(0, end + 1);
+      }
+      return buildComparisonFromRpcDaily(daily, compareDays, metric, compareMode);
     }
     return buildComparisonSeriesSpec(leads, compareDays, compareMode, specAl, compareWindowOptions);
   }, [alDataSource, rpcData, leads, compareDays, compareMode, specAl, compareWindowOptions]);
@@ -602,9 +609,19 @@ export function ComparativaDashboardSection({
     [leads, exFilterCol, exFilterTok],
   );
 
+  const exCompareWindowOptions = useMemo<CompareWindowOptions>(() => {
+    const keys = comparisonAl.dateKeys;
+    const globalEndDateStr = keys[keys.length - 1];
+    const globalEndDate = globalEndDateStr ? parseISO(globalEndDateStr) : undefined;
+    return {
+      ...compareWindowOptions,
+      overrideEndDate: globalEndDate && !Number.isNaN(globalEndDate.getTime()) ? globalEndDate : undefined,
+    };
+  }, [compareWindowOptions, comparisonAl.dateKeys]);
+
   const exComparison = useMemo(
-    () => buildComparisonSeriesSpec(exSlice, compareDays, compareMode, exInnerSpec, compareWindowOptions),
-    [exSlice, compareDays, compareMode, exInnerSpec, compareWindowOptions],
+    () => buildComparisonSeriesSpec(exSlice, compareDays, compareMode, exInnerSpec, exCompareWindowOptions),
+    [exSlice, compareDays, compareMode, exInnerSpec, exCompareWindowOptions],
   );
 
   const exTitle = useMemo(
@@ -1050,9 +1067,19 @@ export function ComparativaDashboardSection({
             setDimToken={setExDimTok}
             suffix="ex"
           />
-          <p className="text-[11px] text-muted-foreground">
-            Registros en este corte: {exSlice.length.toLocaleString("es")} · Clic en punto filtra por día
-          </p>
+          <div className="text-xs text-muted-foreground mt-2 pb-2 px-2 flex items-center justify-between">
+            <p>
+              Registros en este corte: <strong className="text-foreground">{exSlice.length.toLocaleString("es")}</strong>
+              {" · Clic en punto filtra por día"}
+            </p>
+          </div>
+          
+          {exSlice.length > 0 && sumComparisonSeriesActual(exComparison.points) === 0 && (
+            <div className="mx-2 mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-600/90 text-xs">
+              <strong>Nota:</strong> Los {exSlice.length} registros encontrados no coinciden con la ventana actual ({exComparison.dateKeys[0] ? format(parseISO(exComparison.dateKeys[0]), "d MMM", { locale: es }) : ""} al {exComparison.dateKeys[exComparison.dateKeys.length - 1] ? format(parseISO(exComparison.dateKeys[exComparison.dateKeys.length - 1]), "d MMM yyyy", { locale: es }) : ""}). Para verlos en la gráfica, asegúrate de que el filtro de fechas superior o los últimos {compareDays} días abarquen el momento en que ocurrieron (ej. meses anteriores).
+            </div>
+          )}
+
           <ChartFrame>
             <ReactECharts
               key={`ex-${windowAnchor.type}-${exFilterCol}-${exFilterTok}-${exViz}-${compareMode}-${compareDays}-${exTitle}`}

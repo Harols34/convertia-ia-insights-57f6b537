@@ -37,7 +37,7 @@ export function useDashboardLeadsDataset(options?: Options) {
     enabled = true,
     onProgress,
     selectColumns = COMPARATIVA_LEAD_SELECT_COLUMNS,
-    pageSize = 3000,
+    pageSize = 10000,
     fchRango,
     panelFiltersKey = "",
   } = options ?? {};

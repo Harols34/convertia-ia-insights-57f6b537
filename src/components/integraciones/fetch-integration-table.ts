@@ -22,45 +22,90 @@ export async function fetchAllIntegrationRows(
   pageSize: number = DEFAULT_PAGE,
   fchCreacionRango?: { desde?: string; hasta?: string },
 ): Promise<Record<string, unknown>[]> {
-  const out: Record<string, unknown>[] = [];
-  let from = 0;
-  const page = pageSize > 0 ? pageSize : DEFAULT_PAGE;
+  const limit = pageSize > 0 ? pageSize : DEFAULT_PAGE;
   const selectClause = selectColumns?.length ? selectColumns.join(",") : "*";
 
-  for (;;) {
-    let q = client.from(tableName as keyof Database["public"]["Tables"]).select(selectClause);
+  // Helper to apply filters consistently
+  const applyFilters = (q: any) => {
+    let filtered = q;
     if (tableName === "leads" && fchCreacionRango) {
       if (fchCreacionRango.desde?.trim()) {
-        q = q.gte("fch_creacion", fchCreacionRango.desde.trim());
+        filtered = filtered.gte("fch_creacion", fchCreacionRango.desde.trim());
       }
       if (fchCreacionRango.hasta?.trim()) {
         const raw = fchCreacionRango.hasta.trim();
         const ymd = raw.length >= 10 ? raw.slice(0, 10) : raw;
         const d0 = parseISO(ymd);
         if (Number.isNaN(d0.getTime())) {
-          q = q.lte("fch_creacion", `${raw}T23:59:59.999Z`);
+          filtered = filtered.lte("fch_creacion", `${raw}T23:59:59.999Z`);
         } else {
-          /** Incluye todo el día “hasta” (coherente con corte por fecha en panel / RPC) sin depender de 23:59:59.999Z. */
           const excl = addDays(startOfDay(d0), 1);
-          q = q.lt("fch_creacion", excl.toISOString());
+          filtered = filtered.lt("fch_creacion", excl.toISOString());
         }
       }
     }
+    return filtered;
+  };
+
+  // 1. Get total count
+  let countQuery = client.from(tableName as keyof Database["public"]["Tables"]).select('*', { count: 'exact', head: true });
+  countQuery = applyFilters(countQuery);
+  const { count, error: countError } = await countQuery;
+  
+  if (countError) throw countError;
+  if (!count || count === 0) return [];
+
+  // 2. Fetch in parallel chunks
+  const totalChunks = Math.ceil(count / limit);
+  const chunks: Record<string, unknown>[][] = new Array(totalChunks).fill([]);
+  
+  let loadedCount = 0;
+  const concurrency = 3; // Concurrent requests
+  const executing = new Set<Promise<void>>();
+
+  for (let i = 0; i < totalChunks; i++) {
+    const from = i * limit;
+    const to = from + limit - 1;
+    
+    let q = client.from(tableName as keyof Database["public"]["Tables"]).select(selectClause);
+    q = applyFilters(q);
     if (orderBy?.column) {
       q = q.order(orderBy.column, { ascending: orderBy.ascending ?? true });
     }
-    const { data, error } = await q.range(from, from + page - 1);
-    if (error) throw error;
-    let batch = ((data ?? []) as unknown) as Record<string, unknown>[];
-    if (stripColumnNames?.length) {
-      batch = stripRowKeys(batch, stripColumnNames);
+
+    const fetchChunk = async (retries = 3): Promise<void> => {
+      try {
+        const { data, error } = await q.range(from, to);
+        if (error) throw error;
+        let batch = ((data ?? []) as unknown) as Record<string, unknown>[];
+        if (stripColumnNames?.length) {
+          batch = stripRowKeys(batch, stripColumnNames);
+        }
+        chunks[i] = batch;
+        loadedCount += batch.length;
+        onProgress?.(loadedCount);
+      } catch (err) {
+        if (retries > 0) {
+          console.warn(`Chunk ${from}-${to} failed, retrying...`, err);
+          await new Promise(r => setTimeout(r, 1500));
+          return fetchChunk(retries - 1);
+        }
+        throw err;
+      }
+    };
+
+    const task = fetchChunk();
+
+    executing.add(task);
+    task.finally(() => executing.delete(task));
+
+    if (executing.size >= concurrency) {
+      await Promise.race(executing);
     }
-    if (batch.length === 0) break;
-    out.push(...batch);
-    onProgress?.(out.length);
-    if (batch.length < page) break;
-    from += page;
   }
 
-  return out;
+  await Promise.all(executing);
+
+  // Flatten the ordered chunks
+  return chunks.flat();
 }
