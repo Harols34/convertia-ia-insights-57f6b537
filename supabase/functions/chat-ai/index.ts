@@ -215,6 +215,10 @@ interface TemporalOverrides {
   fecha_hasta?: string;
 }
 
+const STOP_WORDS = new Set([
+  "de", "del", "el", "la", "los", "las", "un", "una", "unos", "unas", "para", "por", "con", "sin", "y", "o", "a", "ante", "bajo", "contra", "desde", "en", "entre", "hacia", "hasta", "sobre", "tras", "este", "esta", "estos", "estas", "ese", "esa", "esos", "esas", "aquel", "aquella", "aquellos", "aquellas", "mi", "tu", "su", "mis", "tus", "sus", "nuestro", "nuestra", "vuestro", "vuestra", "suya", "suyo", "suyas", "suyos"
+]);
+
 function normalizeText(value: string): string {
   return value
     .toLowerCase()
@@ -910,7 +914,7 @@ function extractKeywordScopedValue(userMsg: string, patterns: RegExp[]): string 
       "mes", "semana", "ano", "año", "dia", "día", "dias", "días", "momento", "ahora", "total", "totales", "lead", "leads", "venta", "ventas",
       "efectividad", "conversion", "conversión", "performance", "rendimiento", "ranking", "top", "peores", "mejores"
     ];
-    if (skip.includes(token)) continue;
+    if (skip.includes(token) || STOP_WORDS.has(token)) continue;
 
     // Evitar frases como "de ayer", "esta semana", etc.
     if (/^(?:de|del|el|la|los|las|esta|este|proximo|proxima|próximo|próxima|ultimo|ultima|último|última|pasado|pasada)\s+(?:ayer|hoy|mañana|manana|mes|semana|año|ano|dia|día|lunes|martes|miercoles|jueves|viernes|sabado|domingo|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i.test(cleaned)) {
@@ -953,9 +957,9 @@ function collectLooseEntityCandidates(userMsg: string): string[] {
         .trim();
       if (!cleaned) continue;
       const token = normalizeText(cleaned);
-      if (!token || token.length < 3) continue;
+      if (!token || token.length < 3 || STOP_WORDS.has(token)) continue;
       if (MONTHS_ES[token]) continue;
-      if (["abril", "marzo", "enero", "febrero", "mayo", "junio", "julio", "agosto", "septiembre", "setiembre", "octubre", "noviembre", "diciembre", "ayer", "hoy", "manana", "mañana", "mes", "dia", "dias", "día", "días", "momento", "ahora", "total", "totales", "lead", "leads", "venta", "ventas", "efectividad", "conversion", "conversión"].includes(token)) continue;
+      if (["abril", "marzo", "enero", "febrero", "mayo", "junio", "julio", "agosto", "septiembre", "setiembre", "octubre", "noviembre", "diciembre", "ayer", "hoy", "manana", "mañana", "mes", "dia", "dias", "día", "días", "momento", "ahora", "total", "totales", "lead", "leads", "venta", "ventas", "efectividad", "conversion", "conversión", "distribucion", "distribución", "horaria"].includes(token)) continue;
       candidates.add(cleaned);
     }
   }
