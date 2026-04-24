@@ -231,13 +231,23 @@ export function ComparativaDashboardSection({
   const [alBase, setAlBase] = useState<BaseKind>("leads");
   const [alDimId, setAlDimId] = useState(COMPARATIVE_DIMENSION_SUBJECTS[0]!.id);
   const [alDimTok, setAlDimTok] = useState(LEADS_FILTER_EMPTY_TOKEN);
-  /** Ventana alineada: mismos agregados que el análisis fijo (RPC) frente a filas en cliente. */
-  const [alDataSource, setAlDataSource] = useState<"client" | "rpc">("client");
+  /** Ventana alineada: por defecto usa los agregados del servidor (rpc) si están disponibles
+   *  para que el bloque renderice de inmediato sin esperar la descarga del dataset. */
+  const [alDataSource, setAlDataSource] = useState<"client" | "rpc">(() =>
+    rpcData?.daily?.length ? "rpc" : "client",
+  );
   const [dailyViz, setDailyViz] = useState<ComparisonViz>("area");
 
   useEffect(() => {
     if (alBase === "dimension") setAlDataSource("client");
   }, [alBase]);
+
+  /** Si llegan los agregados del servidor más tarde y aún no hay leads, cambia a "rpc" para mostrar datos. */
+  useEffect(() => {
+    if (rpcData?.daily?.length && leads.length === 0 && alBase !== "dimension") {
+      setAlDataSource("rpc");
+    }
+  }, [rpcData, leads.length, alBase]);
 
   const [trBase, setTrBase] = useState<BaseKind>("leads");
   const [trDimId, setTrDimId] = useState(COMPARATIVE_DIMENSION_SUBJECTS[0]!.id);
@@ -389,10 +399,20 @@ export function ComparativaDashboardSection({
     };
   }, [compareDays]);
 
-  const comparisonTrWindow = useMemo(
-    () => buildComparisonSeriesSpec(leads, compareDays, compareMode, specTr, compareWindowOptions),
-    [leads, compareDays, compareMode, specTr, compareWindowOptions],
-  );
+  const comparisonTrWindow = useMemo(() => {
+    const metric: ComparisonMetric | null =
+      specTr.kind === "leads"
+        ? "leads"
+        : specTr.kind === "ventas"
+          ? "ventas"
+          : specTr.kind === "efectividad"
+            ? "efectividad"
+            : null;
+    if (leads.length === 0 && rpcData?.daily?.length && metric != null && specTr.kind !== "match_column") {
+      return buildComparisonFromRpcDaily(rpcData.daily, compareDays, metric, compareMode);
+    }
+    return buildComparisonSeriesSpec(leads, compareDays, compareMode, specTr, compareWindowOptions);
+  }, [leads, compareDays, compareMode, specTr, compareWindowOptions, rpcData]);
 
   const optAligned = useMemo(
     () =>
@@ -418,10 +438,19 @@ export function ComparativaDashboardSection({
     [comparisonTrWindow, compareDays, titleTr, yTr, trendViz],
   );
 
-  const trend = useMemo(
-    () => buildFullDailyTrendForSpec(leads, 90, specTr, compareWindowOptions),
-    [leads, specTr, compareWindowOptions],
-  );
+  const trend = useMemo(() => {
+    if (leads.length === 0 && rpcData?.daily?.length && specTr.kind !== "match_column") {
+      const key: "leads" | "ventas" =
+        specTr.kind === "ventas" ? "ventas" : "leads";
+      return rpcData.daily.map((d) => ({
+        date: d.date,
+        value: specTr.kind === "efectividad"
+          ? (d.leads > 0 ? (d.ventas / d.leads) * 100 : 0)
+          : d[key],
+      }));
+    }
+    return buildFullDailyTrendForSpec(leads, 90, specTr, compareWindowOptions);
+  }, [leads, specTr, compareWindowOptions, rpcData]);
   const trendOverlayData = useMemo(() => {
     if (trendOverlay === "off" || trend.length === 0) return undefined;
     const data = comparisonLineAlignedToDailySpec(leads, trend, specTr, trendOverlay);
@@ -445,10 +474,20 @@ export function ComparativaDashboardSection({
     [trend, titleTr, trendViz, yTr, trendOverlayData],
   );
 
-  const weekly = useMemo(
-    () => buildWeeklySeriesForSpec(leadsInCompareWindow, 20, specWk),
-    [leadsInCompareWindow, specWk],
-  );
+  const weekly = useMemo(() => {
+    if (leads.length === 0 && rpcData?.weekly?.length && specWk.kind !== "match_column") {
+      const key: "leads" | "ventas" =
+        specWk.kind === "ventas" ? "ventas" : "leads";
+      return rpcData.weekly.map((w) => ({
+        weekStart: w.weekStart,
+        label: w.label,
+        value: specWk.kind === "efectividad"
+          ? (w.leads > 0 ? (w.ventas / w.leads) * 100 : 0)
+          : w[key],
+      }));
+    }
+    return buildWeeklySeriesForSpec(leadsInCompareWindow, 20, specWk);
+  }, [leads.length, leadsInCompareWindow, specWk, rpcData]);
   const weekPrev = useMemo(
     () => (weekCompare ? weeklyPreviousPeriodValues(weekly) : []),
     [weekCompare, weekly],
@@ -701,7 +740,7 @@ export function ComparativaDashboardSection({
         )}
       </Card>
 
-      {hasNoValidFch && (
+      {hasNoValidFch && leads.length > 0 && (
         <Alert variant="destructive">
           <Info className="h-4 w-4" />
           <AlertTitle>Sin fechas de creación válidas</AlertTitle>

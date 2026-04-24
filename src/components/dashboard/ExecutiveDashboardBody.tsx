@@ -544,16 +544,37 @@ function ExecutiveDashboardBodyInner({
         </GlassCard>
       )}
 
-      {leads.length > 0 ? (
-        <ComparativaDashboardSection
-          leads={leads}
-          onFilterByDate={onFilterByDate}
-          onFilterByWeekRange={onFilterByWeekRange}
-          filterDesde={filterDesde}
-          filterHasta={filterHasta}
-          rpcData={rpcData}
-          kpiTotalLeadsFromRpc={kpiTotalLeadsFromRpc}
-        />
+      {leads.length > 0 || (rpcData && (rpcData.daily.length > 0 || rpcData.kpis.totalLeads > 0)) ? (
+        <>
+          <ComparativaDashboardSection
+            leads={leads}
+            onFilterByDate={onFilterByDate}
+            onFilterByWeekRange={onFilterByWeekRange}
+            filterDesde={filterDesde}
+            filterHasta={filterHasta}
+            rpcData={rpcData}
+            kpiTotalLeadsFromRpc={kpiTotalLeadsFromRpc}
+          />
+          {leads.length === 0 && comparativeDatasetIdle && onRequestComparativeDataset && (
+            <GlassCard>
+              <div ref={comparativeSentinelRef} className="h-1 w-full" aria-hidden="true" />
+              <div className="text-center py-4 px-4 space-y-2 max-w-xl mx-auto">
+                <p className="text-xs text-muted-foreground">
+                  Estás viendo la comparativa con <strong>agregados del servidor</strong> (rápido). Para cortes finos por
+                  agente, resultado o cualquier dimensión personalizada necesitas descargar el universo de leads.
+                </p>
+                <Button type="button" size="sm" variant="outline" onClick={triggerComparativeLoad}>
+                  Cargar dataset para cortes finos
+                </Button>
+              </div>
+            </GlassCard>
+          )}
+          {leads.length === 0 && isLeadsLoading && (
+            <p className="text-[11px] text-muted-foreground text-center">
+              Descargando filas para cortes por dimensión: <strong className="tabular-nums">{comparativeRowsLoadedProgress.toLocaleString("es")}</strong> recibidas…
+            </p>
+          )}
+        </>
       ) : comparativeDatasetIdle && onRequestComparativeDataset ? (
         <GlassCard>
           <div ref={comparativeSentinelRef} className="h-1 w-full" aria-hidden="true" />
