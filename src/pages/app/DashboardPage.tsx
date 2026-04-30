@@ -12,6 +12,7 @@ import {
   fetchDashboardFilterOptions,
   leadsFiltersQueryKey,
 } from "@/lib/dashboard-executive-rpc";
+import { useDashboardFilters } from "@/hooks/use-dashboard-filters";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -153,14 +154,21 @@ const EMPTY_ARRAY: any[] = [];
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();
-  const [comparativeFetchEnabled, setComparativeFetchEnabled] = useState(true);
+  const [comparativeFetchEnabled, setComparativeFetchEnabled] = useState(false);
   const [comparativeRowsProgress, setComparativeRowsProgress] = useState(0);
   const requestComparativeDataset = useCallback(() => {
     setComparativeFetchEnabled(true);
   }, []);
 
-  const [activity, setActivity] = useState<unknown[]>([]);
-  const [filters, setFilters] = useState<LeadsDashboardFilters>(defaultLeadsDashboardFilters);
+  const {
+    filters,
+    setFilters,
+    setDimension,
+    activeFilterCount,
+    clearAllFilters,
+    applyThisMonthRange,
+    isDefaultUnfilteredView,
+  } = useDashboardFilters();
   const [showFilters, setShowFilters] = useState(false);
 
   const fchRango = useMemo(
@@ -232,53 +240,7 @@ export default function DashboardPage() {
     };
   }, [queryClient]);
 
-  useEffect(() => {
-    (async () => {
-      const { data: logs } = await supabase
-        .from("audit_logs")
-        .select("id, action, module, created_at")
-        .order("created_at", { ascending: false })
-        .limit(5);
-      setActivity(logs || []);
-    })();
-  }, []);
-
   const filteredLeads = useMemo(() => applyLeadsDashboardFilters(allLeads, filters), [allLeads, filters]);
-
-  const setDimension = useCallback((col: keyof LeadRow, values: string[]) => {
-    setFilters((prev) => {
-      const dimensions = { ...prev.dimensions };
-      if (values.length === 0) delete dimensions[col];
-      else dimensions[col] = values;
-      return { ...prev, dimensions };
-    });
-  }, []);
-
-  const activeFilterCount = useMemo(() => {
-    let n = 0;
-    if (filters.desde || filters.hasta) n += 1;
-    if (filters.esVenta !== "all") n += 1;
-    for (const vals of Object.values(filters.dimensions)) {
-      if (vals?.length) n += 1;
-    }
-    return n;
-  }, [filters]);
-
-  const clearAllFilters = () => setFilters(defaultLeadsDashboardFilters());
-
-  const applyThisMonthRange = useCallback(() => {
-    setFilters((prev) => ({ ...prev, ...getDefaultMonthToDateRange() }));
-  }, []);
-
-  /** Sin fechas, sin dimensiones, sin "es venta": agregados completos; evolución diaria/semanal acotada a ~15d en análisis fijo. */
-  const isDefaultUnfilteredView = useMemo(() => {
-    if (filters.desde?.trim() || filters.hasta?.trim()) return false;
-    if (filters.esVenta !== "all") return false;
-    for (const vals of Object.values(filters.dimensions)) {
-      if (vals?.length) return false;
-    }
-    return true;
-  }, [filters]);
 
   const universeCount = allLeads.length;
   const hasActiveSlice = activeFilterCount > 0;
@@ -309,12 +271,14 @@ export default function DashboardPage() {
     <div className="space-y-6 rounded-2xl border border-border bg-card/50 p-4 md:p-6 shadow-sm">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-start gap-3">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-50 to-violet-50 border border-teal-100 flex items-center justify-center shrink-0">
-            <LayoutDashboard className="h-5 w-5 text-teal-600" />
+          <div className="w-12 h-12 rounded-2xl gradient-primary flex items-center justify-center shadow-lg shadow-teal-500/20 shrink-0">
+            <LayoutDashboard className="h-6 w-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-display font-bold tracking-tight text-foreground">Dashboard ejecutivo</h1>
-            <p className="text-muted-foreground text-sm mt-0.5 max-w-2xl">
+            <h1 className="text-3xl font-display font-black tracking-tight text-slate-900 leading-none mb-2">
+              Panel de Inteligencia Ejecutiva
+            </h1>
+            <p className="text-muted-foreground text-sm max-w-3xl leading-relaxed">
               {allLeads.length > 0 ? (
                 <>
                   Universo <strong className="text-foreground">{universeCount.toLocaleString("es")}</strong> leads
@@ -481,41 +445,14 @@ export default function DashboardPage() {
           onFilterByWeekRange={(desde, hasta) => {
             setFilters((prev) => ({ ...prev, desde, hasta }));
           }}
+          dimensionOptions={dimensionOptions}
+          filters={filters}
         />
       ) : (
         <div className="rounded-2xl border border-border bg-muted/20 p-12 text-center">
           <p className="text-muted-foreground text-sm">No hay datos agregados disponibles aún.</p>
         </div>
       )}
-
-      <div className="rounded-2xl border border-border bg-card shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
-        <div className="p-4 md:p-5 border-b border-border">
-          <h2 className="font-display font-semibold text-foreground">Actividad reciente</h2>
-        </div>
-        <div className="divide-y divide-border">
-          {activity.length === 0 ? (
-            <div className="px-5 py-8 text-center text-sm text-muted-foreground">No hay actividad reciente registrada</div>
-          ) : (
-            activity.map((item: { id: string; action: string; module?: string; created_at: string }, i) => (
-              <motion.div
-                key={item.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.15 + i * 0.05 }}
-                className="px-5 py-3.5 flex items-center justify-between hover:bg-muted/50 transition-colors"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate text-foreground">{item.action}</p>
-                  <p className="text-xs text-muted-foreground truncate">{item.module || "Sistema"}</p>
-                </div>
-                <div className="text-right shrink-0 ml-4">
-                  <p className="text-xs text-muted-foreground">{new Date(item.created_at).toLocaleString("es")}</p>
-                </div>
-              </motion.div>
-            ))
-          )}
-        </div>
-      </div>
     </div>
   );
 }

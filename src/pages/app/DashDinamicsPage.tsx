@@ -498,12 +498,16 @@ export default function DashDinamicsPage() {
     <div className="flex flex-col h-[calc(100vh-5rem)]">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center glow-sm">
-            <Sparkles className="h-5 w-5 text-primary-foreground" />
+          <div className="w-12 h-12 rounded-2xl gradient-primary flex items-center justify-center shadow-lg shadow-primary/20">
+            <Sparkles className="h-6 w-6 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-display font-bold tracking-tight">Dashboard IA</h1>
-            <p className="text-xs text-muted-foreground">Genera dashboards estratégicos con lenguaje natural</p>
+            <h1 className="text-3xl font-display font-black tracking-tight text-slate-900 leading-none mb-2">
+              Asistente de Análisis Predictivo
+            </h1>
+            <p className="text-muted-foreground text-sm leading-relaxed font-medium">
+              Genera dashboards estratégicos personalizados utilizando lenguaje natural
+            </p>
           </div>
         </div>
         <div className="flex gap-2">

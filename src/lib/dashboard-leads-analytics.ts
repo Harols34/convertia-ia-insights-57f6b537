@@ -25,6 +25,12 @@ import {
 } from "@/lib/dashboard-leads";
 
 export type NamedCount = { name: string; value: number };
+export type LeadVentasStats = {
+  name: string;
+  leads: number;
+  ventas: number;
+  efectividad: number;
+};
 
 export type DailyPoint = {
   date: string;
@@ -183,13 +189,44 @@ export function filterLeadsByCreationInRange(leads: LeadRow[], start: Date, end:
 export function countByKey(leads: LeadRow[], key: keyof LeadRow): NamedCount[] {
   const map: Record<string, number> = {};
   for (const row of leads) {
-    const v = row[key];
+    let v = row[key];
+    if (key === "ciudad" && (v == null || v === "" || v === "{\"\",\"\"}")) {
+      v = "Sin ciudad";
+    }
+    if (key === "cliente" && v != null) {
+      v = String(v).toLowerCase();
+    }
     const label = v == null || v === "" ? "(vacío)" : String(v);
     map[label] = (map[label] ?? 0) + 1;
   }
   return Object.entries(map)
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
+}
+
+export function statsByKey(leads: LeadRow[], key: keyof LeadRow): LeadVentasStats[] {
+  const map: Record<string, { leads: number; ventas: number }> = {};
+  for (const row of leads) {
+    let v = row[key];
+    if (key === "ciudad" && (v == null || v === "" || v === "{\"\",\"\"}")) {
+      v = "Sin ciudad";
+    }
+    if (key === "cliente" && v != null) {
+      v = String(v).toLowerCase();
+    }
+    const label = v == null || v === "" ? "(vacío)" : String(v);
+    if (!map[label]) map[label] = { leads: 0, ventas: 0 };
+    map[label].leads += 1;
+    if (row.es_venta) map[label].ventas += 1;
+  }
+  return Object.entries(map)
+    .map(([name, s]) => ({
+      name,
+      leads: s.leads,
+      ventas: s.ventas,
+      efectividad: s.leads > 0 ? (s.ventas / s.leads) * 100 : 0,
+    }))
+    .sort((a, b) => b.leads - a.leads);
 }
 
 /** Serie diaria (últimos `maxDays` con al menos un lead). */
@@ -896,6 +933,23 @@ export function leadsByWeekday(leads: LeadRow[]): { day: string; count: number }
     counts[idx] += 1;
   }
   return labels.map((day, i) => ({ day, count: counts[i] }));
+}
+
+export function statsByWeekday(leads: LeadRow[]): (LeadVentasStats & { day: string })[] {
+  const labels = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+  const stats = labels.map((day) => ({ day, name: day, leads: 0, ventas: 0, efectividad: 0 }));
+  for (const row of leads) {
+    const d = parseLeadDate(row);
+    if (!d) continue;
+    const iso = getISODay(d);
+    const idx = iso === 7 ? 6 : iso - 1;
+    stats[idx].leads += 1;
+    if (row.es_venta) stats[idx].ventas += 1;
+  }
+  return stats.map((s) => ({
+    ...s,
+    efectividad: s.leads > 0 ? (s.ventas / s.leads) * 100 : 0,
+  }));
 }
 
 const DIMENSION_META: { key: keyof LeadRow; label: string }[] = [

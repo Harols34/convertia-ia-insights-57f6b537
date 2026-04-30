@@ -78,6 +78,20 @@ function rowScalar(row: LeadRow, key: keyof LeadRow): string {
   return String(v);
 }
 
+/** 
+ * Obtiene el valor normalizado para una columna (trata nulos, vacíos y casos especiales como ciudad/cliente).
+ */
+export function getNormalizedLeadValue(row: LeadRow, key: keyof LeadRow): string {
+  let v = rowScalar(row, key);
+  if (key === "ciudad" && (v === "" || v === "{\"\",\"\"}")) {
+    return "Sin ciudad";
+  }
+  if (key === "cliente" && v !== "") {
+    return v.toLowerCase();
+  }
+  return v === "" ? LEADS_FILTER_EMPTY_TOKEN : v;
+}
+
 /**
  * Pasa un valor de `fch_creacion` (texto, ISO con Z, etc.) al **día calendario local** `yyyy-MM-dd`.
  * Necesario para comparar con "hoy" y con filtros del panel: no usar `slice(0,10)` en timestamps UTC.
@@ -140,8 +154,7 @@ export function applyLeadsDashboardFilters(leads: LeadRow[], f: LeadsDashboardFi
 
     for (const [col, vals] of Object.entries(f.dimensions) as [keyof LeadRow, string[]][]) {
       if (!vals?.length) continue;
-      const raw = rowScalar(row, col);
-      const normalized = raw === "" ? EMPTY_TOKEN : raw;
+      const normalized = getNormalizedLeadValue(row, col);
       const allowed = new Set(vals);
       if (!allowed.has(normalized)) return false;
     }
@@ -152,12 +165,11 @@ export function applyLeadsDashboardFilters(leads: LeadRow[], f: LeadsDashboardFi
 export function uniqueValuesForColumn(leads: LeadRow[], key: keyof LeadRow, max = 400): string[] {
   const s = new Set<string>();
   for (const row of leads) {
-    const v = rowScalar(row, key);
-    s.add(v === "" ? EMPTY_TOKEN : v);
+    s.add(getNormalizedLeadValue(row, key));
   }
   const arr = [...s].sort((a, b) => {
-    if (a === EMPTY_TOKEN) return 1;
-    if (b === EMPTY_TOKEN) return -1;
+    if (a === LEADS_FILTER_EMPTY_TOKEN) return 1;
+    if (b === LEADS_FILTER_EMPTY_TOKEN) return -1;
     return a.localeCompare(b, "es");
   });
   return arr.slice(0, max);
@@ -170,9 +182,7 @@ export function formatFilterChipValue(token: string): string {
 
 /** Comprueba si el lead coincide con un valor de dimensión (mismo criterio que filtros). */
 export function rowMatchesDimensionToken(row: LeadRow, column: keyof LeadRow, token: string): boolean {
-  const raw = rowScalar(row, column);
-  const normalized = raw === "" ? EMPTY_TOKEN : raw;
-  return normalized === token;
+  return getNormalizedLeadValue(row, column) === token;
 }
 
 /** Convierte la etiqueta mostrada en gráficos (p. ej. pie) al token guardado en filtros. */

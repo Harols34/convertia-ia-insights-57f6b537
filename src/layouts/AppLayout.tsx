@@ -3,6 +3,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app/AppSidebar";
 import { AppTopbar } from "@/components/app/AppTopbar";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { AppDataLoader } from "@/components/dashboard/AppDataLoader";
 
 export default function AppLayout() {
   return (
@@ -13,7 +14,9 @@ export default function AppLayout() {
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <AppTopbar />
             <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-6">
-              <Outlet />
+              <AppDataLoader>
+                <Outlet />
+              </AppDataLoader>
             </main>
           </div>
         </div>

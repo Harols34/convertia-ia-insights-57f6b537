@@ -55,7 +55,62 @@ export async function fetchAllIntegrationRows(
   if (countError) throw countError;
   if (!count || count === 0) return [];
 
-  // 2. Fetch in parallel chunks
+  // 2. Fetch data
+  if (tableName === "leads") {
+    // Keyset pagination (cursor-based) para evitar timeout / error 500 con offsets grandes (> 100k)
+    const allRows: Record<string, unknown>[] = [];
+    let hasMore = true;
+    let lastId: any = null;
+    let loadedCount = 0;
+
+    // Forzamos ordenación por ID para un cursor unidimensional simple y seguro.
+    // El orden cronológico no se afecta de forma crítica, ya que los IDs suelen ser secuenciales,
+    // y el cliente re-ordena o agrupa los datos en memoria según sea necesario.
+    while (hasMore) {
+      let q = client.from("leads").select(selectClause);
+      q = applyFilters(q);
+
+      if (lastId !== null) {
+        q = q.gt("id_lead", lastId);
+      }
+
+      q = q.order("id_lead", { ascending: true }).limit(limit);
+
+      const fetchChunk = async (retries = 3): Promise<any[]> => {
+        try {
+          const { data, error } = await q;
+          if (error) throw error;
+          return data ?? [];
+        } catch (err) {
+          if (retries > 0) {
+            console.warn(`Cursor chunk failed, retrying...`, err);
+            await new Promise(r => setTimeout(r, 1500));
+            return fetchChunk(retries - 1);
+          }
+          throw err;
+        }
+      };
+
+      let batch = (await fetchChunk()) as Record<string, unknown>[];
+      if (batch.length === 0) break;
+
+      lastId = batch[batch.length - 1].id_lead;
+      if (stripColumnNames?.length) {
+        batch = stripRowKeys(batch, stripColumnNames);
+      }
+
+      allRows.push(...batch);
+      loadedCount += batch.length;
+      onProgress?.(loadedCount);
+
+      if (batch.length < limit) {
+        hasMore = false;
+      }
+    }
+    return allRows;
+  }
+
+  // 2b. Parallel chunks (offset-based) para otras tablas más pequeñas
   const totalChunks = Math.ceil(count / limit);
   const chunks: Record<string, unknown>[][] = new Array(totalChunks).fill([]);
   

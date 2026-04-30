@@ -49,10 +49,18 @@ export function useDashboardLeadsDataset(options?: Options) {
     enabled,
     queryFn: async () => {
       onProgress?.(0);
-      const rango =
+      let rango =
         fchRango && (fchRango.desde?.trim() || fchRango.hasta?.trim())
           ? { desde: fchRango.desde?.trim(), hasta: fchRango.hasta?.trim() }
           : undefined;
+
+      // Si no hay rango, por defecto pedimos solo los últimos 6 meses para que no sea tan pesado (200K+ registros)
+      if (!rango) {
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        rango = { desde: sixMonthsAgo.toISOString().split("T")[0], hasta: undefined };
+      }
+
       const rows = (await fetchAllIntegrationRows(
         supabase,
         "leads",

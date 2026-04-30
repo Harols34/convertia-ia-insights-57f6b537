@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Target,
   Sparkles,
+  Activity,
   ChevronRight,
   ChevronDown,
   Filter,
@@ -58,11 +59,15 @@ import {
   categoryOption,
   funnelOption,
   gaugeConversionOption,
-  weekdayBarsOption,
-  cityGeoStyleOption,
+  statsByWeekdayOption,
+  statsByCategoryOption,
   agentComboOption,
   sparklineOption,
 } from "./dashboard-chart-options";
+import { FilteredChartSection } from "./FilteredChartSection";
+import { GlassCard } from "./GlassCard";
+import { KpiCard } from "./KpiCard";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
 export type ExecutiveDashboardBodyProps = {
   leads: LeadRow[];
@@ -92,6 +97,10 @@ export type ExecutiveDashboardBodyProps = {
   isDefaultUnfilteredView?: boolean;
   /** totalLeads del bloque fijo (RPC) para avisar si el cliente y la ventana de la comparativa se contradicen. */
   kpiTotalLeadsFromRpc?: number;
+  /** Opciones de dimensiones cargadas vía RPC (para popovers y explorador si no hay leads). */
+  dimensionOptions?: Partial<Record<keyof LeadRow, string[]>>;
+  /** Filtros completos del panel (usados en peticiones RPC del explorador). */
+  filters?: LeadsDashboardFilters;
 };
 
 function DeltaText({ pct, label = "% vs periodo ant." }: { pct: number; label?: string }) {
@@ -106,28 +115,6 @@ function DeltaText({ pct, label = "% vs periodo ant." }: { pct: number; label?: 
   );
 }
 
-const GlassCard = forwardRef<
-  HTMLDivElement,
-  {
-    children: React.ReactNode;
-    className?: string;
-    noPad?: boolean;
-  }
->(({ children, className, noPad }, ref) => {
-  return (
-    <div
-      ref={ref}
-      className={cn(
-        "rounded-2xl border border-slate-200/90 bg-card shadow-[0_1px_2px_rgba(15,23,42,0.04),0_10px_28px_rgba(15,23,42,0.07)]",
-        !noPad && "p-4 md:p-5",
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
-});
-GlassCard.displayName = "GlassCard";
 
 function MiniSpark({ values }: { values: number[] }) {
   const opt = useMemo(() => sparklineOption(values, EXEC.teal), [values]);
@@ -139,20 +126,6 @@ function comparisonMetricToSpec(m: ComparisonMetric): ComparativeSeriesSpec {
   if (m === "leads") return { kind: "leads" };
   if (m === "ventas") return { kind: "ventas" };
   return { kind: "efectividad" };
-}
-
-function crossFilterHandlers(
-  onCrossFilter: ExecutiveDashboardBodyProps["onCrossFilter"],
-  column: keyof LeadRow,
-): { click: (params: { name?: string }) => void } | undefined {
-  if (!onCrossFilter) return undefined;
-  return {
-    click: (params: { name?: string }) => {
-      const n = params.name;
-      if (n == null || n === "") return;
-      onCrossFilter({ column, token: filterTokenFromChartLabel(n) });
-    },
-  };
 }
 
 const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyInner({
@@ -170,6 +143,8 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
   filterHasta,
   isDefaultUnfilteredView = false,
   kpiTotalLeadsFromRpc,
+  dimensionOptions,
+  filters,
 }: ExecutiveDashboardBodyProps) {
   const comparativeSentinelRef = useRef<HTMLDivElement | null>(null);
   const comparativeRequestedRef = useRef(false);
@@ -200,8 +175,6 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
   }, [comparativeDatasetIdle, onRequestComparativeDataset, triggerComparativeLoad]);
   const [timeVizDaily, setTimeVizDaily] = useState<TimeViz>("area");
   const [timeVizWeekly, setTimeVizWeekly] = useState<TimeViz>("combo");
-  const [campViz, setCampViz] = useState<CatViz>("bar");
-  const [cityViz, setCityViz] = useState<CatViz>("bar_h");
   const [exploreIdx, setExploreIdx] = useState(0);
   const [exploreViz, setExploreViz] = useState<CatViz>("donut");
 
@@ -318,16 +291,6 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
     return insightBullets(leads, cmp7);
   }, [rpcData, leads, cmp7]);
 
-  const porCampana = useMemo(() => {
-    if (rpcData) return rpcData.porCampana;
-    return countByKey(leads, "campana_mkt").slice(0, 12);
-  }, [leads, rpcData]);
-
-  const porCiudad = useMemo(() => {
-    if (rpcData) return rpcData.porCiudad;
-    return countByKey(leads, "ciudad");
-  }, [leads, rpcData]);
-
   const kpis = useMemo(() => {
     if (rpcData) return rpcData.kpis;
     const totalLeads = leads.length;
@@ -397,14 +360,7 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
     () => gaugeConversionOption(tasaVenta, "Conversión a venta", gaugeMax),
     [tasaVenta, gaugeMax],
   );
-  const optWeekday = useMemo(() => weekdayBarsOption(weekday), [weekday]);
-  const optCity = useMemo(() => cityGeoStyleOption(porCiudad, "Distribución por ciudad"), [porCiudad]);
-  const optCamp = useMemo(() => categoryOption(porCampana, campViz, "Campaña MKT"), [porCampana, campViz]);
   const optAgent = useMemo(() => agentComboOption(agents), [agents]);
-  const optCityCategory = useMemo(
-    () => categoryOption(porCiudad.slice(0, 12), cityViz, "Top ciudades"),
-    [porCiudad, cityViz],
-  );
 
   const explore = discovered[exploreIdx];
   const optExplore = useMemo(() => {
@@ -413,14 +369,27 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
     return categoryOption(explore.top, m, explore.label);
   }, [explore, exploreViz]);
 
-  const evCamp = useMemo(() => crossFilterHandlers(onCrossFilter, "campana_mkt"), [onCrossFilter]);
-  const evCity = useMemo(() => crossFilterHandlers(onCrossFilter, "ciudad"), [onCrossFilter]);
-  const evCityCat = useMemo(() => crossFilterHandlers(onCrossFilter, "ciudad"), [onCrossFilter]);
-  const evAgent = useMemo(() => crossFilterHandlers(onCrossFilter, "agente_prim_gestion"), [onCrossFilter]);
-  const evExplore = useMemo(
-    () => (explore && onCrossFilter ? crossFilterHandlers(onCrossFilter, explore.key) : undefined),
-    [explore, onCrossFilter],
-  );
+  const evAgent = useMemo(() => {
+    if (!onCrossFilter) return undefined;
+    return {
+      click: (params: { name?: string }) => {
+        const n = params.name;
+        if (n == null || n === "") return;
+        onCrossFilter({ column: "agente_prim_gestion", token: filterTokenFromChartLabel(n) });
+      },
+    };
+  }, [onCrossFilter]);
+
+  const evExplore = useMemo(() => {
+    if (!explore || !onCrossFilter) return undefined;
+    return {
+      click: (params: { name?: string }) => {
+        const n = params.name;
+        if (n == null || n === "") return;
+        onCrossFilter({ column: explore.key as keyof LeadRow, token: filterTokenFromChartLabel(n) });
+      },
+    };
+  }, [explore, onCrossFilter]);
 
   const evDailyDay = useMemo(() => {
     if (!onFilterByDate) return undefined;
@@ -488,76 +457,43 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
             </p>
           )}
 
-          <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <GlassCard>
-          <div className="flex justify-between items-start gap-2">
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Total leads</p>
-              <p className="text-3xl font-display font-bold text-foreground mt-1 tabular-nums">
-                {kpis.totalLeads.toLocaleString("es")}
-              </p>
-              <div className="mt-2 flex items-center gap-2 flex-wrap">
-                <DeltaText pct={cmp7.total.deltaPct} label="(7d)" />
-                <span className="text-[10px] text-muted-foreground">vs semana previa</span>
-              </div>
-            </div>
-            <div className="p-2 rounded-xl bg-teal-50 border border-teal-100">
-              <Users className="h-5 w-5 text-teal-600" />
-            </div>
+      <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <KpiCard
+          title="Total leads"
+          value={kpis.totalLeads}
+          icon={Users}
+          deltaPct={cmp7.total.deltaPct}
+          deltaLabel="vs semana previa"
+        >
+          <div className="mt-2 -mx-2 -mb-2">
+            <MiniSpark values={sparkTotal} />
           </div>
-          <MiniSpark values={sparkTotal} />
-        </GlassCard>
-        <GlassCard>
-          <div className="flex justify-between items-start gap-2">
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Ventas</p>
-              <p className="text-3xl font-display font-bold text-foreground mt-1 tabular-nums">
-                {kpis.totalVentas.toLocaleString("es")}
-              </p>
-              <div className="mt-2 flex items-center gap-2 flex-wrap">
-                <DeltaText pct={cmp7.ventas.deltaPct} label="(7d)" />
-                <span className="text-[10px] text-muted-foreground">vs semana previa</span>
-              </div>
-            </div>
-            <div className="p-2 rounded-xl bg-violet-50 border border-violet-100">
-              <TrendingUp className="h-5 w-5 text-violet-600" />
-            </div>
+        </KpiCard>
+        <KpiCard
+          title="Ventas"
+          value={kpis.totalVentas}
+          icon={TrendingUp}
+          deltaPct={cmp7.ventas.deltaPct}
+          deltaLabel="vs semana previa"
+        >
+          <div className="mt-2 -mx-2 -mb-2">
+            <MiniSpark values={sparkVentas} />
           </div>
-          <MiniSpark values={sparkVentas} />
-        </GlassCard>
-        <GlassCard>
-          <div className="flex justify-between items-start gap-2">
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Semana ISO</p>
-              <p className="text-2xl font-display font-bold text-foreground mt-1 tabular-nums">
-                {cmpW.total.current.toLocaleString("es")}
-              </p>
-              <p className="text-[10px] text-muted-foreground mt-1">vs {cmpW.total.previous.toLocaleString("es")} ant.</p>
-              <div className="mt-2">
-                <DeltaText pct={cmpW.total.deltaPct} label="semana ISO" />
-              </div>
-            </div>
-            <div className="p-2 rounded-xl bg-amber-50 border border-amber-100">
-              <BarChart3 className="h-5 w-5 text-amber-600" />
-            </div>
-          </div>
-        </GlassCard>
-        <GlassCard>
-          <div className="flex justify-between items-start gap-2">
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Con 1ª gestión</p>
-              <p className="text-3xl font-display font-bold text-foreground mt-1 tabular-nums">
-                {kpis.conGestion.toLocaleString("es")}
-              </p>
-              <p className="text-[10px] text-muted-foreground mt-1">
-                {kpis.totalLeads ? ((kpis.conGestion / kpis.totalLeads) * 100).toFixed(1) : "0.0"}% del total
-              </p>
-            </div>
-            <div className="p-2 rounded-xl bg-sky-50 border border-sky-100">
-              <MessageSquare className="h-5 w-5 text-sky-600" />
-            </div>
-          </div>
-        </GlassCard>
+        </KpiCard>
+        <KpiCard
+          title="Semana ISO"
+          value={cmpW.total.current}
+          icon={BarChart3}
+          deltaPct={cmpW.total.deltaPct}
+          deltaLabel="vs semana ISO ant."
+          subtitle={`Previo: ${cmpW.total.previous.toLocaleString("es")}`}
+        />
+        <KpiCard
+          title="Con 1ª gestión"
+          value={kpis.conGestion}
+          icon={MessageSquare}
+          subtitle={`${kpis.totalLeads ? ((kpis.conGestion / kpis.totalLeads) * 100).toFixed(1) : "0.0"}% del total`}
+        />
       </div>
 
       {bullets.length > 0 && (
@@ -585,19 +521,23 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
 
       {leads.length > 0 || (rpcData && (rpcData.daily.length > 0 || rpcData.kpis.totalLeads > 0)) ? (
         <>
-          <ComparativaDashboardSection
-            leads={leads}
-            onFilterByDate={onFilterByDate}
-            onFilterByWeekRange={onFilterByWeekRange}
-            filterDesde={filterDesde}
-            filterHasta={filterHasta}
-            rpcData={rpcData}
-            kpiTotalLeadsFromRpc={kpiTotalLeadsFromRpc}
-            comparativeDatasetIdle={comparativeDatasetIdle}
-            isLeadsLoading={isLeadsLoading}
-            comparativeRowsLoadedProgress={comparativeRowsLoadedProgress}
-            onRequestComparativeDataset={onRequestComparativeDataset}
-          />
+          <ErrorBoundary name="Análisis Comparativo">
+            <ComparativaDashboardSection
+              leads={leads}
+              onFilterByDate={onFilterByDate}
+              onFilterByWeekRange={onFilterByWeekRange}
+              filterDesde={filterDesde}
+              filterHasta={filterHasta}
+              rpcData={rpcData}
+              kpiTotalLeadsFromRpc={kpiTotalLeadsFromRpc}
+              comparativeDatasetIdle={comparativeDatasetIdle}
+              isLeadsLoading={isLeadsLoading}
+              comparativeRowsLoadedProgress={comparativeRowsLoadedProgress}
+              onRequestComparativeDataset={onRequestComparativeDataset}
+              dimensionOptions={dimensionOptions}
+              dashboardFilters={filters}
+            />
+          </ErrorBoundary>
           {leads.length === 0 && comparativeDatasetIdle && onRequestComparativeDataset && (
             <GlassCard>
               <div ref={comparativeSentinelRef} className="h-1 w-full" aria-hidden="true" />
@@ -684,83 +624,78 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
           </p>
         </div>
 
-      <div className="grid lg:grid-cols-3 gap-4 md:gap-6">
-        <GlassCard className="lg:col-span-2" noPad>
-          <Tabs defaultValue="daily" className="w-full">
-            <div className="px-4 pt-4 pb-2 flex flex-wrap items-center justify-between gap-2 border-b border-border">
-              <h3 className="text-sm font-semibold text-foreground">Evolución rápida (leads / ventas)</h3>
-              <TabsList className="h-9">
-                <TabsTrigger value="daily" className="text-xs">
-                  Diario
-                </TabsTrigger>
-                <TabsTrigger value="weekly" className="text-xs">
-                  Semanal
-                </TabsTrigger>
+      <div className="grid lg:grid-cols-3 gap-6">
+        <GlassCard className="lg:col-span-2 shadow-xl border-slate-200/60 overflow-hidden" noPad>
+          <Tabs defaultValue="daily" className="w-full flex flex-col h-full">
+            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                  <Activity className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800 tracking-tight">Evolución Operativa</h3>
+                  <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Leads & Ventas</p>
+                </div>
+              </div>
+              <TabsList className="h-9 bg-slate-200/50 p-1">
+                <TabsTrigger value="daily" className="text-xs px-4">Diario</TabsTrigger>
+                <TabsTrigger value="weekly" className="text-xs px-4">Semanal</TabsTrigger>
               </TabsList>
             </div>
-            <TabsContent value="daily" className="mt-0 p-4 pt-3 space-y-3">
-              <div className="flex flex-wrap justify-end gap-2">
-                <Select value={timeVizDaily} onValueChange={(v) => setTimeVizDaily(v as TimeViz)}>
-                  <SelectTrigger className="h-8 w-[200px] text-xs">
-                    <SelectValue placeholder="Tipo de gráfico" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="line">Líneas</SelectItem>
-                    <SelectItem value="area">Área / tendencia</SelectItem>
-                    <SelectItem value="bar">Barras</SelectItem>
-                    <SelectItem value="combo">Combinado (barras + línea ventas)</SelectItem>
-                  </SelectContent>
-                </Select>
+            
+            <TabsContent value="daily" className="mt-0 p-5 flex-1 space-y-4">
+              <div className="flex flex-wrap items-center justify-end gap-3 pb-2">
                 <Select value={dailyMetric} onValueChange={(v) => setDailyMetric(v as ComparisonMetric)}>
-                  <SelectTrigger className="h-8 w-[200px] text-xs">
+                  <SelectTrigger className="h-8 w-[140px] text-[10px] bg-slate-50 border-slate-200">
                     <SelectValue placeholder="Métrica" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="leads">Leads</SelectItem>
                     <SelectItem value="ventas">Ventas</SelectItem>
-                    <SelectItem value="efectividad">Efectividad % (día)</SelectItem>
+                    <SelectItem value="efectividad">Efectividad %</SelectItem>
                   </SelectContent>
                 </Select>
-                <Select
-                  value={dailyOverlay}
-                  onValueChange={(v) => setDailyOverlay(v as DailyComparisonOverlayMode)}
-                >
-                  <SelectTrigger className="h-8 w-[220px] text-xs">
-                    <SelectValue placeholder="Comparar con" />
+                <Select value={timeVizDaily} onValueChange={(v) => setTimeVizDaily(v as TimeViz)}>
+                  <SelectTrigger className="h-8 w-[160px] text-[10px] bg-slate-50 border-slate-200">
+                    <SelectValue placeholder="Gráfico" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="off">Sin comparación</SelectItem>
+                    <SelectItem value="line">Línea Suave</SelectItem>
+                    <SelectItem value="area">Área / Tendencia</SelectItem>
+                    <SelectItem value="bar">Barras Simples</SelectItem>
+                    <SelectItem value="combo">Combinado L/V</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={dailyOverlay} onValueChange={(v) => setDailyOverlay(v as DailyComparisonOverlayMode)}>
+                  <SelectTrigger className="h-8 w-[180px] text-[10px] bg-indigo-50 border-indigo-100 text-indigo-700">
+                    <SelectValue placeholder="Comparar vs..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="off">Sin contraste</SelectItem>
                     <SelectItem value="prev_calendar_day">vs día anterior</SelectItem>
-                    <SelectItem value="same_weekday_prev_week">vs −7 días (mismo weekday)</SelectItem>
-                    <SelectItem value="avg_weekday_historical">vs promedio histórico por weekday</SelectItem>
-                    <SelectItem value="same_dom_prev_month">vs mismo día mes anterior</SelectItem>
+                    <SelectItem value="same_weekday_prev_week">vs −7 días</SelectItem>
+                    <SelectItem value="avg_weekday_historical">vs prom. histórico</SelectItem>
+                    <SelectItem value="same_dom_prev_month">vs mes anterior</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              {timeVizDaily === "combo" && (
-                <p className="text-[10px] text-muted-foreground text-right">
-                  Vista combinada: siempre muestra Leads (barras) y Ventas (línea). Cambia a línea, área o barras para
-                  usar el selector de métrica en ambas series.
-                </p>
-              )}
-              {timeVizDaily === "combo" && dailyOverlay !== "off" && (
-                <p className="text-[10px] text-muted-foreground text-right">
-                  La línea de comparación no está disponible en vista combinada.
-                </p>
-              )}
-              <ReactECharts
-                key={chartKey("daily")}
-                option={optDaily}
-                style={{ height: 320, width: "100%" }}
-                notMerge
-                lazyUpdate
-                onEvents={evDailyDay}
-              />
+              
+              <div className="h-[320px] w-full">
+                <ReactECharts
+                  key={chartKey("daily")}
+                  option={optDaily}
+                  style={{ height: "100%", width: "100%" }}
+                  notMerge
+                  lazyUpdate
+                  onEvents={evDailyDay}
+                />
+              </div>
             </TabsContent>
-            <TabsContent value="weekly" className="mt-0 p-4 pt-3 space-y-3">
-              <div className="flex flex-wrap justify-end gap-2">
+
+            <TabsContent value="weekly" className="mt-0 p-5 flex-1 space-y-4">
+              <div className="flex flex-wrap items-center justify-end gap-3 pb-2">
                 <Select value={timeVizWeekly} onValueChange={(v) => setTimeVizWeekly(v as TimeViz)}>
-                  <SelectTrigger className="h-8 w-[200px] text-xs">
+                  <SelectTrigger className="h-8 w-[160px] text-[10px] bg-slate-50 border-slate-200">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -771,205 +706,176 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
                   </SelectContent>
                 </Select>
                 <Select value={weekCompare} onValueChange={(v) => setWeekCompare(v as "off" | "prev")}>
-                  <SelectTrigger className="h-8 w-[200px] text-xs">
-                    <SelectValue placeholder="Comparar" />
+                  <SelectTrigger className="h-8 w-[180px] text-[10px] bg-indigo-50 border-indigo-100 text-indigo-700">
+                    <SelectValue placeholder="Contrastar" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="off">Sin comparación extra</SelectItem>
-                    <SelectItem value="prev">+ Semana ISO anterior</SelectItem>
+                    <SelectItem value="off">Serie única</SelectItem>
+                    <SelectItem value="prev">+ Semana anterior</SelectItem>
                   </SelectContent>
                 </Select>
-                {weekCompare === "prev" && (
-                  <Select
-                    value={weekCompareField}
-                    onValueChange={(v) => setWeekCompareField(v as "leads" | "ventas")}
-                  >
-                    <SelectTrigger className="h-8 w-[160px] text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="leads">Métrica: leads</SelectItem>
-                      <SelectItem value="ventas">Métrica: ventas</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
               </div>
-              <ReactECharts
-                key={chartKey("weekly")}
-                option={optWeekly}
-                style={{ height: 320, width: "100%" }}
-                notMerge
-                lazyUpdate
-                onEvents={evWeekly}
-              />
+              <div className="h-[320px] w-full">
+                <ReactECharts
+                  key={chartKey("weekly")}
+                  option={optWeekly}
+                  style={{ height: "100%", width: "100%" }}
+                  notMerge
+                  lazyUpdate
+                  onEvents={evWeekly}
+                />
+              </div>
             </TabsContent>
           </Tabs>
         </GlassCard>
 
-        <GlassCard noPad className="flex flex-col">
-          <div className="px-4 pt-4 border-b border-border pb-2 space-y-2">
-            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <Target className="h-4 w-4 text-teal-600" />
-              Efectividad
-            </h3>
-            <p className="text-[10px] text-muted-foreground">Ventas / leads filtrados · escala del medidor</p>
-            <Select value={String(gaugeMax)} onValueChange={(v) => setGaugeMax(Number(v) as 20 | 30 | 50 | 100)}>
-              <SelectTrigger className="h-8 w-full text-xs">
-                <SelectValue placeholder="Escala máx." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="20">Máximo 20%</SelectItem>
-                <SelectItem value="30">Máximo 30%</SelectItem>
-                <SelectItem value="50">Máximo 50%</SelectItem>
-                <SelectItem value="100">Máximo 100%</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex-1 min-h-[280px] p-2">
-            <ReactECharts
-              key={chartKey("gauge")}
-              option={optGauge}
-              style={{ height: 260, width: "100%" }}
-              notMerge
-              lazyUpdate
-            />
-          </div>
-        </GlassCard>
-      </div>
+        <div className="space-y-6">
+          <GlassCard noPad className="flex flex-col shadow-xl border-slate-200/60 transition-all hover:shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center shadow-lg shadow-amber-500/20">
+                  <Target className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 leading-none mb-1">Efectividad</h3>
+                  <p className="text-[10px] text-muted-foreground font-medium">Conversión Total</p>
+                </div>
+              </div>
+              <Select value={String(gaugeMax)} onValueChange={(v) => setGaugeMax(Number(v) as 20 | 30 | 50 | 100)}>
+                <SelectTrigger className="h-8 w-[90px] text-[10px] bg-white border-slate-200">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="20">20%</SelectItem>
+                  <SelectItem value="30">30%</SelectItem>
+                  <SelectItem value="50">50%</SelectItem>
+                  <SelectItem value="100">100%</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 min-h-[220px] p-4 bg-white flex items-center justify-center">
+              <ReactECharts
+                key={chartKey("gauge")}
+                option={optGauge}
+                style={{ height: 210, width: "100%" }}
+                notMerge
+                lazyUpdate
+              />
+            </div>
+          </GlassCard>
 
-      <GlassCard noPad>
-        <div className="px-4 pt-4 border-b border-border pb-2">
-          <h3 className="text-sm font-semibold text-foreground">Embudo</h3>
-          <p className="text-[10px] text-muted-foreground">Gestión → negocio → venta</p>
+          <GlassCard noPad className="flex flex-col shadow-xl border-slate-200/60 transition-all hover:shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-500 flex items-center justify-center shadow-lg shadow-violet-500/20">
+                  <Users className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 leading-none mb-1">Embudo</h3>
+                  <p className="text-[10px] text-muted-foreground font-medium">Flujo de Conversión</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-4 bg-white">
+              <div className="h-[230px] w-full">
+                <ReactECharts option={optFunnel} style={{ height: "100%", width: "100%" }} notMerge lazyUpdate />
+              </div>
+            </div>
+          </GlassCard>
         </div>
-        <div className="p-4">
-          <ReactECharts option={optFunnel} style={{ height: 300, width: "100%" }} notMerge lazyUpdate />
-        </div>
-      </GlassCard>
-
-      <div className="grid lg:grid-cols-2 gap-4 md:gap-6">
-        <GlassCard noPad>
-          <div className="px-4 pt-4 border-b border-border pb-2">
-            <h3 className="text-sm font-semibold text-foreground">Mapa / ranking ciudades</h3>
-          </div>
-          <div className="p-4">
-            <ReactECharts
-              option={optCity}
-              style={{ height: 340, width: "100%" }}
-              notMerge
-              lazyUpdate
-              onEvents={evCity}
-            />
-          </div>
-        </GlassCard>
-        <GlassCard noPad>
-          <div className="px-4 pt-4 border-b border-border pb-2">
-            <h3 className="text-sm font-semibold text-foreground">Variación por día de semana</h3>
-          </div>
-          <div className="p-4">
-            <ReactECharts option={optWeekday} style={{ height: 340, width: "100%" }} notMerge lazyUpdate />
-          </div>
-        </GlassCard>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4 md:gap-6">
-        <GlassCard noPad>
-          <div className="px-4 pt-4 flex flex-wrap justify-between items-center gap-2 border-b border-border pb-2">
-            <h3 className="text-sm font-semibold text-foreground">Campaña MKT</h3>
-            <Select value={campViz} onValueChange={(v) => setCampViz(v as CatViz)}>
-              <SelectTrigger className="h-8 w-[180px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="bar">Barras verticales</SelectItem>
-                <SelectItem value="bar_h">Barras horizontales</SelectItem>
-                <SelectItem value="donut">Radial / anillo</SelectItem>
-                <SelectItem value="radar">Radar</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="p-4">
-            <ReactECharts
-              option={optCamp}
-              style={{ height: 320, width: "100%" }}
-              notMerge
-              lazyUpdate
-              onEvents={evCamp}
-            />
-          </div>
-        </GlassCard>
-        <GlassCard noPad>
-          <div className="px-4 pt-4 flex flex-wrap justify-between items-center gap-2 border-b border-border pb-2">
-            <h3 className="text-sm font-semibold text-foreground">Ciudad — tipo de vista</h3>
-            <Select value={cityViz} onValueChange={(v) => setCityViz(v as CatViz)}>
-              <SelectTrigger className="h-8 w-[180px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="bar">Barras verticales</SelectItem>
-                <SelectItem value="bar_h">Barras horizontales</SelectItem>
-                <SelectItem value="donut">Donut</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="p-4">
-            <ReactECharts
-              option={optCityCategory}
-              style={{ height: 320, width: "100%" }}
-              notMerge
-              lazyUpdate
-              onEvents={evCityCat}
-            />
-          </div>
-        </GlassCard>
+        <FilteredChartSection
+          title="Rendimiento por Día de la Semana"
+          leads={leads}
+          dimension="weekday"
+          filterColumns={[
+            { key: "cliente", label: "Cliente" },
+            { key: "categoria_mkt", label: "Categoría" },
+            { key: "tipo_llamada", label: "Tipo" },
+          ]}
+          chartOptionBuilder={(data) => statsByWeekdayOption(data)}
+        />
+        <FilteredChartSection
+          title="Rendimiento por Campaña de Marketing"
+          leads={leads}
+          dimension="campana_mkt"
+          filterColumns={[
+            { key: "cliente", label: "Cliente" },
+            { key: "categoria_mkt", label: "Categoría" },
+            { key: "tipo_llamada", label: "Tipo" },
+          ]}
+          chartOptionBuilder={(data, viz) => statsByCategoryOption(data, viz)}
+        />
       </div>
 
-      <GlassCard noPad>
-        <div className="px-4 pt-4 border-b border-border pb-2">
-          <h3 className="text-sm font-semibold text-foreground">Agentes (1ª gestión): volumen + ventas</h3>
-          <p className="text-[10px] text-muted-foreground">Combinado barras + línea</p>
-        </div>
-        <div className="p-4">
-          {agents.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-12 px-2">
-              No hay agentes con 1ª gestión en el filtro actual (o sin datos agregados). Ajusta fechas o dimensiones.
-            </p>
-          ) : (
-            <ReactECharts
-              option={optAgent}
-              style={{ height: 340, width: "100%" }}
-              notMerge
-              lazyUpdate
-              onEvents={evAgent}
-            />
-          )}
-        </div>
-      </GlassCard>
+      <div className="grid lg:grid-cols-1 gap-4 md:gap-6">
+        <FilteredChartSection
+          title="Análisis Geográfico: Distribución por Ciudad"
+          leads={leads}
+          dimension="ciudad"
+          filterColumns={[
+            { key: "cliente", label: "Cliente" },
+            { key: "ciudad", label: "Ciudad", multi: true },
+            { key: "categoria_mkt", label: "Categoría" },
+          ]}
+          chartOptionBuilder={(data, viz) => statsByCategoryOption(data, viz)}
+        />
+      </div>
+
+      <div className="grid lg:grid-cols-1 gap-4 md:gap-6">
+        <FilteredChartSection
+          title="Desempeño Operativo de Agentes"
+          leads={leads}
+          dimension="agente_prim_gestion"
+          filterColumns={[
+            { key: "cliente", label: "Cliente" },
+            { key: "agente_prim_gestion", label: "Agente", multi: true },
+            { key: "categoria_mkt", label: "Categoría" },
+          ]}
+          chartOptionBuilder={(data, viz) => {
+            if (viz === "combo" || !viz) {
+              return agentComboOption(data.map(d => ({ name: d.name, value: d.leads, ventas: d.ventas })));
+            }
+            return statsByCategoryOption(data, viz);
+          }}
+          defaultViz="combo"
+          vizOptions={[
+            { value: "combo", label: "Leads + Ventas" },
+            { value: "bar", label: "Solo Leads" },
+            { value: "donut", label: "Distribución" },
+          ]}
+        />
+      </div>
 
       {discovered.length > 0 && (
-        <GlassCard noPad>
-          <div className="px-4 pt-4 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
-            <div>
-              <h3 className="text-sm font-semibold text-foreground">Explorador automático de dimensiones</h3>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                Generado según cardinalidad de columnas (2–40 valores)
-              </p>
+        <GlassCard noPad className="shadow-lg border-slate-200/60 overflow-hidden">
+          <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 bg-slate-50/50">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl gradient-primary flex items-center justify-center shadow-sm">
+                <Sparkles className="h-4.5 w-4.5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 leading-none mb-1">Explorador Estratégico de Dimensiones</h3>
+                <p className="text-[10px] text-muted-foreground font-medium">Análisis automático según cardinalidad de datos</p>
+              </div>
             </div>
             <div className="flex flex-wrap gap-2">
               <Select value={String(exploreIdx)} onValueChange={(v) => setExploreIdx(Number(v))}>
-                <SelectTrigger className="h-8 min-w-[200px] text-xs">
+                <SelectTrigger className="h-8 min-w-[200px] text-[10px] bg-white border-slate-200">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="max-h-64">
                   {discovered.map((d, i) => (
-                    <SelectItem key={d.key} value={String(i)}>
+                    <SelectItem key={d.key} value={String(i)} className="text-xs">
                       {d.label} ({d.cardinality})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <Select value={exploreViz} onValueChange={(v) => setExploreViz(v as CatViz)}>
-                <SelectTrigger className="h-8 w-[170px] text-xs">
+                <SelectTrigger className="h-8 w-[140px] text-[10px] bg-white border-slate-200">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -981,11 +887,11 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
               </Select>
             </div>
           </div>
-          <div className="p-4">
+          <div className="p-6 bg-white">
             {optExplore && (
               <ReactECharts
                 option={optExplore}
-                style={{ height: 340, width: "100%" }}
+                style={{ height: 380, width: "100%" }}
                 notMerge
                 lazyUpdate
                 onEvents={evExplore}

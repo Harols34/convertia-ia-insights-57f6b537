@@ -65,7 +65,7 @@ function toDelta(current: number, previous: number, label = ""): DeltaSummary {
   };
 }
 
-function buildRpcFilters(filters: LeadsDashboardFilters): JsonObject | null {
+export function buildRpcFilters(filters: LeadsDashboardFilters): JsonObject | null {
   const out: JsonObject = {};
   if (filters.esVenta === "yes") out.es_venta = true;
   else if (filters.esVenta === "no") out.es_venta = false;
@@ -74,6 +74,14 @@ function buildRpcFilters(filters: LeadsDashboardFilters): JsonObject | null {
     if (values?.length) out[key] = values;
   }
 
+  return Object.keys(out).length ? out : null;
+}
+
+export function buildRpcFiltersFromDimensions(dimensions: Partial<Record<keyof LeadRow, string[]>>): JsonObject | null {
+  const out: JsonObject = {};
+  for (const [key, values] of Object.entries(dimensions) as [keyof LeadRow, string[]][]) {
+    if (values?.length) out[key] = values;
+  }
   return Object.keys(out).length ? out : null;
 }
 
@@ -314,27 +322,53 @@ export async function fetchExecutiveDashboardData(filters: LeadsDashboardFilters
   };
 }
 
+function cleanRpcValue(v: unknown): string {
+  if (v == null) return LEADS_FILTER_EMPTY_TOKEN;
+  if (typeof v === "string") {
+    let s = v.trim();
+    // Manejo de arrays de Postgres: {"Valor",""} o {"","Valor"}
+    if (s.startsWith("{") && s.endsWith("}")) {
+      const parts = s
+        .slice(1, -1)
+        .split(",")
+        .map((p) => p.trim().replace(/^"|"$/g, ""));
+      const first = parts.find((p) => p !== "");
+      return first ?? LEADS_FILTER_EMPTY_TOKEN;
+    }
+    return s === "" ? LEADS_FILTER_EMPTY_TOKEN : s;
+  }
+  if (Array.isArray(v)) return cleanRpcValue(v[0]);
+  if (typeof v === "object") {
+    const values = Object.values(v);
+    if (values.length > 0) return cleanRpcValue(values[0]);
+    return LEADS_FILTER_EMPTY_TOKEN;
+  }
+  const str = String(v);
+  return str === "" ? LEADS_FILTER_EMPTY_TOKEN : str;
+}
+
 export async function fetchDashboardFilterOptions(): Promise<Partial<Record<keyof LeadRow, string[]>>> {
   const { data, error } = await supabase.rpc("accessible_leads_dimensions");
   if (error) throw error;
   const raw = (data ?? {}) as Record<string, unknown>;
   const map: Partial<Record<keyof LeadRow, string[]>> = {
-    cliente: (raw.clientes as string[] | undefined) ?? [],
-    campana_mkt: (raw.campanas_mkt as string[] | undefined) ?? [],
-    campana_inconcert: (raw.campanas_inconcert as string[] | undefined) ?? [],
-    categoria_mkt: (raw.categorias_mkt as string[] | undefined) ?? [],
-    ciudad: (raw.ciudades as string[] | undefined) ?? [],
-    tipo_llamada: (raw.tipos_llamada as string[] | undefined) ?? [],
-    agente_prim_gestion: (raw.agentes_prim_gestion as string[] | undefined) ?? [],
-    agente_ultim_gestion: (raw.agentes_ultim_gestion as string[] | undefined) ?? [],
-    agente_negocio: (raw.agentes_negocio as string[] | undefined) ?? [],
-    bpo: (raw.bpos as string[] | undefined) ?? [],
-    result_prim_gestion: (raw.resultados_prim_gestion as string[] | undefined) ?? [],
-    result_ultim_gestion: (raw.resultados_ultim_gestion as string[] | undefined) ?? [],
-    result_negocio: (raw.resultados_negocio as string[] | undefined) ?? [],
-    prim_resultado_marcadora: (raw.prim_resultado_marcadora as string[] | undefined) ?? [],
+    cliente: ((raw.clientes as any[]) ?? []).map(cleanRpcValue),
+    campana_mkt: ((raw.campanas_mkt as any[]) ?? []).map(cleanRpcValue),
+    campana_inconcert: ((raw.campanas_inconcert as any[]) ?? []).map(cleanRpcValue),
+    categoria_mkt: ((raw.categorias_mkt as any[]) ?? []).map(cleanRpcValue),
+    ciudad: ((raw.ciudades as any[]) ?? []).map(cleanRpcValue),
+    tipo_llamada: ((raw.tipos_llamada as any[]) ?? []).map(cleanRpcValue),
+    agente_prim_gestion: ((raw.agentes_prim_gestion as any[]) ?? []).map(cleanRpcValue),
+    agente_ultim_gestion: ((raw.agentes_ultim_gestion as any[]) ?? []).map(cleanRpcValue),
+    agente_negocio: ((raw.agentes_negocio as any[]) ?? []).map(cleanRpcValue),
+    bpo: ((raw.bpos as any[]) ?? []).map(cleanRpcValue),
+    result_prim_gestion: ((raw.resultados_prim_gestion as any[]) ?? []).map(cleanRpcValue),
+    result_ultim_gestion: ((raw.resultados_ultim_gestion as any[]) ?? []).map(cleanRpcValue),
+    result_negocio: ((raw.resultados_negocio as any[]) ?? []).map(cleanRpcValue),
+    prim_resultado_marcadora: ((raw.prim_resultado_marcadora as any[]) ?? []).map(cleanRpcValue),
   };
   for (const key of Object.keys(map) as (keyof LeadRow)[]) {
+    map[key] = [...new Set(map[key])].filter((v) => v != null);
     if (!map[key]?.includes(LEADS_FILTER_EMPTY_TOKEN)) continue;
   }
   return map;
@@ -401,4 +435,27 @@ export function comparisonLineFromRpcDaily(
     }
     return 0;
   });
+}
+
+/**
+ * Obtiene la serie temporal diaria filtrada por una dimensión específica (o varias).
+ * Útil para el Explorador Comparativo sin descargar todo el dataset.
+ */
+export async function fetchExplorerTimeseries(
+  metric: "leads" | "ventas",
+  desde: string | null,
+  hasta: string | null,
+  filters: JsonObject | null
+): Promise<{ date: string; value: number }[]> {
+  const { data, error } = await supabase.rpc("accessible_leads_timeseries", {
+    _metric: metric,
+    _granularity: "day",
+    _limit: 120,
+    _fecha_desde: desde,
+    _fecha_hasta: hasta,
+    _filters: filters,
+  });
+
+  if (error) throw error;
+  return normalizeTimeseries(data).map((r) => ({ date: r.bucket, value: r.value }));
 }

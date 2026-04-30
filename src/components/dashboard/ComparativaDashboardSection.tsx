@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactECharts from "echarts-for-react";
+import { GlassCard } from "./GlassCard";
+import { useQuery } from "@tanstack/react-query";
 import { format, parseISO, endOfISOWeek, endOfDay, startOfDay, subDays, startOfMonth } from "date-fns";
 import { es } from "date-fns/locale";
 import { Info } from "lucide-react";
@@ -8,14 +10,50 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { 
+  TrendingUp, 
+  Users, 
+  Target, 
+  RotateCcw, 
+  Filter, 
+  Check, 
+  Sparkles,
+  BarChart3,
+  ChevronDown,
+  Calendar,
+  MessageSquare,
+  Search,
+  Database,
+  History,
+  CalendarDays,
+  LayoutDashboard,
+  Clock
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useComparativaControls } from "@/contexts/ComparativaControlsContext";
-import type { LeadRow } from "@/lib/dashboard-leads";
+import type { LeadRow, LeadsDashboardFilters } from "@/lib/dashboard-leads";
 import {
   uniqueValuesForColumn,
   formatFilterChipValue,
   LEADS_FILTER_EMPTY_TOKEN,
   rowMatchesDimensionToken,
+  getNormalizedLeadValue,
 } from "@/lib/dashboard-leads";
 import {
   buildComparisonSeriesSpec,
@@ -41,7 +79,7 @@ import {
   type ComparisonMetric,
   type DailyComparisonOverlayMode,
 } from "@/lib/dashboard-leads-analytics";
-import { type DashboardExecutiveData, comparisonLineFromRpcDaily, type RpcOverlayMode } from "@/lib/dashboard-executive-rpc";
+import { type DashboardExecutiveData, comparisonLineFromRpcDaily, type RpcOverlayMode, fetchExplorerTimeseries, buildRpcFilters } from "@/lib/dashboard-executive-rpc";
 import {
   comparisonDualSeriesOption,
   weeklyScalarBarsOption,
@@ -101,6 +139,7 @@ function useDimTokenSync(
 
 function MetricSelectors({
   leads,
+  dimensionOptions,
   baseKind,
   setBaseKind,
   dimSubjectId,
@@ -110,6 +149,7 @@ function MetricSelectors({
   suffix,
 }: {
   leads: LeadRow[];
+  dimensionOptions?: Partial<Record<keyof LeadRow, string[]>>;
   baseKind: BaseKind;
   setBaseKind: (v: BaseKind) => void;
   dimSubjectId: string;
@@ -120,10 +160,10 @@ function MetricSelectors({
   suffix: string;
 }) {
   const dimSubject = COMPARATIVE_DIMENSION_SUBJECTS.find((d) => d.id === dimSubjectId)!;
-  const dimOptions = useMemo(
-    () => uniqueValuesForColumn(leads, dimSubject.column, 80),
-    [leads, dimSubject.column],
-  );
+  const dimOptions = useMemo(() => {
+    if (leads.length > 0) return uniqueValuesForColumn(leads, dimSubject.column, 80);
+    return dimensionOptions?.[dimSubject.column] ?? [];
+  }, [leads, dimSubject.column, dimensionOptions]);
   useDimTokenSync(baseKind, dimOptions, dimToken, setDimToken);
 
   return (
@@ -180,6 +220,8 @@ function MetricSelectors({
   );
 }
 
+
+
 export type ComparativaDashboardSectionProps = {
   leads: LeadRow[];
   onFilterByDate?: (isoDay: string) => void;
@@ -191,10 +233,11 @@ export type ComparativaDashboardSectionProps = {
   rpcData?: DashboardExecutiveData | null;
   kpiTotalLeadsFromRpc?: number;
   /** Aún no se ha iniciado la descarga del universo de filas (explorador por dimensión requiere leads en cliente). */
-  comparativeDatasetIdle?: boolean;
   isLeadsLoading?: boolean;
   comparativeRowsLoadedProgress?: number;
   onRequestComparativeDataset?: () => void;
+  dimensionOptions?: Partial<Record<keyof LeadRow, string[]>>;
+  dashboardFilters?: LeadsDashboardFilters;
 };
 
 export function ComparativaDashboardSection({
@@ -209,9 +252,13 @@ export function ComparativaDashboardSection({
   isLeadsLoading = false,
   comparativeRowsLoadedProgress = 0,
   onRequestComparativeDataset,
+  dimensionOptions,
+  dashboardFilters,
 }: ComparativaDashboardSectionProps) {
   const { compareMode, setCompareMode, compareDays, setCompareDays, windowAnchor, setWindowAnchor } =
     useComparativaControls();
+
+  const filteredLeads = leads;
 
   const filterFchKey = useMemo(() => {
     const d = filterDesde?.trim() ?? "";
@@ -297,15 +344,15 @@ export function ComparativaDashboardSection({
 
   /** Misma ventana que el eje diario: la semana ISO ya no mezcla semanas fuera de ese rango. */
   const compareWindowBounds = useMemo(
-    () => getComparisonWindowBounds(leads, compareDays, compareWindowOptions),
-    [leads, compareDays, compareWindowOptions],
+    () => getComparisonWindowBounds(filteredLeads, compareDays, compareWindowOptions),
+    [filteredLeads, compareDays, compareWindowOptions],
   );
   const leadsInCompareWindow = useMemo(
-    () => filterLeadsByCreationInRange(leads, compareWindowBounds.start, compareWindowBounds.end),
-    [leads, compareWindowBounds],
+    () => filterLeadsByCreationInRange(filteredLeads, compareWindowBounds.start, compareWindowBounds.end),
+    [filteredLeads, compareWindowBounds],
   );
 
-  const dateBounds = useMemo(() => getLeadsCreationDateBounds(leads), [leads]);
+  const dateBounds = useMemo(() => getLeadsCreationDateBounds(filteredLeads), [filteredLeads]);
 
   const yAl = specAl.kind === "efectividad";
   const yTr = specTr.kind === "efectividad";
@@ -332,8 +379,8 @@ export function ComparativaDashboardSection({
       }
       return buildComparisonFromRpcDaily(daily, compareDays, metric, compareMode);
     }
-    return buildComparisonSeriesSpec(leads, compareDays, compareMode, specAl, compareWindowOptions);
-  }, [alDataSource, rpcData, leads, compareDays, compareMode, specAl, compareWindowOptions]);
+    return buildComparisonSeriesSpec(filteredLeads, compareDays, compareMode, specAl, compareWindowOptions);
+  }, [alDataSource, rpcData, filteredLeads, compareDays, compareMode, specAl, compareWindowOptions]);
 
   const sumActualInWindow = useMemo(
     () => sumComparisonSeriesActual(comparisonAl.points),
@@ -341,12 +388,12 @@ export function ComparativaDashboardSection({
   );
 
   const windowOverlapsCorte = useMemo(
-    () => leadDateBoundsOverlapComparisonWindow(leads, compareDays, compareWindowOptions),
-    [leads, compareDays, compareWindowOptions],
+    () => leadDateBoundsOverlapComparisonWindow(filteredLeads, compareDays, compareWindowOptions),
+    [filteredLeads, compareDays, compareWindowOptions],
   );
   const todayFallbackToMaxFch = useMemo(
-    () => todayAnchorUsedMaxDataFallback(leads, compareDays, compareWindowOptions),
-    [leads, compareDays, compareWindowOptions],
+    () => todayAnchorUsedMaxDataFallback(filteredLeads, compareDays, compareWindowOptions),
+    [filteredLeads, compareDays, compareWindowOptions],
   );
   const kpiMismatchLeads =
     kpiTotalLeadsFromRpc != null &&
@@ -356,8 +403,8 @@ export function ComparativaDashboardSection({
     leads.length > 0 &&
     sumActualInWindow === 0;
 
-  const hasNoValidFch = leads.length > 0 && dateBounds.max == null;
-  const windowShowsAllZeros = leads.length > 0 && dateBounds.max != null && sumActualInWindow === 0;
+  const hasNoValidFch = filteredLeads.length > 0 && dateBounds.max == null;
+  const windowShowsAllZeros = filteredLeads.length > 0 && dateBounds.max != null && sumActualInWindow === 0;
   const windowAxisVsCorte = windowShowsAllZeros && !hasNoValidFch && !windowOverlapsCorte;
 
   /** Referencia: “últimos N días” hacia hoy (solo calendario, sin anclaje de la comparativa). */
@@ -394,8 +441,8 @@ export function ComparativaDashboardSection({
     if (useRpcLine && rpcData?.daily) {
       return buildComparisonFromRpcDaily(rpcData.daily, compareDays, metric, compareMode);
     }
-    return buildComparisonSeriesSpec(leads, compareDays, compareMode, specTr, compareWindowOptions);
-  }, [leads, compareDays, compareMode, specTr, compareWindowOptions, rpcData, alDataSource]);
+    return buildComparisonSeriesSpec(filteredLeads, compareDays, compareMode, specTr, compareWindowOptions);
+  }, [filteredLeads, compareDays, compareMode, specTr, compareWindowOptions, rpcData, alDataSource]);
 
   const optAligned = useMemo(
     () =>
@@ -426,8 +473,8 @@ export function ComparativaDashboardSection({
     () =>
       Boolean(rpcData?.daily?.length) &&
       specTr.kind !== "match_column" &&
-      (alDataSource === "rpc" || leads.length === 0),
-    [rpcData, specTr.kind, alDataSource, leads.length],
+      (alDataSource === "rpc" || filteredLeads.length === 0),
+    [rpcData, specTr.kind, alDataSource, filteredLeads.length],
   );
   const trend = useMemo(() => {
     if (trendUsingRpc && rpcData?.daily) {
@@ -439,8 +486,8 @@ export function ComparativaDashboardSection({
           : d[key],
       }));
     }
-    return buildFullDailyTrendForSpec(leads, 90, specTr, compareWindowOptions);
-  }, [trendUsingRpc, rpcData, leads, specTr, compareWindowOptions]);
+    return buildFullDailyTrendForSpec(filteredLeads, 90, specTr, compareWindowOptions);
+  }, [trendUsingRpc, rpcData, filteredLeads, specTr, compareWindowOptions]);
   const trendOverlayData = useMemo(() => {
     if (trendOverlay === "off" || trend.length === 0) return undefined;
     const metric: "leads" | "ventas" | "efectividad" | null =
@@ -452,7 +499,7 @@ export function ComparativaDashboardSection({
     if (trendUsingRpc && rpcData?.daily && metric) {
       data = comparisonLineFromRpcDaily(rpcData.daily, trend, metric, trendOverlay as RpcOverlayMode);
     } else {
-      data = comparisonLineAlignedToDailySpec(leads, trend, specTr, trendOverlay);
+      data = comparisonLineAlignedToDailySpec(filteredLeads, trend, specTr, trendOverlay);
     }
     return {
       name: COMPARISON_MODE_META[trendOverlay].comparisonLegend,
@@ -566,111 +613,41 @@ export function ComparativaDashboardSection({
     };
   }, [onFilterByDate, comparisonTrWindow.dateKeys]);
 
-  /* —— Explorador dinámico (un gráfico; elige columna + busca valor + métrica propia) —— */
-  const [exFilterCol, setExFilterCol] = useState<keyof LeadRow>(COMPARATIVE_BREAKDOWN_GROUPS[0]!.column);
-  const exGroupMeta = useMemo(
-    () => COMPARATIVE_BREAKDOWN_GROUPS.find((g) => g.column === exFilterCol) ?? COMPARATIVE_BREAKDOWN_GROUPS[0]!,
-    [exFilterCol],
-  );
-  const [exSearch, setExSearch] = useState("");
-  const [exFilterTok, setExFilterTok] = useState<string>(LEADS_FILTER_EMPTY_TOKEN);
-  const [exBase, setExBase] = useState<BaseKind>("leads");
-  const [exDimId, setExDimId] = useState(COMPARATIVE_DIMENSION_SUBJECTS[0]!.id);
-  const [exDimTok, setExDimTok] = useState(LEADS_FILTER_EMPTY_TOKEN);
-  const [exViz, setExViz] = useState<ComparisonViz>("area");
 
-  const exFilterOptions = useMemo(() => uniqueValuesForColumn(leads, exFilterCol, 400), [leads, exFilterCol]);
-  const exFilteredPicklist = useMemo(() => {
-    const q = exSearch.trim().toLowerCase();
-    const base = q
-      ? exFilterOptions.filter((t) => formatFilterChipValue(t).toLowerCase().includes(q))
-      : exFilterOptions;
-    return base.slice(0, 100);
-  }, [exFilterOptions, exSearch]);
-
-  useEffect(() => {
-    if (exFilterOptions.length === 0) return;
-    if (!exFilterOptions.includes(exFilterTok)) setExFilterTok(exFilterOptions[0]!);
-  }, [exFilterCol, exFilterOptions, exFilterTok]);
-
-  const exDimSubj = COMPARATIVE_DIMENSION_SUBJECTS.find((d) => d.id === exDimId)!;
-  const exDimOptions = useMemo(
-    () => uniqueValuesForColumn(leads, exDimSubj.column, 80),
-    [leads, exDimSubj.column],
-  );
-  const exInnerSpec = useMemo(
-    () => specFromMetricParts(exBase, exDimSubj, exDimTok),
-    [exBase, exDimSubj, exDimTok],
-  );
-  useDimTokenSync(exBase, exDimOptions, exDimTok, setExDimTok);
-
-  const exSlice = useMemo(
-    () => leads.filter((r) => rowMatchesDimensionToken(r, exFilterCol, exFilterTok)),
-    [leads, exFilterCol, exFilterTok],
-  );
-
-  const exCompareWindowOptions = useMemo<CompareWindowOptions>(() => {
-    const keys = comparisonAl.dateKeys;
-    const globalEndDateStr = keys[keys.length - 1];
-    const globalEndDate = globalEndDateStr ? parseISO(globalEndDateStr) : undefined;
-    return {
-      ...compareWindowOptions,
-      overrideEndDate: globalEndDate && !Number.isNaN(globalEndDate.getTime()) ? globalEndDate : undefined,
-    };
-  }, [compareWindowOptions, comparisonAl.dateKeys]);
-
-  const exComparison = useMemo(
-    () => buildComparisonSeriesSpec(exSlice, compareDays, compareMode, exInnerSpec, exCompareWindowOptions),
-    [exSlice, compareDays, compareMode, exInnerSpec, exCompareWindowOptions],
-  );
-
-  const exTitle = useMemo(
-    () =>
-      `${exGroupMeta.label}: ${formatFilterChipValue(exFilterTok)} · ${comparativeSpecTitle(exInnerSpec, exDimSubj.label)}`,
-    [exGroupMeta.label, exFilterTok, exInnerSpec, exDimSubj.label],
-  );
-
-  const exYpct = exInnerSpec.kind === "efectividad";
-  const optExplorer = useMemo(
-    () =>
-      comparisonDualSeriesOption(exComparison.points, `Corte · ${exTitle}`, {
-        subtitle: exComparison.meta.subtitle,
-        actualName: "Serie actual",
-        comparisonName: exComparison.meta.comparisonLegend,
-        yPercent: exYpct,
-        viz: exViz,
-      }),
-    [exComparison, exTitle, exYpct, exViz],
-  );
-
-  const evExplorerDay = useMemo(() => {
-    if (!onFilterByDate) return undefined;
-    const keys = exComparison.dateKeys;
-    return {
-      click: (params: { dataIndex?: number }) => {
-        const i = params.dataIndex;
-        if (typeof i !== "number" || i < 0 || i >= keys.length) return;
-        onFilterByDate(keys[i]!);
-      },
-    };
-  }, [onFilterByDate, exComparison.dateKeys]);
 
   return (
-    <section className="space-y-4">
-      <div>
-        <h2 className="text-lg font-display font-bold text-foreground tracking-tight">Comparativa</h2>
-        <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
-          <strong>Modo de comparación</strong> y <strong>ventana</strong> son globales para esta sección. Cada gráfico
-          elige por separado qué métrica analizar y el tipo de visualización.
-        </p>
+    <section className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-100">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-xl shadow-indigo-500/20">
+            <BarChart3 className="h-7 w-7 text-white" />
+          </div>
+          <div>
+            <h2 className="text-3xl font-display font-black tracking-tight text-slate-900 leading-none mb-2">
+              Explorador Comparativo Estratégico
+            </h2>
+            <p className="text-muted-foreground text-sm font-medium leading-relaxed max-w-2xl">
+              Análisis dinámico de tendencias y comparativas temporales con anclaje inteligente.
+            </p>
+          </div>
+        </div>
+
+
       </div>
 
-      <Card className="p-4 md:p-5">
-        <p className="text-[11px] text-muted-foreground mb-3">
-          Modo de comparación, duración (N días) y anclaje temporal de la ventana aplican a{" "}
-          <strong>todos</strong> los gráficos de comparativa (ventana alineada, histórico «ventana global», longitud de
-          tendencia y explorador). Semanas ISO agregan por calendario completo, independiente del anclaje.
-        </p>
+      <Card className="p-4 md:p-6 border-slate-200/60 bg-white/50 backdrop-blur-sm shadow-sm rounded-2xl overflow-hidden relative">
+        <div className="absolute top-0 right-0 p-3">
+          <Sparkles className="h-5 w-5 text-indigo-500/20" />
+        </div>
+        <div className="mb-6">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-indigo-500" />
+            Configuración Global de Ventana
+          </h3>
+          <p className="text-[11px] text-muted-foreground font-medium mt-1">
+            Define el periodo de contraste y el anclaje temporal para todos los análisis de esta sección.
+          </p>
+        </div>
         <div className="flex flex-wrap gap-4 items-end">
           <div className="space-y-1">
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Modo comparación</p>
@@ -778,341 +755,204 @@ export function ComparativaDashboardSection({
         </Alert>
       )}
 
-      <div className="grid lg:grid-cols-2 gap-4">
-        <Card className="p-4 space-y-3">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <p className="text-xs font-semibold text-foreground">Ventana alineada</p>
-            <div className="flex flex-wrap gap-3 items-end">
-              {(alBase === "leads" || alBase === "ventas" || alBase === "efectividad") &&
-                Boolean(rpcData?.daily?.length) && (
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Fuente</p>
-                    <Select
-                      value={alDataSource}
-                      onValueChange={(v) => setAlDataSource(v as "client" | "rpc")}
-                    >
-                      <SelectTrigger className="h-8 min-w-[200px] max-w-[min(100vw-2rem,320px)] text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="client">Universo en cliente</SelectItem>
-                        <SelectItem value="rpc">Como análisis fijo (servidor)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              <div className="space-y-1">
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Vista</p>
-                <Select value={dailyViz} onValueChange={(v) => setDailyViz(v as ComparisonViz)}>
-                  <SelectTrigger className="h-8 w-[120px] text-xs">
+      <div className="grid lg:grid-cols-2 gap-6">
+        <GlassCard noPad className="flex flex-col shadow-lg border-slate-200/60 transition-all hover:shadow-xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-indigo-500 flex items-center justify-center shadow-sm">
+                <LayoutDashboard className="h-4.5 w-4.5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 leading-none mb-1">Ventana Alineada</h3>
+                <p className="text-[10px] text-muted-foreground font-medium">Contraste directo punto a punto</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={dailyViz} onValueChange={(v) => setDailyViz(v as ComparisonViz)}>
+                <SelectTrigger className="h-8 w-[90px] text-[10px] bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="area">Área</SelectItem>
+                  <SelectItem value="line">Línea</SelectItem>
+                  <SelectItem value="bar">Barra</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="p-4 bg-white space-y-4">
+            <MetricSelectors
+              leads={filteredLeads}
+              dimensionOptions={dimensionOptions}
+              baseKind={alBase}
+              setBaseKind={setAlBase}
+              dimSubjectId={alDimId}
+              setDimSubjectId={setAlDimId}
+              dimToken={alDimTok}
+              setDimToken={setAlDimTok}
+              suffix="al"
+            />
+            <div className="h-[300px] w-full">
+              <ReactECharts
+                key={`al-${alDataSource}-${windowAnchor.type}-${compareMode}-${compareDays}-${dailyViz}-${titleAl}`}
+                option={optAligned}
+                style={{ height: "100%", width: "100%" }}
+                notMerge
+                lazyUpdate
+                onEvents={evCompareDay}
+              />
+            </div>
+          </div>
+        </GlassCard>
+
+        <GlassCard noPad className="flex flex-col shadow-lg border-slate-200/60 transition-all hover:shadow-xl overflow-hidden">
+          <Tabs
+            value={historicTab}
+            onValueChange={(v) => setHistoricTab(v as "window" | "trend")}
+            className="flex flex-col h-full"
+          >
+            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-purple-500 flex items-center justify-center shadow-sm">
+                  <Clock className="h-4.5 w-4.5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 leading-none mb-1">Histórico Evolutivo</h3>
+                  <p className="text-[10px] text-muted-foreground font-medium">Continuidad y tendencias largas</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <TabsList className="h-8 bg-slate-200/50 p-1">
+                  <TabsTrigger value="window" className="text-[10px] h-6">Ventana</TabsTrigger>
+                  <TabsTrigger value="trend" className="text-[10px] h-6">~90 días</TabsTrigger>
+                </TabsList>
+                <Select value={trendViz} onValueChange={(v) => setTrendViz(v as typeof trendViz)}>
+                  <SelectTrigger className="h-8 w-[90px] text-[10px] bg-white">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="line">Línea</SelectItem>
                     <SelectItem value="area">Área</SelectItem>
-                    <SelectItem value="line">Líneas</SelectItem>
-                    <SelectItem value="bar">Barras</SelectItem>
+                    <SelectItem value="bar">Barra</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
-          </div>
-          <MetricSelectors
-            leads={leads}
-            baseKind={alBase}
-            setBaseKind={setAlBase}
-            dimSubjectId={alDimId}
-            setDimSubjectId={setAlDimId}
-            dimToken={alDimTok}
-            setDimToken={setAlDimTok}
-            suffix="al"
-          />
-          <p className="text-[11px] text-muted-foreground">Clic en punto filtra por día</p>
-          <ChartFrame>
-            <ReactECharts
-              key={`al-${alDataSource}-${windowAnchor.type}-${compareMode}-${compareDays}-${dailyViz}-${titleAl}`}
-              option={optAligned}
-              style={{ height: 300, width: "100%" }}
-              notMerge
-              lazyUpdate
-              onEvents={evCompareDay}
-            />
-          </ChartFrame>
-        </Card>
-
-        <Card className="p-4 space-y-3">
-          <Tabs
-            value={historicTab}
-            onValueChange={(v) => setHistoricTab(v as "window" | "trend")}
-            className="w-full space-y-3"
-          >
-            <div className="flex flex-wrap items-end justify-between gap-2">
-              <p className="text-xs font-semibold text-foreground">Histórico</p>
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Vista</p>
-                  <Select value={trendViz} onValueChange={(v) => setTrendViz(v as typeof trendViz)}>
-                    <SelectTrigger className="h-8 w-[120px] text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="line">Líneas</SelectItem>
-                      <SelectItem value="area">Área</SelectItem>
-                      <SelectItem value="bar">Barras</SelectItem>
-                    </SelectContent>
-                  </Select>
+            
+            <div className="p-4 bg-white flex-1 flex flex-col gap-4">
+              <MetricSelectors
+                leads={filteredLeads}
+                baseKind={trBase}
+                setBaseKind={setTrBase}
+                dimSubjectId={trDimId}
+                setDimSubjectId={setTrDimId}
+                dimToken={trDimTok}
+                setDimToken={setTrDimTok}
+                suffix="tr"
+              />
+              
+              <TabsContent value="window" className="mt-0 flex-1">
+                <div className="h-[300px] w-full">
+                  <ReactECharts
+                    key={`tr-win-${windowAnchor.type}-${compareMode}-${compareDays}-${trendViz}-${titleTr}`}
+                    option={optHistoricWindow}
+                    style={{ height: "100%", width: "100%" }}
+                    notMerge
+                    lazyUpdate
+                    onEvents={evHistoricWindowDay}
+                  />
                 </div>
-                <TabsList className="h-8">
-                  <TabsTrigger value="window" className="text-xs px-2.5">
-                    Ventana global
-                  </TabsTrigger>
-                  <TabsTrigger value="trend" className="text-xs px-2.5">
-                    ~90 días
-                  </TabsTrigger>
-                </TabsList>
-              </div>
-            </div>
-            <MetricSelectors
-              leads={leads}
-              baseKind={trBase}
-              setBaseKind={setTrBase}
-              dimSubjectId={trDimId}
-              setDimSubjectId={setTrDimId}
-              dimToken={trDimTok}
-              setDimToken={setTrDimTok}
-              suffix="tr"
-            />
-            <TabsContent value="window" className="mt-0 space-y-2">
-              <p className="text-[11px] text-muted-foreground">
-                Comparación dual con el <strong>modo</strong> y la <strong>ventana</strong> globales (igual que «Ventana
-                alineada»), usando la métrica definida arriba en este bloque.
-              </p>
-              <ChartFrame>
-                <ReactECharts
-                  key={`tr-win-${windowAnchor.type}-${compareMode}-${compareDays}-${trendViz}-${titleTr}`}
-                  option={optHistoricWindow}
-                  style={{ height: 300, width: "100%" }}
-                  notMerge
-                  lazyUpdate
-                  onEvents={evHistoricWindowDay}
-                />
-              </ChartFrame>
-            </TabsContent>
-            <TabsContent value="trend" className="mt-0 space-y-2">
-              <div className="flex flex-wrap gap-2 items-end justify-end">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Línea extra</p>
+              </TabsContent>
+              
+              <TabsContent value="trend" className="mt-0 flex-1 space-y-3">
+                <div className="flex justify-end">
                   <Select value={trendOverlay} onValueChange={(v) => setTrendOverlay(v as typeof trendOverlay)}>
-                    <SelectTrigger className="h-8 w-[180px] text-xs">
-                      <SelectValue />
+                    <SelectTrigger className="h-7 w-[160px] text-[10px] bg-slate-50">
+                      <SelectValue placeholder="Línea extra" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="off">Sin línea extra</SelectItem>
                       <SelectItem value="prev_calendar_day">vs día anterior</SelectItem>
                       <SelectItem value="same_weekday_prev_week">vs −7 días</SelectItem>
                       <SelectItem value="avg_weekday_historical">vs prom. weekday</SelectItem>
-                      <SelectItem value="same_dom_prev_month">vs mismo día mes ant.</SelectItem>
+                      <SelectItem value="same_dom_prev_month">vs mes ant.</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-              <p className="text-[11px] text-muted-foreground">Serie larga sin acotar a la ventana global · Clic filtra por día</p>
-              <ChartFrame>
-                <ReactECharts
-                  key={`tr-trend-${windowAnchor.type}-${compareMode}-${compareDays}-${trendViz}-${trendOverlay}-${titleTr}`}
-                  option={optTrend}
-                  style={{ height: 300, width: "100%" }}
-                  notMerge
-                  lazyUpdate
-                  onEvents={evTrendDay}
-                />
-              </ChartFrame>
-            </TabsContent>
+                <div className="h-[270px] w-full">
+                  <ReactECharts
+                    key={`tr-trend-${windowAnchor.type}-${compareMode}-${compareDays}-${trendViz}-${trendOverlay}-${titleTr}`}
+                    option={optTrend}
+                    style={{ height: "100%", width: "100%" }}
+                    notMerge
+                    lazyUpdate
+                    onEvents={evTrendDay}
+                  />
+                </div>
+              </TabsContent>
+            </div>
           </Tabs>
-        </Card>
+        </GlassCard>
       </div>
 
-      <Card className="p-4 space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <p className="text-xs font-semibold text-foreground">Semanas ISO</p>
-          <div className="flex flex-wrap gap-2 items-end">
-            <div className="space-y-1">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Vista</p>
-              <Select value={weeklyViz} onValueChange={(v) => setWeeklyViz(v as typeof weeklyViz)}>
-                <SelectTrigger className="h-8 w-[120px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bar">Barras</SelectItem>
-                  <SelectItem value="line">Líneas</SelectItem>
-                  <SelectItem value="area">Área</SelectItem>
-                </SelectContent>
-              </Select>
+      <GlassCard noPad className="shadow-lg border-slate-200/60 overflow-hidden transition-all hover:shadow-xl">
+        <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-blue-500 flex items-center justify-center shadow-sm">
+              <CalendarDays className="h-4.5 w-4.5 text-white" />
             </div>
-            <div className="space-y-1">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Comparar</p>
-              <Select value={weekCompare ? "yes" : "no"} onValueChange={(v) => setWeekCompare(v === "yes")}>
-                <SelectTrigger className="h-8 w-[150px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="yes">+ semana ant.</SelectItem>
-                  <SelectItem value="no">Solo serie</SelectItem>
-                </SelectContent>
-              </Select>
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 leading-none mb-1">Semanas ISO: Bloques Calendario</h3>
+              <p className="text-[10px] text-muted-foreground font-medium">Análisis por estacionalidad semanal</p>
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={weeklyViz} onValueChange={(v) => setWeeklyViz(v as typeof weeklyViz)}>
+              <SelectTrigger className="h-8 w-[100px] text-[10px] bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="bar">Barra</SelectItem>
+                <SelectItem value="line">Línea</SelectItem>
+                <SelectItem value="area">Área</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={weekCompare ? "yes" : "no"} onValueChange={(v) => setWeekCompare(v === "yes")}>
+              <SelectTrigger className="h-8 w-[120px] text-[10px] bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="yes">+ sem. anterior</SelectItem>
+                <SelectItem value="no">Serie única</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
-        <MetricSelectors
-          leads={leads}
-          baseKind={wkBase}
-          setBaseKind={setWkBase}
-          dimSubjectId={wkDimId}
-          setDimSubjectId={setWkDimId}
-          dimToken={wkDimTok}
-          setDimToken={setWkDimTok}
-          suffix="wk"
-        />
-        <p className="text-[11px] text-muted-foreground">Clic filtra rango de semana</p>
-        <ChartFrame>
-          <ReactECharts
-            key={`wk-${weeklyViz}-${weekCompare}-${compareMode}-${compareDays}-${titleWk}`}
-            option={optWeekly}
-            style={{ height: 320, width: "100%" }}
-            notMerge
-            lazyUpdate
-            onEvents={evWeekly}
-          />
-        </ChartFrame>
-      </Card>
-
-      {leads.length > 0 ? (
-        <Card className="p-4 md:p-5 space-y-4">
-          <div>
-            <h3 className="text-base font-display font-semibold text-foreground">Explorador comparativo por dimensión</h3>
-            <p className="text-xs text-muted-foreground mt-1 max-w-3xl">
-              Elige una columna (ciudad, campaña, canal, etc.), busca un valor y define qué métrica calcular dentro de ese
-              corte. Usa la misma ventana y modo global de arriba.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2 items-end">
-            <div className="space-y-1">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Dimensión del corte</p>
-              <Select
-                value={String(exFilterCol)}
-                onValueChange={(v) => setExFilterCol(v as keyof LeadRow)}
-              >
-                <SelectTrigger className="h-8 w-[200px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {COMPARATIVE_BREAKDOWN_GROUPS.map((g) => (
-                    <SelectItem key={g.id} value={String(g.column)}>
-                      {g.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1 min-w-[160px] flex-1 max-w-xs">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Buscar valor</p>
-              <Input
-                className="h-8 text-xs"
-                placeholder="Filtrar lista…"
-                value={exSearch}
-                onChange={(e) => setExSearch(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1 min-w-[200px] max-w-[280px]">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Valor</p>
-              <Select value={exFilterTok} onValueChange={setExFilterTok}>
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="max-h-64">
-                  {exFilteredPicklist.length === 0 ? (
-                    <SelectItem value="__none__" disabled className="text-muted-foreground">
-                      Sin coincidencias
-                    </SelectItem>
-                  ) : (
-                    exFilteredPicklist.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {formatFilterChipValue(t)}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Vista</p>
-              <Select value={exViz} onValueChange={(v) => setExViz(v as ComparisonViz)}>
-                <SelectTrigger className="h-8 w-[110px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="area">Área</SelectItem>
-                  <SelectItem value="line">Líneas</SelectItem>
-                  <SelectItem value="bar">Barras</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+        <div className="p-4 bg-white space-y-4">
           <MetricSelectors
-            leads={leads}
-            baseKind={exBase}
-            setBaseKind={setExBase}
-            dimSubjectId={exDimId}
-            setDimSubjectId={setExDimId}
-            dimToken={exDimTok}
-            setDimToken={setExDimTok}
-            suffix="ex"
+            leads={filteredLeads}
+            baseKind={wkBase}
+            setBaseKind={setWkBase}
+            dimSubjectId={wkDimId}
+            setDimSubjectId={setWkDimId}
+            dimToken={wkDimTok}
+            setDimToken={setWkDimTok}
+            suffix="wk"
           />
-          <div className="text-xs text-muted-foreground mt-2 pb-2 px-2 flex items-center justify-between">
-            <p>
-              Registros en este corte: <strong className="text-foreground">{exSlice.length.toLocaleString("es")}</strong>
-              {" · Clic en punto filtra por día"}
-            </p>
-          </div>
-          
-          {exSlice.length > 0 && sumComparisonSeriesActual(exComparison.points) === 0 && (
-            <div className="mx-2 mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-600/90 text-xs">
-              <strong>Nota:</strong> Los {exSlice.length} registros encontrados no coinciden con la ventana actual ({exComparison.dateKeys[0] ? format(parseISO(exComparison.dateKeys[0]), "d MMM", { locale: es }) : ""} al {exComparison.dateKeys[exComparison.dateKeys.length - 1] ? format(parseISO(exComparison.dateKeys[exComparison.dateKeys.length - 1]), "d MMM yyyy", { locale: es }) : ""}). Para verlos en la gráfica, asegúrate de que el filtro de fechas superior o los últimos {compareDays} días abarquen el momento en que ocurrieron (ej. meses anteriores).
-            </div>
-          )}
-
-          <ChartFrame>
+          <div className="h-[320px] w-full">
             <ReactECharts
-              key={`ex-${windowAnchor.type}-${exFilterCol}-${exFilterTok}-${exViz}-${compareMode}-${compareDays}-${exTitle}`}
-              option={optExplorer}
-              style={{ height: 320, width: "100%" }}
+              key={`wk-${weeklyViz}-${weekCompare}-${compareMode}-${compareDays}-${titleWk}`}
+              option={optWeekly}
+              style={{ height: "100%", width: "100%" }}
               notMerge
               lazyUpdate
-              onEvents={evExplorerDay}
+              onEvents={evWeekly}
             />
-          </ChartFrame>
-        </Card>
-      ) : (
-        <Card className="p-6 md:p-8 text-center space-y-4">
-          <h3 className="text-base font-display font-semibold text-foreground">Explorador comparativo por dimensión</h3>
-          <p className="text-xs text-muted-foreground max-w-2xl mx-auto">
-            Para cortes finos por valor (ciudad, campaña, agente, etc.) hace falta el universo de leads en el navegador.
-            {comparativeDatasetIdle && onRequestComparativeDataset
-              ? " Puedes iniciar la descarga aquí o con «Cargar análisis comparativo» / «Cargar dataset para cortes finos» arriba en esta sección."
-              : " Usa el botón de carga bajo demanda al inicio de Análisis comparativo; al terminar, el explorador se activará solo."}
-          </p>
-          {isLeadsLoading && (
-            <div className="flex items-center justify-center gap-2 mt-2">
-              <div className="h-3 w-3 animate-spin rounded-full border-2 border-teal-600 border-t-transparent" />
-              <p className="text-[10px] text-muted-foreground">Sincronizando universo para cortes finos…</p>
-            </div>
-          )}
-          {comparativeDatasetIdle && onRequestComparativeDataset && !isLeadsLoading && (
-            <Button type="button" size="sm" onClick={onRequestComparativeDataset}>
-              Cargar dataset para el explorador
-            </Button>
-          )}
-        </Card>
-      )}
+          </div>
+        </div>
+      </GlassCard>
+
+
     </section>
   );
 }

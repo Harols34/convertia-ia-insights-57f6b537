@@ -1,6 +1,6 @@
 import type { EChartsOption } from "echarts";
 import { EXEC, type TimeViz, type CatViz } from "./dashboard-chart-theme";
-import type { DailyPoint, NamedCount, WeeklyPoint, ComparisonMetric } from "@/lib/dashboard-leads-analytics";
+import type { DailyPoint, NamedCount, WeeklyPoint, ComparisonMetric, LeadVentasStats } from "@/lib/dashboard-leads-analytics";
 
 function dailyValuesForMetric(daily: DailyPoint[], metric: ComparisonMetric): number[] {
   return daily.map((d) =>
@@ -25,7 +25,10 @@ function baseTooltip(): EChartsOption["tooltip"] {
     trigger: "axis",
     backgroundColor: EXEC.tooltipBg,
     borderColor: EXEC.tooltipBorder,
-    textStyle: { color: EXEC.tooltipText, fontSize: 11 },
+    borderWidth: 1,
+    padding: [10, 14],
+    textStyle: { color: EXEC.tooltipText, fontSize: 12, fontFamily: "inherit" },
+    extraCssText: "box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); border-radius: 12px; backdrop-filter: blur(8px);",
   };
 }
 
@@ -34,7 +37,10 @@ function itemTooltip(): EChartsOption["tooltip"] {
     trigger: "item",
     backgroundColor: EXEC.tooltipBg,
     borderColor: EXEC.tooltipBorder,
-    textStyle: { color: EXEC.tooltipText, fontSize: 11 },
+    borderWidth: 1,
+    padding: [10, 14],
+    textStyle: { color: EXEC.tooltipText, fontSize: 12, fontFamily: "inherit" },
+    extraCssText: "box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); border-radius: 12px; backdrop-filter: blur(8px);",
   };
 }
 
@@ -751,6 +757,158 @@ export function categoryOption(data: NamedCount[], mode: CatViz, title: string):
   };
 }
 
+export function statsByWeekdayOption(data: (LeadVentasStats & { day: string })[]): EChartsOption {
+  const cats = data.map((d) => d.day);
+  const leads = data.map((d) => d.leads);
+  const ventas = data.map((d) => d.ventas);
+  const eff = data.map((d) => Math.round(d.efectividad * 10) / 10);
+
+  return {
+    backgroundColor: "transparent",
+    grid: EXEC.grid,
+    legend: {
+      show: true,
+      top: 4,
+      right: 8,
+      textStyle: { color: EXEC.textMuted, fontSize: 10 },
+    },
+    tooltip: {
+      ...baseTooltip(),
+      formatter: (params: any) => {
+        let res = `<div style="font-weight:600;margin-bottom:4px;">${params[0].axisValue}</div>`;
+        params.forEach((p: any) => {
+          const val = p.seriesName === "Efectividad" ? `${p.value}%` : p.value.toLocaleString();
+          res += `<div style="display:flex;justify-content:space-between;gap:12px;font-size:11px;">
+            <span style="display:flex;items-center;gap:4px;">
+              <span style="width:8px;height:8px;border-radius:50%;background:${p.color};margin-top:4px;"></span>
+              ${p.seriesName}
+            </span>
+            <span style="font-weight:600;">${val}</span>
+          </div>`;
+        });
+        return res;
+      },
+    },
+    xAxis: {
+      type: "category",
+      data: cats,
+      axisLine: { lineStyle: { color: EXEC.axis } },
+      axisLabel: { color: EXEC.textMuted, fontSize: 10 },
+    },
+    yAxis: [
+      {
+        type: "value",
+        name: "Volumen",
+        splitLine: { lineStyle: { color: EXEC.split, type: "dashed" } },
+        axisLabel: { color: EXEC.textMuted, fontSize: 10 },
+      },
+      {
+        type: "value",
+        name: "Ef.",
+        position: "right",
+        splitLine: { show: false },
+        axisLabel: { color: EXEC.textMuted, fontSize: 10, formatter: "{value}%" },
+      },
+    ],
+    series: [
+      {
+        name: "Leads",
+        type: "bar",
+        data: leads,
+        itemStyle: { color: EXEC.tealDim, borderRadius: [4, 4, 0, 0] },
+        barMaxWidth: 20,
+      },
+      {
+        name: "Ventas",
+        type: "bar",
+        data: ventas,
+        itemStyle: { color: EXEC.violet, borderRadius: [4, 4, 0, 0] },
+        barMaxWidth: 20,
+        barGap: "-100%",
+      },
+      {
+        name: "Efectividad",
+        type: "line",
+        yAxisIndex: 1,
+        smooth: true,
+        data: eff,
+        lineStyle: { width: 2, color: EXEC.amber },
+        itemStyle: { color: EXEC.amber },
+        symbol: "circle",
+        symbolSize: 6,
+      },
+    ],
+  };
+}
+
+export function statsByCategoryOption(data: LeadVentasStats[], mode: CatViz): EChartsOption {
+  const top = data.slice(0, 10);
+  const names = top.map((d) => d.name);
+  const leads = top.map((d) => d.leads);
+  const ventas = top.map((d) => d.ventas);
+  const eff = top.map((d) => Math.round(d.efectividad * 10) / 10);
+
+  if (mode === "donut") {
+    return {
+      backgroundColor: "transparent",
+      tooltip: itemTooltip(),
+      legend: { type: "scroll", bottom: 0, textStyle: { color: EXEC.textMuted, fontSize: 9 } },
+      series: [
+        {
+          type: "pie",
+          radius: ["40%", "65%"],
+          center: ["50%", "45%"],
+          data: top.map((d, i) => ({
+            name: d.name,
+            value: d.leads,
+            itemStyle: { color: i % 2 === 0 ? EXEC.teal : EXEC.violet, opacity: 0.85 - (i % 5) * 0.06 },
+          })),
+          label: {
+            color: EXEC.textMuted,
+            fontSize: 9,
+            formatter: "{b}\n{d}%",
+          },
+        },
+      ],
+    };
+  }
+
+  return {
+    backgroundColor: "transparent",
+    grid: { ...EXEC.grid, right: 40 },
+    legend: { show: true, top: 4, right: 8, textStyle: { color: EXEC.textMuted, fontSize: 10 } },
+    tooltip: {
+      ...baseTooltip(),
+      formatter: (params: any) => {
+        let res = `<div style="font-weight:600;margin-bottom:4px;">${params[0].axisValue}</div>`;
+        params.forEach((p: any) => {
+          const val = p.seriesName === "Efectividad" ? `${p.value}%` : p.value.toLocaleString();
+          res += `<div style="display:flex;justify-content:space-between;gap:12px;font-size:11px;">
+            <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:6px;"></span>${p.seriesName}</span>
+            <span style="font-weight:600;">${val}</span>
+          </div>`;
+        });
+        return res;
+      },
+    },
+    xAxis: {
+      type: "category",
+      data: names,
+      axisLabel: { color: EXEC.textMuted, fontSize: 9, rotate: 25, formatter: (v: string) => v.length > 15 ? v.slice(0, 13) + "…" : v },
+      axisLine: { lineStyle: { color: EXEC.axis } },
+    },
+    yAxis: [
+      { type: "value", splitLine: { lineStyle: { color: EXEC.split, type: "dashed" } }, axisLabel: { color: EXEC.textMuted, fontSize: 10 } },
+      { type: "value", position: "right", splitLine: { show: false }, axisLabel: { color: EXEC.textMuted, fontSize: 10, formatter: "{value}%" } },
+    ],
+    series: [
+      { name: "Leads", type: "bar", data: leads, itemStyle: { color: EXEC.tealDim, borderRadius: [4, 4, 0, 0] }, barMaxWidth: 20 },
+      { name: "Ventas", type: "bar", data: ventas, itemStyle: { color: EXEC.violet, borderRadius: [4, 4, 0, 0] }, barMaxWidth: 20, barGap: "-100%" },
+      { name: "Efectividad", type: "line", yAxisIndex: 1, smooth: true, data: eff, lineStyle: { width: 2, color: EXEC.amber }, itemStyle: { color: EXEC.amber }, symbol: "circle", symbolSize: 6 },
+    ],
+  };
+}
+
 export function funnelOption(stages: { name: string; value: number }[]): EChartsOption {
   return {
     backgroundColor: "transparent",
@@ -828,91 +986,6 @@ export function gaugeConversionOption(pct: number, title: string, maxScale = 100
           offsetCenter: [0, "24%"],
         },
         data: [{ value: needle }],
-      },
-    ],
-  };
-}
-
-export function weekdayBarsOption(rows: { day: string; count: number }[]): EChartsOption {
-  return {
-    backgroundColor: "transparent",
-    title: {
-      text: "Patrón por día de semana",
-      left: 0,
-      top: 4,
-      textStyle: { color: EXEC.text, fontSize: 13, fontWeight: 600 },
-    },
-    grid: EXEC.grid,
-    xAxis: {
-      type: "category",
-      data: rows.map((r) => r.day),
-      axisLine: { lineStyle: { color: EXEC.axis } },
-      axisLabel: { color: EXEC.textMuted, fontSize: 11 },
-    },
-    yAxis: {
-      type: "value",
-      splitLine: { lineStyle: { color: EXEC.split, type: "dashed" } },
-      axisLabel: { color: EXEC.textMuted, fontSize: 10 },
-    },
-    tooltip: baseTooltip(),
-    series: [
-      {
-        type: "bar",
-        data: rows.map((r) => r.count),
-        itemStyle: {
-          color: (params: { dataIndex: number }) => {
-            const a = [EXEC.teal, EXEC.violet, EXEC.teal, EXEC.violet, EXEC.amber, EXEC.textMuted, EXEC.textMuted];
-            return a[params.dataIndex % a.length];
-          },
-          borderRadius: [4, 4, 0, 0],
-        },
-        barMaxWidth: 36,
-      },
-    ],
-  };
-}
-
-export function cityGeoStyleOption(data: NamedCount[], title: string): EChartsOption {
-  const top = data.filter((d) => d.name !== "(vacío)").slice(0, 16);
-  return {
-    backgroundColor: "transparent",
-    title: {
-      text: title,
-      subtext: "Ranking por volumen (vista tipo mapa de calor)",
-      left: 0,
-      top: 0,
-      textStyle: { color: EXEC.text, fontSize: 13, fontWeight: 600 },
-      subtextStyle: { color: EXEC.textMuted, fontSize: 10 },
-    },
-    grid: { left: 8, right: 56, top: 52, bottom: 8, containLabel: true },
-    visualMap: {
-      min: 0,
-      max: top[0]?.value ?? 1,
-      orient: "horizontal",
-      left: "center",
-      bottom: 4,
-      textStyle: { color: EXEC.textMuted, fontSize: 9 },
-      inRange: { color: ["#ccfbf1", "#0d9488"] },
-    },
-    xAxis: { type: "value", show: false },
-    yAxis: {
-      type: "category",
-      data: top.map((d) => d.name),
-      axisLabel: {
-        color: EXEC.textMuted,
-        fontSize: 10,
-        formatter: (v: string) => (v.length > 20 ? `${v.slice(0, 18)}…` : v),
-      },
-      axisLine: { show: false },
-      axisTick: { show: false },
-    },
-    tooltip: { ...baseTooltip(), axisPointer: { type: "shadow" } },
-    series: [
-      {
-        type: "bar",
-        data: top.map((d) => d.value),
-        itemStyle: { borderRadius: [0, 4, 4, 0] },
-        label: { show: true, position: "right", color: EXEC.textMuted, fontSize: 10 },
       },
     ],
   };
