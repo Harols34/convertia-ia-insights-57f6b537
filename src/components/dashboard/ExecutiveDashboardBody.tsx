@@ -48,6 +48,7 @@ import {
   type DiscoveredDimension,
 } from "@/lib/dashboard-leads-analytics";
 import type { DashboardExecutiveData } from "@/lib/dashboard-executive-rpc";
+import React from "react";
 import { ComparativaControlsProvider } from "@/contexts/ComparativaControlsContext";
 import { ComparativaDashboardSection } from "./ComparativaDashboardSection";
 import { EXEC, type TimeViz, type CatViz } from "./dashboard-chart-theme";
@@ -154,7 +155,7 @@ function crossFilterHandlers(
   };
 }
 
-function ExecutiveDashboardBodyInner({
+const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyInner({
   leads,
   rpcData,
   isLeadsLoading = false,
@@ -611,11 +612,7 @@ function ExecutiveDashboardBodyInner({
               </div>
             </GlassCard>
           )}
-          {leads.length === 0 && isLeadsLoading && (
-            <p className="text-[11px] text-muted-foreground text-center">
-              Descargando filas para cortes por dimensión: <strong className="tabular-nums">{comparativeRowsLoadedProgress.toLocaleString("es")}</strong> recibidas…
-            </p>
-          )}
+
         </>
       ) : comparativeDatasetIdle && onRequestComparativeDataset ? (
         <GlassCard>
@@ -641,12 +638,10 @@ function ExecutiveDashboardBodyInner({
                 {comparativeDatasetErrorMessage}
               </>
             ) : isLeadsLoading ? (
-              <>
-                Descargando filas (solo columnas necesarias)…
-                <span className="mt-2 block text-base font-display font-semibold text-foreground tabular-nums">
-                  {comparativeRowsLoadedProgress.toLocaleString("es")} filas recibidas
-                </span>
-              </>
+              <div className="flex flex-col items-center justify-center py-10 gap-3">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-teal-600 border-t-transparent" />
+                <p className="text-sm text-muted-foreground animate-pulse">Sincronizando información…</p>
+              </div>
             ) : (
               "No hay leads en el universo actual para comparativas avanzadas, o aún no hay datos disponibles."
             )}
@@ -1004,7 +999,7 @@ function ExecutiveDashboardBodyInner({
       </Collapsible>
     </div>
   );
-}
+});
 
 export function ExecutiveDashboardBody(props: ExecutiveDashboardBodyProps) {
   return (

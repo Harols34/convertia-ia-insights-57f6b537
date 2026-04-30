@@ -1101,12 +1101,10 @@ export function ComparativaDashboardSection({
               : " Usa el botón de carga bajo demanda al inicio de Análisis comparativo; al terminar, el explorador se activará solo."}
           </p>
           {isLeadsLoading && (
-            <p className="text-[11px] text-muted-foreground">
-              Descargando filas:{" "}
-              <strong className="tabular-nums">
-                {comparativeRowsLoadedProgress.toLocaleString("es")} recibidas…
-              </strong>
-            </p>
+            <div className="flex items-center justify-center gap-2 mt-2">
+              <div className="h-3 w-3 animate-spin rounded-full border-2 border-teal-600 border-t-transparent" />
+              <p className="text-[10px] text-muted-foreground">Sincronizando universo para cortes finos…</p>
+            </div>
           )}
           {comparativeDatasetIdle && onRequestComparativeDataset && !isLeadsLoading && (
             <Button type="button" size="sm" onClick={onRequestComparativeDataset}>

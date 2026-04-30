@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Filter, Calendar, ChevronDown, X, LayoutDashboard, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { ExecutiveDashboardBody } from "@/components/dashboard/ExecutiveDashboardBody";
+import React from "react";
+import { ExecutiveDashboardBody, type ExecutiveDashboardBodyProps } from "@/components/dashboard/ExecutiveDashboardBody";
 import { ExecutiveDashboardSkeleton } from "@/components/dashboard/ExecutiveDashboardSkeleton";
 import { useDashboardLeadsDataset, DASHBOARD_LEADS_QUERY_KEY } from "@/hooks/use-dashboard-leads-dataset";
 import {
@@ -61,12 +62,13 @@ function DimensionMultiFilter({
     return options.filter((o) => formatFilterChipValue(o).toLowerCase().includes(q));
   }, [options, search]);
 
-  const summary =
+  const summary = useMemo(() => 
     selected.length === 0
       ? "Todos"
       : selected.length === 1
         ? formatFilterChipValue(selected[0])
-        : `${selected.length} valores`;
+        : `${selected.length} valores`
+  , [selected]);
 
   const toggle = (token: string, checked: boolean) => {
     const set = new Set(selected);
@@ -147,9 +149,11 @@ function DimensionMultiFilter({
   );
 }
 
+const EMPTY_ARRAY: any[] = [];
+
 export default function DashboardPage() {
   const queryClient = useQueryClient();
-  const [comparativeFetchEnabled, setComparativeFetchEnabled] = useState(false);
+  const [comparativeFetchEnabled, setComparativeFetchEnabled] = useState(true);
   const [comparativeRowsProgress, setComparativeRowsProgress] = useState(0);
   const requestComparativeDataset = useCallback(() => {
     setComparativeFetchEnabled(true);
@@ -191,8 +195,24 @@ export default function DashboardPage() {
   const dimensionQuery = useQuery({
     queryKey: ["leads-dimension-options"] as const,
     queryFn: fetchDashboardFilterOptions,
-    staleTime: 5 * 60_000,
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
   });
+
+  const dimensionOptions = useMemo(() => {
+    if (dimensionQuery.data && Object.keys(dimensionQuery.data).length > 0) {
+      return dimensionQuery.data;
+    }
+    if (allLeads.length === 0) return undefined;
+    
+    // Fallback: calculate from client-side data if RPC fails or is still loading
+    const map: Partial<Record<keyof LeadRow, string[]>> = {};
+    for (const { key } of LEADS_DASHBOARD_FILTER_COLUMNS) {
+      map[key] = uniqueValuesForColumn(allLeads, key);
+    }
+    return map;
+  }, [allLeads, dimensionQuery.data]);
 
   useEffect(() => {
     const ch = supabase
@@ -295,11 +315,7 @@ export default function DashboardPage() {
           <div>
             <h1 className="text-2xl font-display font-bold tracking-tight text-foreground">Dashboard ejecutivo</h1>
             <p className="text-muted-foreground text-sm mt-0.5 max-w-2xl">
-              {leadsLoading && comparativeFetchEnabled && universeCount === 0 ? (
-                <span className="text-muted-foreground/80">
-                  Descargando filas en cliente: <strong className="text-foreground">{comparativeRowsProgress.toLocaleString("es")}</strong> leídas…
-                </span>
-              ) : allLeads.length > 0 ? (
+              {allLeads.length > 0 ? (
                 <>
                   Universo <strong className="text-foreground">{universeCount.toLocaleString("es")}</strong> leads
                   (RLS, en cliente para comparativa).
@@ -428,8 +444,8 @@ export default function DashboardPage() {
                   col={key}
                   label={label}
                   allLeads={allLeads}
-                  dimensionOptions={dimensionQuery.data}
-                  selected={filters.dimensions[key] ?? []}
+                  dimensionOptions={dimensionOptions}
+                  selected={filters.dimensions[key] ?? EMPTY_ARRAY}
                   onChange={(next) => setDimension(key, next)}
                 />
               ))}

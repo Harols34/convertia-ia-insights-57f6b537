@@ -45,7 +45,7 @@ export function useDashboardLeadsDataset(options?: Options) {
   const fchKey = `${fchRango?.desde ?? ""}\u0000${fchRango?.hasta ?? ""}`;
 
   return useQuery({
-    queryKey: [...DASHBOARD_LEADS_QUERY_KEY, STABLE_KEY_SUFFIX, colKey, pageSize, fchKey, panelFiltersKey] as const,
+    queryKey: [...DASHBOARD_LEADS_QUERY_KEY, STABLE_KEY_SUFFIX, colKey, pageSize, fchKey] as const,
     enabled,
     queryFn: async () => {
       onProgress?.(0);
@@ -67,9 +67,9 @@ export function useDashboardLeadsDataset(options?: Options) {
       onProgress?.(normalized.length);
       return normalized;
     },
-    staleTime: 2 * 60_000,
-    gcTime: 15 * 60_000,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }
