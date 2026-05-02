@@ -8,6 +8,8 @@ export const EXEC = {
   tealDim: "rgba(13, 148, 136, 0.28)",
   violet: "#7c3aed",
   violetDim: "rgba(124, 58, 237, 0.22)",
+  green: "#10b981",
+  purple: "#8b5cf6",
   amber: "#d97706",
   rose: "#e11d48",
   grid: { left: 48, right: 24, top: 56, bottom: 28 },

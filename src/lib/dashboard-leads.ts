@@ -1,4 +1,4 @@
-import { endOfDay, format, parseISO, startOfMonth } from "date-fns";
+import { endOfDay, format, parseISO, startOfMonth, subDays, startOfDay } from "date-fns";
 import type { Database } from "@/integrations/supabase/types";
 export type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
 
@@ -66,10 +66,15 @@ export const DASHBOARD_DEFAULT_WEEK_BARS = 3;
  * **todo** el histórico visible bajo RLS). Las fechas/ dimensiones se añaden solo al
  * filtrar con el panel.
  */
-export const defaultLeadsDashboardFilters = (): LeadsDashboardFilters => ({
-  esVenta: "all",
-  dimensions: {},
-});
+export const defaultLeadsDashboardFilters = (): LeadsDashboardFilters => {
+  const now = new Date();
+  return {
+    desde: format(subDays(now, 30), "yyyy-MM-dd"),
+    hasta: format(now, "yyyy-MM-dd"),
+    esVenta: "all",
+    dimensions: {},
+  };
+};
 
 function rowScalar(row: LeadRow, key: keyof LeadRow): string {
   const v = row[key];
@@ -101,16 +106,26 @@ export function fchCreacionToLocalYmd(raw: string | null | undefined): string {
   const s = String(raw).trim();
   if (!s) return "";
   try {
-    let d: Date;
+    // Si ya viene limpio como YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-      d = parseISO(s);
-    } else {
-      d = new Date(s);
+      return s;
     }
+    
+    // Intentar limpiar separadores raros si detectamos formato YYYY-MM-DD:HH...
+    const cleanS = s.includes(":") && s.indexOf(":") === 10 
+      ? s.slice(0, 10) + " " + s.slice(11)
+      : s;
+
+    let d = new Date(cleanS);
     if (Number.isNaN(d.getTime())) {
-      const p = parseISO(s.length >= 10 ? s.slice(0, 10) : s);
-      d = p;
+      // Fallback: tomar los primeros 10 caracteres si parecen una fecha
+      const potentialDate = s.slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(potentialDate)) {
+        return potentialDate;
+      }
+      d = parseISO(s);
     }
+    
     if (Number.isNaN(d.getTime())) return "";
     return format(d, "yyyy-MM-dd");
   } catch {

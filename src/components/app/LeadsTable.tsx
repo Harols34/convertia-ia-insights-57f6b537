@@ -2,7 +2,17 @@ import { useMemo, useState } from "react";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Lead {
   id: string;
@@ -24,6 +34,7 @@ interface LeadsTableProps {
   onSearchChange?: (value: string) => void;
   totalCount?: number;
   serverPaginated?: boolean;
+  onDelete?: (id: string) => Promise<void>;
 }
 
 export function LeadsTable({
@@ -33,9 +44,12 @@ export function LeadsTable({
   onSearchChange,
   totalCount,
   serverPaginated = false,
+  onDelete,
 }: LeadsTableProps) {
   const [internalSearch, setInternalSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const search = searchValue ?? internalSearch;
 
   const filtered = useMemo(() => {
@@ -81,12 +95,13 @@ export function LeadsTable({
               <TableHead>Resultado Gestión</TableHead>
               <TableHead>Resultado Negocio</TableHead>
               <TableHead>Fecha Creación</TableHead>
+              {onDelete && <TableHead className="w-[50px]"></TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={onDelete ? 9 : 8} className="text-center py-8 text-muted-foreground">
                   No se encontraron registros
                 </TableCell>
               </TableRow>
@@ -100,7 +115,31 @@ export function LeadsTable({
                   <TableCell>{l.ciudad || "—"}</TableCell>
                   <TableCell>{l.result_prim_gestion || "—"}</TableCell>
                   <TableCell>{l.result_negocio || "—"}</TableCell>
-                  <TableCell className="text-xs">{l.fch_creacion ? new Date(l.fch_creacion).toLocaleDateString("es") : "—"}</TableCell>
+                  <TableCell className="text-xs">
+                    {l.fch_creacion ? (
+                      (() => {
+                        const s = String(l.fch_creacion).trim();
+                        // Limpiar formato fecha:hora si existe
+                        const cleanS = s.includes(":") && s.indexOf(":") === 10 
+                          ? s.slice(0, 10) + " " + s.slice(11)
+                          : s;
+                        const d = new Date(cleanS);
+                        return isNaN(d.getTime()) ? (s.slice(0, 10)) : d.toLocaleDateString("es");
+                      })()
+                    ) : "—"}
+                  </TableCell>
+                  {onDelete && (
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-rose-500 hover:bg-rose-50"
+                        onClick={() => setDeleteId(l.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}
@@ -122,6 +161,36 @@ export function LeadsTable({
           </div>
         </div>
       )}
+      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <AlertDialogContent className="glass-bi border-white/10">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display font-black text-foreground">¿Eliminar registro?</AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-500 font-medium leading-relaxed">
+              Esta acción realizará un borrado lógico del lead. No se mostrará en la actividad reciente pero se mantendrá en los históricos agregados para no corromper las métricas BI.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting} className="font-bold uppercase tracking-wider text-[10px]">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!deleteId || !onDelete) return;
+                setDeleting(true);
+                try {
+                  await onDelete(deleteId);
+                  setDeleteId(null);
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+              className="bg-rose-500 hover:bg-rose-600 text-white font-bold uppercase tracking-wider text-[10px]"
+            >
+              {deleting ? "Eliminando..." : "Confirmar Borrado"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

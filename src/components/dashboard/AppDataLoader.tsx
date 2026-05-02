@@ -24,6 +24,12 @@ export function AppDataLoader({ children }: { children: React.ReactNode }) {
     }
   }, [isLoading, data]);
 
+  // Safety timeout to ensure loading screen doesn't get stuck
+  useEffect(() => {
+    const t = setTimeout(() => setShowOverlay(false), 3000);
+    return () => clearTimeout(t);
+  }, []);
+
   if (isError) {
     return (
       <div className="flex h-screen w-screen flex-col items-center justify-center bg-background p-6 text-center">

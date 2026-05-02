@@ -464,36 +464,37 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
           icon={Users}
           deltaPct={cmp7.total.deltaPct}
           deltaLabel="vs semana previa"
-        >
-          <div className="mt-2 -mx-2 -mb-2">
-            <MiniSpark values={sparkTotal} />
-          </div>
-        </KpiCard>
+          sparklineData={sparkTotal}
+          variant="default"
+        />
         <KpiCard
-          title="Ventas"
+          title="Ventas Facturadas"
           value={kpis.totalVentas}
           icon={TrendingUp}
           deltaPct={cmp7.ventas.deltaPct}
           deltaLabel="vs semana previa"
-        >
-          <div className="mt-2 -mx-2 -mb-2">
-            <MiniSpark values={sparkVentas} />
-          </div>
-        </KpiCard>
-        <KpiCard
-          title="Semana ISO"
-          value={cmpW.total.current}
-          icon={BarChart3}
-          deltaPct={cmpW.total.deltaPct}
-          deltaLabel="vs semana ISO ant."
-          subtitle={`Previo: ${cmpW.total.previous.toLocaleString("es")}`}
+          sparklineData={sparkVentas}
+          variant="success"
         />
         <KpiCard
-          title="Con 1ª gestión"
-          value={kpis.conGestion}
-          icon={MessageSquare}
-          subtitle={`${kpis.totalLeads ? ((kpis.conGestion / kpis.totalLeads) * 100).toFixed(1) : "0.0"}% del total`}
+          title="Conversión"
+          value={kpis.totalLeads ? (kpis.totalVentas / kpis.totalLeads) * 100 : 0}
+          format="percentage"
+          icon={Target}
+          deltaPct={cmp7.tasaVenta?.deltaPct}
+          deltaLabel="vs semana previa"
+          variant="purple"
         />
+        <div className="flex flex-col gap-4">
+          <KpiCard
+            title="Con 1ª gestión"
+            value={kpis.conGestion}
+            icon={MessageSquare}
+            subtitle={`${kpis.totalLeads ? ((kpis.conGestion / kpis.totalLeads) * 100).toFixed(1) : "0.0"}% del total`}
+            variant="amber"
+            className="flex-1"
+          />
+        </div>
       </div>
 
       {bullets.length > 0 && (

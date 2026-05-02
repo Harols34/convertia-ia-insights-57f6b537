@@ -44,39 +44,72 @@ function itemTooltip(): EChartsOption["tooltip"] {
   };
 }
 
-export function timeSeriesOption(
-  daily: DailyPoint[],
-  mode: TimeViz,
-  title: string,
-  opts?: {
-    /** Línea punteada de comparación (mismas categorías que `daily`). */
-    overlayLine?: { name: string; data: number[]; isPercent?: boolean };
-    /**
-     * Métrica de la serie principal (línea, área, barras). Debe coincidir con la de la comparación.
-     * En modo `combo` se ignora (siempre leads + ventas).
-     */
-    primaryMetric?: ComparisonMetric;
-  },
-): EChartsOption {
-  const cats = daily.map((d) => d.date.slice(5));
-  const leads = daily.map((d) => d.leads);
-  const ventas = daily.map((d) => d.ventas);
-  const primaryMetric = opts?.primaryMetric ?? "leads";
-  const primaryData = dailyValuesForMetric(daily, primaryMetric);
-  const primaryName = SERIE_LABEL[primaryMetric];
-  const yAxisPercent = primaryMetric === "efectividad" || Boolean(opts?.overlayLine?.isPercent);
+export type ChartType = "line" | "bar" | "area" | "combo";
 
-  const overlay = opts?.overlayLine;
-  const overlayLenOk = overlay && overlay.data.length === daily.length;
+export function dynamicTimeSeriesOption(
+  data: { 
+    date: string; 
+    leads: number; 
+    ventas: number; 
+    contactados?: number; 
+    gestionados?: number;
+    prev_leads?: number;
+    prev_ventas?: number;
+  }[],
+  type: ChartType,
+  title: string
+): EChartsOption {
+  const cats = data.map((d) => d.date.slice(5));
+  const leads = data.map((d) => d.leads);
+  const ventas = data.map((d) => d.ventas);
+  const prevLeads = data.map((d) => d.prev_leads ?? 0);
+  const prevVentas = data.map((d) => d.prev_ventas ?? 0);
+  
+  const hasComparison = data.some(d => d.prev_leads !== undefined);
 
   const series: EChartsOption["series"] = [];
-  if (mode === "combo") {
+
+  const getStyle = (name: string, chartType: ChartType, isPrev: boolean = false) => {
+    const baseColor = name.includes("Leads") ? EXEC.teal : name.includes("Ventas") ? EXEC.violet : EXEC.amber;
+    const color = isPrev ? "#94a3b8" : baseColor; // Slate-400 for comparison
+    
+    if (chartType === "bar") {
+      return {
+        type: "bar",
+        itemStyle: { 
+          color: isPrev ? "#cbd5e1" : color, // Slate-300 for prev bars
+          borderRadius: [4, 4, 0, 0],
+          opacity: isPrev ? 0.4 : 1
+        },
+        barMaxWidth: 16
+      };
+    }
+    
+    return {
+      type: "line",
+      smooth: true,
+      lineStyle: { 
+        color, 
+        width: isPrev ? 1.5 : 2,
+        type: isPrev ? "dashed" : "solid" 
+      },
+      itemStyle: { color },
+      symbol: isPrev ? "none" : "circle",
+      symbolSize: 4,
+      areaStyle: chartType === "area" ? { 
+        color: isPrev ? "transparent" : (name.includes("Leads") ? EXEC.tealDim : EXEC.violetDim) 
+      } : undefined
+    };
+  };
+
+  if (type === "combo") {
+    // Current
     series.push({
       name: "Leads",
       type: "bar",
       data: leads,
       itemStyle: { color: EXEC.tealDim, borderRadius: [4, 4, 0, 0] },
-      barMaxWidth: 22,
+      barMaxWidth: 20,
     });
     series.push({
       name: "Ventas",
@@ -88,103 +121,53 @@ export function timeSeriesOption(
       symbol: "circle",
       symbolSize: 6,
     });
-    if (overlayLenOk) {
+    
+    // Previous (dashed)
+    if (hasComparison) {
       series.push({
-        name: overlay!.name,
+        name: "Leads (Ant.)",
         type: "line",
         smooth: true,
-        data: overlay!.data,
-        lineStyle: { width: 2, type: "dashed", color: EXEC.amber },
-        itemStyle: { color: EXEC.amber },
-        symbol: "circle",
-        symbolSize: 4,
-        z: 10,
+        data: prevLeads,
+        lineStyle: { width: 1, type: "dashed", color: "#94a3b8" },
+        itemStyle: { color: "#94a3b8" },
+        symbol: "none",
       });
-    }
-  } else if (mode === "bar") {
-    series.push({
-      name: primaryName,
-      type: "bar",
-      data: primaryData,
-      itemStyle: { color: EXEC.teal, borderRadius: [4, 4, 0, 0] },
-      barMaxWidth: 24,
-    });
-    if (overlayLenOk) {
       series.push({
-        name: overlay!.name,
+        name: "Ventas (Ant.)",
         type: "line",
         smooth: true,
-        data: overlay!.data,
-        lineStyle: { width: 2, type: "dashed", color: EXEC.amber },
-        symbol: "circle",
-        symbolSize: 4,
-        z: 10,
-      });
-    }
-  } else if (mode === "area") {
-    series.push({
-      name: primaryName,
-      type: "line",
-      smooth: true,
-      areaStyle: { color: EXEC.tealDim },
-      lineStyle: { color: EXEC.teal, width: 2 },
-      data: primaryData,
-      symbol: "none",
-    });
-    if (overlayLenOk) {
-      series.push({
-        name: overlay!.name,
-        type: "line",
-        smooth: true,
-        data: overlay!.data,
-        lineStyle: { width: 2, type: "dashed", color: EXEC.amber },
-        symbol: "circle",
-        symbolSize: 4,
-        z: 10,
+        data: prevVentas,
+        lineStyle: { width: 1, type: "dashed", color: "#cbd5e1" },
+        itemStyle: { color: "#cbd5e1" },
+        symbol: "none",
       });
     }
   } else {
-    series.push({
-      name: primaryName,
-      type: "line",
-      smooth: true,
-      data: primaryData,
-      lineStyle: { color: EXEC.teal, width: 2 },
-      itemStyle: { color: EXEC.teal },
-      symbol: "circle",
-      symbolSize: 5,
-    });
-    if (overlayLenOk) {
-      series.push({
-        name: overlay!.name,
-        type: "line",
-        smooth: true,
-        data: overlay!.data,
-        lineStyle: { width: 2, type: "dashed", color: EXEC.amber },
-        symbol: "circle",
-        symbolSize: 4,
-        z: 10,
-      });
+    series.push({ name: "Leads", ...getStyle("Leads", type), data: leads } as any);
+    series.push({ name: "Ventas", ...getStyle("Ventas", type), data: ventas } as any);
+    
+    if (hasComparison) {
+      series.push({ name: "Leads (Ant.)", ...getStyle("Leads", type, true), data: prevLeads } as any);
+      series.push({ name: "Ventas (Ant.)", ...getStyle("Ventas", type, true), data: prevVentas } as any);
     }
   }
-
-  const legendShow = mode === "combo" || overlayLenOk || primaryMetric !== "leads";
 
   return {
     backgroundColor: "transparent",
     title: {
       text: title,
       left: 0,
-      top: 4,
+      top: 0,
       textStyle: { color: EXEC.text, fontSize: 13, fontWeight: 600 },
     },
     legend: {
-      show: legendShow,
-      top: 4,
+      show: true,
+      top: 0,
       right: 8,
       textStyle: { color: EXEC.textMuted, fontSize: 10 },
     },
-    grid: EXEC.grid,
+    grid: { ...EXEC.grid, top: 40 },
     xAxis: {
       type: "category",
       data: cats,
@@ -193,12 +176,9 @@ export function timeSeriesOption(
     },
     yAxis: {
       type: "value",
+      minInterval: 1,
       splitLine: { lineStyle: { color: EXEC.split, type: "dashed" } },
-      axisLabel: {
-        color: EXEC.textMuted,
-        fontSize: 10,
-        formatter: yAxisPercent ? (v: number) => `${v}%` : undefined,
-      },
+      axisLabel: { color: EXEC.textMuted, fontSize: 10 },
     },
     tooltip: baseTooltip(),
     series,

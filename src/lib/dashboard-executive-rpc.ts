@@ -1,4 +1,4 @@
-import { endOfISOWeek, format, getISODay, parseISO, startOfISOWeek, subDays } from "date-fns";
+import { endOfISOWeek, format, getISODay, parseISO, startOfISOWeek, subDays, subYears } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { LEADS_FILTER_EMPTY_TOKEN, type LeadRow, type LeadsDashboardFilters } from "@/lib/dashboard-leads";
@@ -20,17 +20,48 @@ export type DeltaSummary = {
   label: string;
 };
 
+export type StrategicScorecard = {
+  leads: number;
+  ventas: number;
+  efectividad: number;
+  contactabilidad: number;
+  gestionados: number;
+  no_gestionados: number;
+  abandonos: number;
+  avg_ttf_min: number;
+};
+
+export type DimensionRow = {
+  name: string;
+  leads: number;
+  ventas: number;
+  contactados: number;
+  conv_pct: number;
+  contactabilidad_pct: number;
+};
+
 export type DashboardExecutiveData = {
   kpis: KpiSummary;
+  strategic: {
+    actual: StrategicScorecard;
+    anterior: { leads: number; ventas: number };
+  };
   cmp7: { total: DeltaSummary; ventas: DeltaSummary; tasaVenta: DeltaSummary };
   cmpWeek: { total: DeltaSummary };
-  daily: { date: string; leads: number; ventas: number }[];
+  daily: { date: string; leads: number; ventas: number; contactados: number; gestionados: number }[];
+  hourly: { hora: string; leads: number; ventas: number; contactados: number }[];
   weekly: { weekStart: string; label: string; leads: number; ventas: number }[];
   funnel: { name: string; value: number }[];
   weekday: { day: string; count: number }[];
-  porCampana: { name: string; value: number }[];
-  porCiudad: { name: string; value: number }[];
-  agents: { name: string; value: number; ventas: number }[];
+  
+  // Dimensional analytics
+  porCampanaMkt: DimensionRow[];
+  porCampanaInconcert: DimensionRow[];
+  porCliente: DimensionRow[];
+  porCiudad: DimensionRow[];
+  porAgente: DimensionRow[];
+  porTipoLlamada: DimensionRow[];
+  
   discovered: { key: keyof LeadRow; label: string; top: { name: string; value: number }[] }[];
   bullets: string[];
 };
@@ -65,6 +96,11 @@ function toDelta(current: number, previous: number, label = ""): DeltaSummary {
   };
 }
 
+/**
+ * TODO: La definición de 'es_venta' puede variar por campaña (venta fijo, venta movil, etc.).
+ * Actualmente el RPC centraliza este flag; si se requieren métricas de facturación
+ * más finas, se debe extender la lógica del COUNT(*) FILTER en el servidor.
+ */
 export function buildRpcFilters(filters: LeadsDashboardFilters): JsonObject | null {
   const out: JsonObject = {};
   if (filters.esVenta === "yes") out.es_venta = true;
@@ -74,7 +110,7 @@ export function buildRpcFilters(filters: LeadsDashboardFilters): JsonObject | nu
     if (values?.length) out[key] = values;
   }
 
-  return Object.keys(out).length ? out : null;
+  return out;
 }
 
 export function buildRpcFiltersFromDimensions(dimensions: Partial<Record<keyof LeadRow, string[]>>): JsonObject | null {
@@ -102,21 +138,23 @@ export function leadsFiltersQueryKey(filters: LeadsDashboardFilters): string {
  * Acepta el JSON de `accessible_leads_group_metrics` (dimension, leads, ventas)
  * y el de `accessible_leads_agent_metrics` (name, value, ventas).
  */
-function normalizeGroupRows(rows: unknown): { name: string; value: number; ventas: number }[] {
+function normalizeGroupRows(rows: unknown): DimensionRow[] {
   if (!Array.isArray(rows)) return [];
   return rows
     .map((row) => {
       const item = row as Record<string, unknown>;
       const nameRaw = item.dimension ?? item.name;
-      const hasLeads = item.leads !== undefined && item.leads !== null;
-      const value = toNumber(hasLeads ? item.leads : item.value);
+      const leads = toNumber(item.leads ?? item.value);
       return {
         name: nameRaw != null && String(nameRaw) !== "" ? String(nameRaw) : "(vacío)",
-        value,
+        leads,
         ventas: toNumber(item.ventas),
+        contactados: toNumber(item.contactados),
+        conv_pct: toNumber(item.conv_pct),
+        contactabilidad_pct: toNumber(item.contactabilidad_pct),
       };
     })
-    .filter((row) => row.value > 0);
+    .filter((row) => row.leads > 0);
 }
 
 function normalizeTimeseries(rows: unknown) {
@@ -176,100 +214,208 @@ function buildFunnel(data: unknown): { name: string; value: number }[] {
 
 function buildBullets(kpis: KpiSummary, cmp7: { total: DeltaSummary; ventas: DeltaSummary }, topCamp: string, topCity: string) {
   const bullets: string[] = [];
-  bullets.push(
-    cmp7.total.deltaPct >= 0
-      ? `El volumen creció ${Math.abs(cmp7.total.deltaPct).toFixed(1)}% frente a los 7 días previos.`
-      : `El volumen cayó ${Math.abs(cmp7.total.deltaPct).toFixed(1)}% frente a los 7 días previos.`,
-  );
-  bullets.push(
-    cmp7.ventas.deltaPct >= 0
-      ? `Las ventas subieron ${Math.abs(cmp7.ventas.deltaPct).toFixed(1)}% en la última semana.`
-      : `Las ventas bajaron ${Math.abs(cmp7.ventas.deltaPct).toFixed(1)}% en la última semana.`,
-  );
-  if (topCamp) bullets.push(`La campaña con mayor volumen actual es ${topCamp}.`);
-  if (topCity) bullets.push(`La ciudad más activa en el filtro actual es ${topCity}.`);
-  bullets.push(`La conversión agregada se ubica en ${kpis.convPct.toFixed(1)}% con ${kpis.totalVentas.toLocaleString("es")} ventas.`);
-  return bullets.slice(0, 4);
-}
+  
+  // Tendencia de Volumen
+  const volText = cmp7.total.deltaPct >= 0
+    ? `Crecimiento: El volumen de leads subió un ${Math.abs(cmp7.total.deltaPct).toFixed(1)}% esta semana.`
+    : `Alerta: Caída del ${Math.abs(cmp7.total.deltaPct).toFixed(1)}% en la entrada de leads frente a la semana pasada.`;
+  bullets.push(volText);
 
-export async function fetchExecutiveDashboardData(filters: LeadsDashboardFilters): Promise<DashboardExecutiveData> {
+  // Conversión
+  if (kpis.convPct > 10) {
+    bullets.push(`Rendimiento Alto: La tasa de conversión del ${kpis.convPct.toFixed(1)}% supera el objetivo base.`);
+  } else if (kpis.convPct > 0) {
+    bullets.push(`Conversión Actual: Se mantiene en ${kpis.convPct.toFixed(1)}%. Hay oportunidad de optimizar el cierre.`);
+  }
+
+  // Dimensiones Top
+  if (topCamp && topCamp !== LEADS_FILTER_EMPTY_TOKEN) {
+    bullets.push(`Foco MKT: La campaña "${topCamp}" es el principal motor de registros actualmente.`);
+  }
+  if (topCity && topCity !== LEADS_FILTER_EMPTY_TOKEN) {
+    bullets.push(`Región Clave: ${topCity} concentra la mayor actividad territorial del periodo.`);
+  }
+
+  // Gestión
+  const gestionPct = kpis.totalLeads > 0 ? (kpis.conGestion / kpis.totalLeads) * 100 : 0;
+  if (gestionPct < 80 && kpis.totalLeads > 10) {
+    bullets.push(`Atención: Solo el ${gestionPct.toFixed(1)}% de los leads han sido contactados. Revisar capacidad operativa.`);
+  }
+
+  return bullets.slice(0, 5);
+}
+export async function fetchExecutiveDashboardData(filters: LeadsDashboardFilters, comparativePeriod: string = "prev_period"): Promise<DashboardExecutiveData> {
   const rpcFilters = buildRpcFilters(filters);
-  const desde = filters.desde ?? null;
-  const hasta = filters.hasta ?? null;
+  const desde = filters.desde ?? format(subDays(new Date(), 30), "yyyy-MM-dd");
+  const hasta = filters.hasta ?? format(new Date(), "yyyy-MM-dd");
 
   const now = new Date();
-  const end = format(now, "yyyy-MM-dd");
-  const start7 = format(subDays(now, 6), "yyyy-MM-dd");
-  const prevEnd = format(subDays(now, 7), "yyyy-MM-dd");
-  const prevStart = format(subDays(now, 13), "yyyy-MM-dd");
-  const currentIsoWeekStart = format(startOfISOWeek(now), "yyyy-MM-dd");
+  const end = hasta || format(now, "yyyy-MM-dd");
+  const start = desde || format(subDays(parseISO(end), 29), "yyyy-MM-dd");
+  
+  const dateStart = parseISO(start);
+  const dateEnd = parseISO(end);
+  const diffDays = Math.ceil((dateEnd.getTime() - dateStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  
+  let prevStart: string;
+  let prevEnd: string;
+
+  if (comparativePeriod === "prev_year") {
+    prevStart = format(subYears(dateStart, 1), "yyyy-MM-dd");
+    prevEnd = format(subYears(dateEnd, 1), "yyyy-MM-dd");
+  } else {
+    // Default: Periodo anterior inmediato
+    prevEnd = format(subDays(dateStart, 1), "yyyy-MM-dd");
+    prevStart = format(subDays(parseISO(prevEnd), diffDays - 1), "yyyy-MM-dd");
+  }
+  
+  const currentIsoWeekStart = format(startOfISOWeek(dateEnd), "yyyy-MM-dd");
   const previousIsoWeekEnd = format(subDays(parseISO(currentIsoWeekStart), 1), "yyyy-MM-dd");
   const previousIsoWeekStart = format(startOfISOWeek(parseISO(previousIsoWeekEnd)), "yyyy-MM-dd");
   const currentIsoWeekEnd = format(endOfISOWeek(parseISO(currentIsoWeekStart)), "yyyy-MM-dd");
 
   const [
     kpiRes,
-    dailyLeadsRes,
-    dailyVentasRes,
+    strategicRes,
+    dailyRes,
+    hourlyRes,
     weeklyLeadsRes,
     weeklyVentasRes,
     funnelRes,
     weekdayRes,
-    campRes,
+    campMktRes,
+    campIncRes,
     cityRes,
     agentRes,
+    clientRes,
+    callTypeRes,
     cmp7CurRes,
     cmp7PrevRes,
     cmpWeekCurRes,
     cmpWeekPrevRes,
+    dailyPrevRes,
     discoveredResponses,
   ] = await Promise.all([
     supabase.rpc("accessible_leads_kpis", { _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
-    supabase.rpc("accessible_leads_timeseries", { _metric: "leads", _granularity: "day", _limit: 120, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
-    supabase.rpc("accessible_leads_timeseries", { _metric: "ventas", _granularity: "day", _limit: 120, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
+    supabase.rpc("get_strategic_bi_scorecard", { 
+      _tenant_id: (await supabase.auth.getSession()).data.session?.user.id,
+      _fecha_desde: desde, 
+      _fecha_hasta: hasta, 
+      _filters: rpcFilters 
+    }),
+    supabase.from('mv_leads_daily')
+      .select('dia, leads, ventas, contactados, gestionados, total_ttf_min')
+      .gte('dia', desde)
+      .lte('dia', hasta)
+      .order('dia', { ascending: true }),
+    supabase.from('mv_leads_hourly')
+      .select('hora, leads, ventas, contactados')
+      .gte('hora', `${desde} 00:00:00`)
+      .lte('hora', `${hasta} 23:59:59`)
+      .order('hora', { ascending: true }),
     supabase.rpc("accessible_leads_timeseries", { _metric: "leads", _granularity: "week", _limit: 20, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
     supabase.rpc("accessible_leads_timeseries", { _metric: "ventas", _granularity: "week", _limit: 20, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
     supabase.rpc("accessible_leads_funnel", { _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
     supabase.rpc("accessible_leads_weekday_metrics", { _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
-    supabase.rpc("accessible_leads_group_metrics", { _dimension: "campana_mkt", _limit: 12, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
-    supabase.rpc("accessible_leads_group_metrics", { _dimension: "ciudad", _limit: 16, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
-    supabase.rpc("accessible_leads_agent_metrics", { _field: "agente_prim_gestion", _limit: 12, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
-    supabase.rpc("accessible_leads_kpis", { _fecha_desde: start7, _fecha_hasta: end, _filters: rpcFilters }),
+    supabase.rpc("accessible_leads_group_metrics", { _dimension: "campana_mkt", _limit: 15, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
+    supabase.rpc("accessible_leads_group_metrics", { _dimension: "campana_inconcert", _limit: 15, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
+    supabase.rpc("accessible_leads_group_metrics", { _dimension: "ciudad", _limit: 15, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
+    supabase.rpc("accessible_leads_group_metrics", { _dimension: "agente_prim_gestion", _limit: 15, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
+    supabase.rpc("accessible_leads_group_metrics", { _dimension: "cliente", _limit: 15, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
+    supabase.rpc("accessible_leads_group_metrics", { _dimension: "tipo_llamada", _limit: 15, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
+    supabase.rpc("accessible_leads_kpis", { _fecha_desde: start, _fecha_hasta: end, _filters: rpcFilters }),
     supabase.rpc("accessible_leads_kpis", { _fecha_desde: prevStart, _fecha_hasta: prevEnd, _filters: rpcFilters }),
     supabase.rpc("accessible_leads_kpis", { _fecha_desde: currentIsoWeekStart, _fecha_hasta: currentIsoWeekEnd, _filters: rpcFilters }),
     supabase.rpc("accessible_leads_kpis", { _fecha_desde: previousIsoWeekStart, _fecha_hasta: previousIsoWeekEnd, _filters: rpcFilters }),
+    supabase.from('mv_leads_daily')
+      .select('dia, leads, ventas')
+      .gte('dia', prevStart)
+      .lte('dia', prevEnd)
+      .order('dia', { ascending: true }),
     Promise.all(
       DIMENSION_META.map((meta) =>
-        supabase.rpc("accessible_leads_group_metrics", {
-          _dimension: meta.key,
-          _limit: 10,
-          _fecha_desde: desde,
-          _fecha_hasta: hasta,
-          _filters: rpcFilters,
-        }),
-      ),
+          supabase.rpc("accessible_leads_group_metrics", {
+            _dimension: meta.key,
+            _limit: 10,
+            _fecha_desde: desde,
+            _fecha_hasta: hasta,
+            _filters: rpcFilters,
+          })
+      )
     ),
   ]);
 
-  const maybeErrors = [
-    kpiRes.error,
-    dailyLeadsRes.error,
-    dailyVentasRes.error,
-    weeklyLeadsRes.error,
-    weeklyVentasRes.error,
-    funnelRes.error,
-    weekdayRes.error,
-    campRes.error,
-    cityRes.error,
-    agentRes.error,
-    cmp7CurRes.error,
-    cmp7PrevRes.error,
-    cmpWeekCurRes.error,
-    cmpWeekPrevRes.error,
-    ...discoveredResponses.map((res) => res.error),
-  ].filter(Boolean);
+  // Aggregate daily data by date to avoid multiple points per day
+  let totalLeadsCalc = 0;
+  let totalVentasCalc = 0;
+  let totalContactadosCalc = 0;
+  let totalGestionadosCalc = 0;
+  let ttfSum = 0;
+  let ttfCount = 0;
 
-  if (maybeErrors.length > 0) throw maybeErrors[0];
+  const dailyMap = new Map<string, any>();
+  (dailyRes?.data ?? []).forEach(d => {
+    const date = String(d.dia).slice(0, 10);
+    if (!dailyMap.has(date)) {
+      dailyMap.set(date, { date, leads: 0, ventas: 0, contactados: 0, gestionados: 0 });
+    }
+    const entry = dailyMap.get(date);
+    const l = toNumber(d.leads);
+    const v = toNumber(d.ventas);
+    const c = toNumber(d.contactados);
+    const g = toNumber(d.gestionados);
+    const ttf = toNumber(d.total_ttf_min);
+
+    entry.leads += l;
+    entry.ventas += v;
+    entry.contactados += c;
+    entry.gestionados += g;
+
+    totalLeadsCalc += l;
+    totalVentasCalc += v;
+    totalContactadosCalc += c;
+    totalGestionadosCalc += g;
+
+    if (ttf > 0) {
+      ttfSum += ttf;
+      ttfCount += g;
+    }
+  });
+  // Merge comparison daily data
+  const prevDailyArray = (dailyPrevRes?.data ?? []).map(d => ({
+    date: String(d.dia).slice(0, 10),
+    leads: toNumber(d.leads),
+    ventas: toNumber(d.ventas)
+  })).sort((a, b) => a.date.localeCompare(b.date));
+
+  const currentDailyArray = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+  
+  // Align by index (Day 1 current vs Day 1 prev)
+  currentDailyArray.forEach((day, idx) => {
+    if (prevDailyArray[idx]) {
+      day.prev_leads = prevDailyArray[idx].leads;
+      day.prev_ventas = prevDailyArray[idx].ventas;
+    } else {
+      day.prev_leads = 0;
+      day.prev_ventas = 0;
+    }
+  });
+
+  const daily = currentDailyArray;
+
+  // Aggregate hourly data by hour
+  const hourlyMap = new Map<string, any>();
+  (hourlyRes?.data ?? []).forEach(d => {
+    const hora = d.hora;
+    if (!hourlyMap.has(hora)) {
+      hourlyMap.set(hora, { hora, leads: 0, ventas: 0, contactados: 0 });
+    }
+    const entry = hourlyMap.get(hora);
+    entry.leads += toNumber(d.leads);
+    entry.ventas += toNumber(d.ventas);
+    entry.contactados += toNumber(d.contactados);
+  });
+  const hourly = Array.from(hourlyMap.values()).sort((a, b) => String(a.hora).localeCompare(String(b.hora)));
 
   const kpiData = (kpiRes.data ?? {}) as Record<string, unknown>;
   const kpis: KpiSummary = {
@@ -280,15 +426,72 @@ export async function fetchExecutiveDashboardData(filters: LeadsDashboardFilters
     conNegocio: toNumber(kpiData.con_negocio),
   };
 
-  const daily = mergeDailySeries(normalizeTimeseries(dailyLeadsRes.data), normalizeTimeseries(dailyVentasRes.data));
+  const strategic = (strategicRes.data ?? { 
+    actual: { leads: 0, ventas: 0, efectividad: 0, contactabilidad: 0, gestionados: 0, no_gestionados: 0, abandonos: 0, avg_ttf_min: 0 },
+    anterior: { leads: 0, ventas: 0 }
+  }) as DashboardExecutiveData['strategic'];
+
+  // Fallback: If strategic is zero but kpis have data, use kpis
+  if (strategic.actual.leads === 0 && (kpis.totalLeads > 0 || totalLeadsCalc > 0)) {
+    strategic.actual.leads = kpis.totalLeads || totalLeadsCalc;
+    strategic.actual.ventas = kpis.totalVentas || totalVentasCalc;
+    strategic.actual.efectividad = kpis.convPct || (strategic.actual.leads > 0 ? (strategic.actual.ventas / strategic.actual.leads) * 100 : 0);
+    strategic.actual.gestionados = kpis.conGestion || totalGestionadosCalc;
+  }
+
+  // Independent fallbacks for contactability and TTF
+  const l_base = toNumber(strategic.actual.leads);
+  const g_base = toNumber(strategic.actual.gestionados);
+  
+  if ((!strategic.actual.contactabilidad || strategic.actual.contactabilidad === 0) && l_base > 0) {
+    // If view fails, use totalContactadosCalc if present, or fallback to gestionados/leads (User request)
+    const baseContactos = totalContactadosCalc || g_base || totalGestionadosCalc || kpis.conGestion;
+    strategic.actual.contactabilidad = (baseContactos / l_base) * 100;
+  }
+
+  // Robust fallback for TTF: Sampling individual leads if the aggregate is 0
+  if (strategic.actual.avg_ttf_min === 0 && strategic.actual.gestionados > 0) {
+    if (ttfCount > 0 && ttfSum > 0) {
+      strategic.actual.avg_ttf_min = ttfSum / ttfCount;
+    } else {
+      // Manual sampling as last resort (User suggested logic)
+      const { data: sample } = await supabase
+        .from('leads')
+        .select('fch_creacion, fch_prim_gestion')
+        .not('fch_prim_gestion', 'is', null)
+        .gte('fch_creacion', desde)
+        .lte('fch_creacion', hasta)
+        .limit(500);
+      
+      if (sample && sample.length > 0) {
+        let sum = 0;
+        let count = 0;
+        sample.forEach(s => {
+          const start = new Date(s.fch_creacion).getTime();
+          const end = new Date(s.fch_prim_gestion).getTime();
+          if (!isNaN(start) && !isNaN(end) && end > start) {
+            sum += (end - start) / 60000;
+            count++;
+          }
+        });
+        if (count > 0) strategic.actual.avg_ttf_min = sum / count;
+      }
+    }
+  }
+
   const weekly = mergeWeeklySeries(normalizeTimeseries(weeklyLeadsRes.data), normalizeTimeseries(weeklyVentasRes.data));
-  const porCampana = normalizeGroupRows(campRes.data).map((row) => ({ name: row.name, value: row.value }));
-  const porCiudad = normalizeGroupRows(cityRes.data).map((row) => ({ name: row.name, value: row.value }));
-  const agents = normalizeGroupRows(agentRes.data);
+  
+  const porCampanaMkt = normalizeGroupRows(campMktRes.data);
+  const porCampanaInconcert = normalizeGroupRows(campIncRes.data);
+  const porCiudad = normalizeGroupRows(cityRes.data);
+  const porAgente = normalizeGroupRows(agentRes.data);
+  const porCliente = normalizeGroupRows(clientRes.data);
+  const porTipoLlamada = normalizeGroupRows(callTypeRes.data);
+
   const discovered = discoveredResponses
     .map((res, idx) => ({ meta: DIMENSION_META[idx]!, rows: normalizeGroupRows(res.data) }))
     .filter(({ rows }) => rows.length >= 2 && rows.length <= 10)
-    .map(({ meta, rows }) => ({ key: meta.key, label: meta.label, top: rows.map((row) => ({ name: row.name, value: row.value })) }));
+    .map(({ meta, rows }) => ({ key: meta.key, label: meta.label, top: rows.map((row) => ({ name: row.name, value: row.leads })) }));
 
   const cmp7Cur = (cmp7CurRes.data ?? {}) as Record<string, unknown>;
   const cmp7Prev = (cmp7PrevRes.data ?? {}) as Record<string, unknown>;
@@ -297,6 +500,7 @@ export async function fetchExecutiveDashboardData(filters: LeadsDashboardFilters
 
   const curConv = toNumber(cmp7Cur.total_leads) > 0 ? (toNumber(cmp7Cur.total_ventas) / toNumber(cmp7Cur.total_leads)) * 100 : 0;
   const prevConv = toNumber(cmp7Prev.total_leads) > 0 ? (toNumber(cmp7Prev.total_ventas) / toNumber(cmp7Prev.total_leads)) * 100 : 0;
+  
   const cmp7 = {
     total: toDelta(toNumber(cmp7Cur.total_leads), toNumber(cmp7Prev.total_leads)),
     ventas: toDelta(toNumber(cmp7Cur.total_ventas), toNumber(cmp7Prev.total_ventas)),
@@ -308,17 +512,22 @@ export async function fetchExecutiveDashboardData(filters: LeadsDashboardFilters
 
   return {
     kpis,
+    strategic,
     cmp7,
     cmpWeek,
     daily,
+    hourly,
     weekly,
     funnel: buildFunnel(funnelRes.data),
     weekday: normalizeWeekday(weekdayRes.data),
-    porCampana,
+    porCampanaMkt,
+    porCampanaInconcert,
+    porCliente,
     porCiudad,
-    agents,
+    porAgente,
+    porTipoLlamada,
     discovered,
-    bullets: buildBullets(kpis, cmp7, porCampana[0]?.name ?? "", porCiudad[0]?.name ?? ""),
+    bullets: buildBullets(kpis, cmp7, porCampanaMkt[0]?.name ?? "", porCiudad[0]?.name ?? ""),
   };
 }
 
