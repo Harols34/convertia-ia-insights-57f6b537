@@ -235,6 +235,7 @@ export type ComparativaDashboardSectionProps = {
   /** Aún no se ha iniciado la descarga del universo de filas (explorador por dimensión requiere leads en cliente). */
   isLeadsLoading?: boolean;
   comparativeRowsLoadedProgress?: number;
+  comparativeDatasetIdle?: boolean;
   onRequestComparativeDataset?: () => void;
   dimensionOptions?: Partial<Record<keyof LeadRow, string[]>>;
   dashboardFilters?: LeadsDashboardFilters;
