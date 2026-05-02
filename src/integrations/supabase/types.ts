@@ -1030,7 +1030,74 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      mv_leads_agent_daily: {
+        Row: {
+          agente: string | null
+          contactados: number | null
+          dia: string | null
+          gestionados: number | null
+          tenant_id: string | null
+          total_ttf_min: number | null
+          ventas: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mv_leads_daily: {
+        Row: {
+          abandonos: number | null
+          campana_inconcert: string | null
+          campana_mkt: string | null
+          categoria_mkt: string | null
+          ciudad: string | null
+          cliente: string | null
+          contactados: number | null
+          dia: string | null
+          gestionados: number | null
+          leads: number | null
+          no_gestionados: number | null
+          tenant_id: string | null
+          tipo_llamada: string | null
+          total_ttf_min: number | null
+          total_ttn_min: number | null
+          ventas: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mv_leads_hourly: {
+        Row: {
+          cliente: string | null
+          contactados: number | null
+          hora: string | null
+          leads: number | null
+          tenant_id: string | null
+          ventas: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       _build_filters_where: { Args: { _f: Json }; Returns: string }
@@ -1189,6 +1256,15 @@ export type Database = {
         Returns: Json
       }
       get_my_accessible_module_slugs: { Args: never; Returns: string[] }
+      get_strategic_bi_scorecard: {
+        Args: {
+          _fecha_desde: string
+          _fecha_hasta: string
+          _filters?: Json
+          _tenant_id: string
+        }
+        Returns: Json
+      }
       get_user_tenant: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
@@ -1251,6 +1327,7 @@ export type Database = {
           udt_name: string
         }[]
       }
+      refresh_bi_materialized_views: { Args: never; Returns: undefined }
       search_dashboard_sessions: {
         Args: {
           _date_from?: string
