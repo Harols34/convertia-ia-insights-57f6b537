@@ -16,3 +16,10 @@ verify_jwt = false
 
 [functions.analyze-leads]
 verify_jwt = false
+
+[functions.telegram-handler]
+verify_jwt = false
+
+[functions.telegram-poll]
+verify_jwt = false
+

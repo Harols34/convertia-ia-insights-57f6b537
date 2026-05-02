@@ -792,6 +792,138 @@ export type Database = {
           },
         ]
       }
+      telegram_bot_state: {
+        Row: {
+          id: number
+          update_offset: number
+          updated_at: string
+        }
+        Insert: {
+          id: number
+          update_offset?: number
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          update_offset?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      telegram_link_codes: {
+        Row: {
+          bot_id: string | null
+          code: string
+          created_at: string
+          expires_at: string
+          mode: string
+          tenant_id: string
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          bot_id?: string | null
+          code: string
+          created_at?: string
+          expires_at?: string
+          mode?: string
+          tenant_id: string
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          bot_id?: string | null
+          code?: string
+          created_at?: string
+          expires_at?: string
+          mode?: string
+          tenant_id?: string
+          used_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      telegram_messages: {
+        Row: {
+          chat_id: number
+          created_at: string
+          direction: string
+          error: string | null
+          message_text: string | null
+          raw: Json | null
+          reply_text: string | null
+          status: string | null
+          tenant_id: string | null
+          update_id: number
+          user_id: string | null
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          direction?: string
+          error?: string | null
+          message_text?: string | null
+          raw?: Json | null
+          reply_text?: string | null
+          status?: string | null
+          tenant_id?: string | null
+          update_id: number
+          user_id?: string | null
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          direction?: string
+          error?: string | null
+          message_text?: string | null
+          raw?: Json | null
+          reply_text?: string | null
+          status?: string | null
+          tenant_id?: string | null
+          update_id?: number
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      telegram_user_links: {
+        Row: {
+          bot_id: string | null
+          chat_id: number
+          is_active: boolean
+          last_message_at: string | null
+          linked_at: string
+          mode: string
+          telegram_first_name: string | null
+          telegram_username: string | null
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          bot_id?: string | null
+          chat_id: number
+          is_active?: boolean
+          last_message_at?: string | null
+          linked_at?: string
+          mode?: string
+          telegram_first_name?: string | null
+          telegram_username?: string | null
+          tenant_id: string
+          user_id: string
+        }
+        Update: {
+          bot_id?: string | null
+          chat_id?: number
+          is_active?: boolean
+          last_message_at?: string | null
+          linked_at?: string
+          mode?: string
+          telegram_first_name?: string | null
+          telegram_username?: string | null
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       tenant_data_sources: {
         Row: {
           allow_chatbots: boolean | null
@@ -1239,6 +1371,15 @@ export type Database = {
           total_leads: number
           total_ventas: number
         }[]
+      }
+      generate_telegram_link_code: {
+        Args: {
+          _bot_id?: string
+          _mode?: string
+          _tenant_id: string
+          _user_id: string
+        }
+        Returns: string
       }
       get_accessible_tenant_ids: {
         Args: { _user_id: string }
