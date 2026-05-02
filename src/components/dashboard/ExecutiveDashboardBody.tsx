@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import type { LeadRow } from "@/lib/dashboard-leads";
+import type { LeadRow, LeadsDashboardFilters } from "@/lib/dashboard-leads";
 import {
   DASHBOARD_DEFAULT_CHART_DAYS,
   DASHBOARD_DEFAULT_WEEK_BARS,
