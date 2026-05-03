@@ -2,8 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
-import { Settings, Save, Palette, Globe, Bell, Shield, Sliders, Loader2, Send } from "lucide-react";
-import { TelegramSettings } from "@/components/settings/TelegramSettings";
+import { Settings, Save, Palette, Globe, Bell, Shield, Sliders, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -102,7 +101,6 @@ export default function ConfiguracionPage() {
           <TabsTrigger value="general"><Globe className="h-3.5 w-3.5 mr-1.5" />General</TabsTrigger>
           <TabsTrigger value="security"><Shield className="h-3.5 w-3.5 mr-1.5" />Seguridad</TabsTrigger>
           <TabsTrigger value="ai"><Sliders className="h-3.5 w-3.5 mr-1.5" />IA</TabsTrigger>
-          <TabsTrigger value="telegram"><Send className="h-3.5 w-3.5 mr-1.5" />Telegram</TabsTrigger>
         </TabsList>
 
         <TabsContent value="branding" className="space-y-4">
@@ -197,10 +195,6 @@ export default function ConfiguracionPage() {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="telegram" className="space-y-4">
-          <TelegramSettings />
         </TabsContent>
       </Tabs>
     </div>

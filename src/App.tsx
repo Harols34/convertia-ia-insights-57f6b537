@@ -23,6 +23,7 @@ const UsuariosPage = lazy(() => import("./pages/app/UsuariosPage.tsx"));
 const RolesPage = lazy(() => import("./pages/app/RolesPage.tsx"));
 const AuditoriaPage = lazy(() => import("./pages/app/AuditoriaPage.tsx"));
 const ConfiguracionPage = lazy(() => import("./pages/app/ConfiguracionPage.tsx"));
+const TelegramPage = lazy(() => import("./pages/app/TelegramPage.tsx"));
 const SoportePage = lazy(() => import("./pages/app/SoportePage.tsx"));
 const CuentasPage = lazy(() => import("./pages/app/CuentasPage.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
@@ -70,6 +71,7 @@ const App = () => (
                 <Route path="roles" element={<RequireModule moduleSlug="roles"><RolesPage /></RequireModule>} />
                 <Route path="auditoria" element={<RequireModule moduleSlug="auditoria"><AuditoriaPage /></RequireModule>} />
                 <Route path="configuracion" element={<RequireModule moduleSlug="configuracion"><ConfiguracionPage /></RequireModule>} />
+                <Route path="telegram" element={<RequireModule moduleSlug="telegram"><TelegramPage /></RequireModule>} />
                 <Route path="cuentas" element={<RequireModule moduleSlug="cuentas"><CuentasPage /></RequireModule>} />
                 <Route path="soporte" element={<SoportePage />} />
               </Route>

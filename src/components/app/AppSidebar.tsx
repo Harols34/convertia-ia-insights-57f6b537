@@ -1,7 +1,7 @@
 import {
   MessageSquare, FileBarChart, Download,
   Bot, Plug, Users, ShieldCheck, ScrollText, Settings, HelpCircle,
-  LayoutDashboard, Building2, Sparkles, SlidersHorizontal,
+  LayoutDashboard, Building2, Sparkles, SlidersHorizontal, Send,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAppAccess } from "@/hooks/use-app-access";
@@ -35,6 +35,7 @@ const menuGroups: { label: string; items: MenuItem[] }[] = [
     label: "Automatización",
     items: [
       { title: "Chatbots / AI Agents", url: "/app/bots", icon: Bot, moduleSlug: "bots" },
+      { title: "Telegram", url: "/app/telegram", icon: Send, moduleSlug: "telegram" },
       { title: "Integraciones", url: "/app/integraciones", icon: Plug, moduleSlug: "integraciones" },
     ],
   },

@@ -4,8 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Send, Copy, Trash2, RefreshCw, Loader2, CheckCircle2, MessageCircle, Bot } from "lucide-react";
+import { Send, Copy, Trash2, RefreshCw, Loader2, CheckCircle2, MessageCircle, Bot, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 
@@ -14,7 +16,22 @@ const BOT_USERNAME = "Convertiabot"; // displayed in instructions
 export function TelegramSettings() {
   const qc = useQueryClient();
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [generatedExpiry, setGeneratedExpiry] = useState<Date | null>(null);
   const [mode, setMode] = useState<"auto" | "text" | "dashboard">("auto");
+  const [ttlValue, setTtlValue] = useState<number>(30);
+  const [ttlUnit, setTtlUnit] = useState<"minutes" | "hours" | "days">("minutes");
+
+  const ttlSeconds = (() => {
+    const v = Math.max(1, Math.floor(ttlValue || 1));
+    const mult = ttlUnit === "minutes" ? 60 : ttlUnit === "hours" ? 3600 : 86400;
+    return Math.min(v * mult, 2592000); // cap 30 days
+  })();
+  const expiresHumanLabel = (() => {
+    const totalMin = Math.round(ttlSeconds / 60);
+    if (totalMin < 60) return `${totalMin} min`;
+    if (totalMin < 1440) return `${Math.round(totalMin / 60)} h`;
+    return `${Math.round(totalMin / 1440)} d`;
+  })();
 
   // existing links for current user
   const { data: links, isLoading } = useQuery({
@@ -41,13 +58,15 @@ export function TelegramSettings() {
         _tenant_id: tenantId,
         _bot_id: null,
         _mode: mode,
-      });
+        _ttl_seconds: ttlSeconds,
+      } as any);
       if (error) throw error;
       return data as string;
     },
     onSuccess: (code) => {
       setGeneratedCode(code);
-      toast.success("Código generado. Válido por 30 minutos.");
+      setGeneratedExpiry(new Date(Date.now() + ttlSeconds * 1000));
+      toast.success(`Código generado. Válido por ${expiresHumanLabel}.`);
     },
     onError: (e: any) => toast.error(`Error: ${e.message}`),
   });
@@ -96,9 +115,9 @@ export function TelegramSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="text-xs font-medium text-muted-foreground">Modo de respuesta del bot</label>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground">Modo de respuesta del bot</Label>
               <Select value={mode} onValueChange={(v: any) => setMode(v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -108,17 +127,42 @@ export function TelegramSettings() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-end">
-              <Button
-                onClick={() => generate.mutate()}
-                disabled={generate.isPending}
-                className="w-full gap-2"
-              >
-                {generate.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Generar código
-              </Button>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <Clock className="h-3 w-3" /> Validez del código
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  value={ttlValue}
+                  onChange={(e) => setTtlValue(parseInt(e.target.value) || 1)}
+                  className="w-24"
+                />
+                <Select value={ttlUnit} onValueChange={(v: any) => setTtlUnit(v)}>
+                  <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="minutes">Minutos</SelectItem>
+                    <SelectItem value="hours">Horas</SelectItem>
+                    <SelectItem value="days">Días</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Equivale a <strong>{expiresHumanLabel}</strong> · máx. 30 días
+              </p>
             </div>
           </div>
+
+          <Button
+            onClick={() => generate.mutate()}
+            disabled={generate.isPending}
+            className="w-full gap-2"
+            size="lg"
+          >
+            {generate.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Generar código de vinculación
+          </Button>
 
           {generatedCode && (
             <motion.div
@@ -129,7 +173,11 @@ export function TelegramSettings() {
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-primary" />
                 <span className="text-sm font-medium">Tu código de vinculación</span>
-                <Badge variant="outline" className="ml-auto">válido 30 min</Badge>
+                <Badge variant="outline" className="ml-auto">
+                  {generatedExpiry
+                    ? `expira ${generatedExpiry.toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}`
+                    : `válido ${expiresHumanLabel}`}
+                </Badge>
               </div>
               <div className="flex items-center gap-2">
                 <code className="flex-1 px-4 py-3 rounded-lg bg-background border border-border text-2xl font-mono tracking-widest text-center">
