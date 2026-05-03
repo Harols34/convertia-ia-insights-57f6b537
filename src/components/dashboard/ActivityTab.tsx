@@ -31,12 +31,12 @@ export function ActivityTab({
     try {
       const { error } = await supabase
         .from("leads")
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq("id", id);
-
+        
       if (error) throw error;
-
-      toast.success("Lead eliminado");
+      
+      toast.success("Lead marcado como eliminado");
       void queryClient.invalidateQueries({ queryKey: ["bi-metrics"] });
       void queryClient.invalidateQueries({ queryKey: DASHBOARD_LEADS_QUERY_KEY });
     } catch (err: any) {
@@ -113,8 +113,9 @@ export function ActivityTab({
       </div>
 
       <div className="bg-white/80 backdrop-blur-xl rounded-3xl border border-slate-200/50 shadow-xl shadow-slate-100/50 overflow-hidden">
-        <LeadsTable
+        <LeadsTable 
           leads={leads}
+          isLoading={isLoading}
           onDelete={handleDeleteLead}
         />
       </div>

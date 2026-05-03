@@ -54,7 +54,7 @@ import { ComparativaControlsProvider } from "@/contexts/ComparativaControlsConte
 import { ComparativaDashboardSection } from "./ComparativaDashboardSection";
 import { EXEC, type TimeViz, type CatViz } from "./dashboard-chart-theme";
 import {
-  dynamicTimeSeriesOption,
+  timeSeriesOption,
   weeklyBarsOption,
   categoryOption,
   funnelOption,
@@ -282,8 +282,9 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
   }, [discovered.length]);
 
   const agents = useMemo(() => {
+    if (rpcData) return rpcData.agents;
     return agentEffectivenessRows(leads);
-  }, [leads]);
+  }, [leads, rpcData]);
 
   const bullets = useMemo(() => {
     if (rpcData) return rpcData.bullets;
@@ -335,8 +336,8 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
   }, [dailyOverlay, dailyMetric, dailyForCharts, leads, timeVizDaily]);
 
   const optDaily = useMemo(
-    () => dynamicTimeSeriesOption(dailyForCharts, timeVizDaily as any, "Tendencia diaria"),
-    [dailyForCharts, timeVizDaily],
+    () => timeSeriesOption(dailyForCharts, timeVizDaily, "Tendencia diaria", dailyChartOpts),
+    [dailyForCharts, timeVizDaily, dailyChartOpts],
   );
 
   const weekCompareOpts = useMemo(() => {

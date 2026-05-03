@@ -64,19 +64,8 @@ export function useLeadsMetrics(filters: LeadsDashboardFilters, comparativePerio
         conversion: d.cmp7.tasaVenta.deltaPct,
       },
       
-      dailySeries: (d.daily ?? []).map((r: any) => ({
-        date: r.date,
-        leads: r.leads,
-        sales: r.sales ?? r.ventas ?? 0,
-        contactados: r.contactados ?? 0,
-        gestionados: r.gestionados ?? 0,
-      })),
-      weeklySeries: (d.weekly ?? []).map((r: any) => ({
-        date: r.date ?? r.weekStart,
-        label: r.label,
-        leads: r.leads,
-        sales: r.sales ?? r.ventas ?? 0,
-      })),
+      dailySeries: d.daily,
+      weeklySeries: d.weekly,
       strategic: d.strategic
     };
   }, [query.data]);

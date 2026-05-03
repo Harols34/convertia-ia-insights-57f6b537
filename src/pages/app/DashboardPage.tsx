@@ -49,7 +49,7 @@ export default function DashboardPage() {
 
   const datasetQuery = useDashboardLeadsDataset({
     enabled: true,
-    fchRango: { desde: filters.desde, hasta: filters.hasta },
+    fchRango: filters.fch_creacion,
     panelFiltersKey: leadsFiltersQueryKey(filters)
   });
 
@@ -145,12 +145,9 @@ export default function DashboardPage() {
                   </TabsContent>
                   
                   <TabsContent value="trends" className="animate-fade-up outline-none focus-visible:ring-0">
-                    <TrendsTab
-                      rpcData={rpcData as DashboardExecutiveData}
-                      isLoading={isLoading}
-                      filterOptions={dimensionQuery.data || {}}
-                      selectedDimensions={filters.dimensions}
-                      onDimensionChange={setDimension}
+                    <TrendsTab 
+                      rpcData={rpcData as DashboardExecutiveData} 
+                      isLoading={isLoading} 
                     />
                   </TabsContent>
 
