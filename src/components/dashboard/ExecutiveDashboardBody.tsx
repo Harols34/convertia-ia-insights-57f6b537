@@ -336,7 +336,7 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
   }, [dailyOverlay, dailyMetric, dailyForCharts, leads, timeVizDaily]);
 
   const optDaily = useMemo(
-    () => dynamicTimeSeriesOption(dailyForCharts, timeVizDaily as ChartType, "Tendencia diaria"),
+    () => dynamicTimeSeriesOption(dailyForCharts, timeVizDaily as any, "Tendencia diaria"),
     [dailyForCharts, timeVizDaily],
   );
 
