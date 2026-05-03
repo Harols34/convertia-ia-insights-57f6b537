@@ -71,6 +71,7 @@ const App = () => (
                 <Route path="roles" element={<RequireModule moduleSlug="roles"><RolesPage /></RequireModule>} />
                 <Route path="auditoria" element={<RequireModule moduleSlug="auditoria"><AuditoriaPage /></RequireModule>} />
                 <Route path="configuracion" element={<RequireModule moduleSlug="configuracion"><ConfiguracionPage /></RequireModule>} />
+                <Route path="telegram" element={<RequireModule moduleSlug="telegram"><TelegramPage /></RequireModule>} />
                 <Route path="cuentas" element={<RequireModule moduleSlug="cuentas"><CuentasPage /></RequireModule>} />
                 <Route path="soporte" element={<SoportePage />} />
               </Route>
