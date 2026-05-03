@@ -7,6 +7,7 @@ export const ROUTE_PREFIX_TO_MODULE: Record<string, string> = {
   "/app/reportes": "reportes",
   "/app/exportaciones": "exportaciones",
   "/app/bots": "bots",
+  "/app/telegram": "telegram",
   "/app/integraciones": "integraciones",
   "/app/usuarios": "usuarios",
   "/app/roles": "roles",
