@@ -49,7 +49,7 @@ export default function DashboardPage() {
 
   const datasetQuery = useDashboardLeadsDataset({
     enabled: true,
-    fchRango: filters.fch_creacion,
+    fchRango: { desde: filters.desde, hasta: filters.hasta },
     panelFiltersKey: leadsFiltersQueryKey(filters)
   });
 
