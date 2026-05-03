@@ -35,6 +35,7 @@ const menuGroups: { label: string; items: MenuItem[] }[] = [
     label: "Automatización",
     items: [
       { title: "Chatbots / AI Agents", url: "/app/bots", icon: Bot, moduleSlug: "bots" },
+      { title: "Telegram", url: "/app/telegram", icon: Send, moduleSlug: "telegram" },
       { title: "Integraciones", url: "/app/integraciones", icon: Plug, moduleSlug: "integraciones" },
     ],
   },
