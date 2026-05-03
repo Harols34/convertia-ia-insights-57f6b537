@@ -23,6 +23,7 @@ const UsuariosPage = lazy(() => import("./pages/app/UsuariosPage.tsx"));
 const RolesPage = lazy(() => import("./pages/app/RolesPage.tsx"));
 const AuditoriaPage = lazy(() => import("./pages/app/AuditoriaPage.tsx"));
 const ConfiguracionPage = lazy(() => import("./pages/app/ConfiguracionPage.tsx"));
+const TelegramPage = lazy(() => import("./pages/app/TelegramPage.tsx"));
 const SoportePage = lazy(() => import("./pages/app/SoportePage.tsx"));
 const CuentasPage = lazy(() => import("./pages/app/CuentasPage.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
