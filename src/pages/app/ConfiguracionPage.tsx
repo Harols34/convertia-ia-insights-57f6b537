@@ -101,7 +101,6 @@ export default function ConfiguracionPage() {
           <TabsTrigger value="general"><Globe className="h-3.5 w-3.5 mr-1.5" />General</TabsTrigger>
           <TabsTrigger value="security"><Shield className="h-3.5 w-3.5 mr-1.5" />Seguridad</TabsTrigger>
           <TabsTrigger value="ai"><Sliders className="h-3.5 w-3.5 mr-1.5" />IA</TabsTrigger>
-          <TabsTrigger value="telegram"><Send className="h-3.5 w-3.5 mr-1.5" />Telegram</TabsTrigger>
         </TabsList>
 
         <TabsContent value="branding" className="space-y-4">
