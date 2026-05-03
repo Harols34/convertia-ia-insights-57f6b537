@@ -54,7 +54,7 @@ import { ComparativaControlsProvider } from "@/contexts/ComparativaControlsConte
 import { ComparativaDashboardSection } from "./ComparativaDashboardSection";
 import { EXEC, type TimeViz, type CatViz } from "./dashboard-chart-theme";
 import {
-  timeSeriesOption,
+  dynamicTimeSeriesOption,
   weeklyBarsOption,
   categoryOption,
   funnelOption,
