@@ -58,13 +58,15 @@ export function TelegramSettings() {
         _tenant_id: tenantId,
         _bot_id: null,
         _mode: mode,
-      });
+        _ttl_seconds: ttlSeconds,
+      } as any);
       if (error) throw error;
       return data as string;
     },
     onSuccess: (code) => {
       setGeneratedCode(code);
-      toast.success("Código generado. Válido por 30 minutos.");
+      setGeneratedExpiry(new Date(Date.now() + ttlSeconds * 1000));
+      toast.success(`Código generado. Válido por ${expiresHumanLabel}.`);
     },
     onError: (e: any) => toast.error(`Error: ${e.message}`),
   });
