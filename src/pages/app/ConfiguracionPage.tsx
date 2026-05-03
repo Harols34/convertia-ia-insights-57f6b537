@@ -196,10 +196,6 @@ export default function ConfiguracionPage() {
             </CardContent>
           </Card>
         </TabsContent>
-
-        <TabsContent value="telegram" className="space-y-4">
-          <TelegramSettings />
-        </TabsContent>
       </Tabs>
     </div>
   );
