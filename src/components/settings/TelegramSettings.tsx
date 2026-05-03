@@ -14,7 +14,22 @@ const BOT_USERNAME = "Convertiabot"; // displayed in instructions
 export function TelegramSettings() {
   const qc = useQueryClient();
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [generatedExpiry, setGeneratedExpiry] = useState<Date | null>(null);
   const [mode, setMode] = useState<"auto" | "text" | "dashboard">("auto");
+  const [ttlValue, setTtlValue] = useState<number>(30);
+  const [ttlUnit, setTtlUnit] = useState<"minutes" | "hours" | "days">("minutes");
+
+  const ttlSeconds = (() => {
+    const v = Math.max(1, Math.floor(ttlValue || 1));
+    const mult = ttlUnit === "minutes" ? 60 : ttlUnit === "hours" ? 3600 : 86400;
+    return Math.min(v * mult, 2592000); // cap 30 days
+  })();
+  const expiresHumanLabel = (() => {
+    const totalMin = Math.round(ttlSeconds / 60);
+    if (totalMin < 60) return `${totalMin} min`;
+    if (totalMin < 1440) return `${Math.round(totalMin / 60)} h`;
+    return `${Math.round(totalMin / 1440)} d`;
+  })();
 
   // existing links for current user
   const { data: links, isLoading } = useQuery({
