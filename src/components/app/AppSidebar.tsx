@@ -1,7 +1,7 @@
 import {
   MessageSquare, FileBarChart, Download,
   Bot, Plug, Users, ShieldCheck, ScrollText, Settings, HelpCircle,
-  LayoutDashboard, Building2, Sparkles, SlidersHorizontal,
+  LayoutDashboard, Building2, Sparkles, SlidersHorizontal, Send,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAppAccess } from "@/hooks/use-app-access";
