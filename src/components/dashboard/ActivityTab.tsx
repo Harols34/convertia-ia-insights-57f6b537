@@ -113,9 +113,8 @@ export function ActivityTab({
       </div>
 
       <div className="bg-white/80 backdrop-blur-xl rounded-3xl border border-slate-200/50 shadow-xl shadow-slate-100/50 overflow-hidden">
-        <LeadsTable 
+        <LeadsTable
           leads={leads}
-          isLoading={isLoading}
           onDelete={handleDeleteLead}
         />
       </div>
