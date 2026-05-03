@@ -1372,15 +1372,26 @@ export type Database = {
           total_ventas: number
         }[]
       }
-      generate_telegram_link_code: {
-        Args: {
-          _bot_id?: string
-          _mode?: string
-          _tenant_id: string
-          _user_id: string
-        }
-        Returns: string
-      }
+      generate_telegram_link_code:
+        | {
+            Args: {
+              _bot_id?: string
+              _mode?: string
+              _tenant_id: string
+              _user_id: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              _bot_id?: string
+              _mode?: string
+              _tenant_id: string
+              _ttl_seconds?: number
+              _user_id: string
+            }
+            Returns: string
+          }
       get_accessible_tenant_ids: {
         Args: { _user_id: string }
         Returns: string[]
