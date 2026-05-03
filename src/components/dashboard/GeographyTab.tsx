@@ -56,7 +56,7 @@ export function GeographyTab({
           title="Concentración Territorial"
           subtitle="Top Ciudades por Volumen de Leads"
           data={cities}
-          staticOption={categoryOption(cities, "leads", EXEC.teal)}
+          staticOption={categoryOption(cities.map(c => ({ name: c.name, value: c.leads })), "leads", EXEC.teal)}
           className="lg:col-span-1"
         />
 
