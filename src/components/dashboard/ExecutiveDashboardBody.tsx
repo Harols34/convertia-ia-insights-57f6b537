@@ -282,9 +282,8 @@ const ExecutiveDashboardBodyInner = React.memo(function ExecutiveDashboardBodyIn
   }, [discovered.length]);
 
   const agents = useMemo(() => {
-    if (rpcData) return rpcData.agents;
     return agentEffectivenessRows(leads);
-  }, [leads, rpcData]);
+  }, [leads]);
 
   const bullets = useMemo(() => {
     if (rpcData) return rpcData.bullets;
