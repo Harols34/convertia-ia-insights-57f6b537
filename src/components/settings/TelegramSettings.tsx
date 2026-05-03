@@ -4,8 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Send, Copy, Trash2, RefreshCw, Loader2, CheckCircle2, MessageCircle, Bot } from "lucide-react";
+import { Send, Copy, Trash2, RefreshCw, Loader2, CheckCircle2, MessageCircle, Bot, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 
