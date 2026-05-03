@@ -92,7 +92,7 @@ export function ExecutiveTab({
           icon={Clock}
           subtitle="minutos"
           tooltipInfo="Tiempo promedio de primera gestión (Time To First touch)."
-          variant="slate"
+          variant="default"
           compact
         />
       </div>
