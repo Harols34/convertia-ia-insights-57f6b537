@@ -173,7 +173,11 @@ export function TelegramSettings() {
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-primary" />
                 <span className="text-sm font-medium">Tu código de vinculación</span>
-                <Badge variant="outline" className="ml-auto">válido 30 min</Badge>
+                <Badge variant="outline" className="ml-auto">
+                  {generatedExpiry
+                    ? `expira ${generatedExpiry.toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}`
+                    : `válido ${expiresHumanLabel}`}
+                </Badge>
               </div>
               <div className="flex items-center gap-2">
                 <code className="flex-1 px-4 py-3 rounded-lg bg-background border border-border text-2xl font-mono tracking-widest text-center">
