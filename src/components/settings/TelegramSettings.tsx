@@ -115,9 +115,9 @@ export function TelegramSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="text-xs font-medium text-muted-foreground">Modo de respuesta del bot</label>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground">Modo de respuesta del bot</Label>
               <Select value={mode} onValueChange={(v: any) => setMode(v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -127,17 +127,42 @@ export function TelegramSettings() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-end">
-              <Button
-                onClick={() => generate.mutate()}
-                disabled={generate.isPending}
-                className="w-full gap-2"
-              >
-                {generate.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Generar código
-              </Button>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <Clock className="h-3 w-3" /> Validez del código
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  value={ttlValue}
+                  onChange={(e) => setTtlValue(parseInt(e.target.value) || 1)}
+                  className="w-24"
+                />
+                <Select value={ttlUnit} onValueChange={(v: any) => setTtlUnit(v)}>
+                  <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="minutes">Minutos</SelectItem>
+                    <SelectItem value="hours">Horas</SelectItem>
+                    <SelectItem value="days">Días</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Equivale a <strong>{expiresHumanLabel}</strong> · máx. 30 días
+              </p>
             </div>
           </div>
+
+          <Button
+            onClick={() => generate.mutate()}
+            disabled={generate.isPending}
+            className="w-full gap-2"
+            size="lg"
+          >
+            {generate.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Generar código de vinculación
+          </Button>
 
           {generatedCode && (
             <motion.div
