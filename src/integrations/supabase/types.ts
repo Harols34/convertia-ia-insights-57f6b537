@@ -792,6 +792,138 @@ export type Database = {
           },
         ]
       }
+      telegram_bot_state: {
+        Row: {
+          id: number
+          update_offset: number
+          updated_at: string
+        }
+        Insert: {
+          id: number
+          update_offset?: number
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          update_offset?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      telegram_link_codes: {
+        Row: {
+          bot_id: string | null
+          code: string
+          created_at: string
+          expires_at: string
+          mode: string
+          tenant_id: string
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          bot_id?: string | null
+          code: string
+          created_at?: string
+          expires_at?: string
+          mode?: string
+          tenant_id: string
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          bot_id?: string | null
+          code?: string
+          created_at?: string
+          expires_at?: string
+          mode?: string
+          tenant_id?: string
+          used_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      telegram_messages: {
+        Row: {
+          chat_id: number
+          created_at: string
+          direction: string
+          error: string | null
+          message_text: string | null
+          raw: Json | null
+          reply_text: string | null
+          status: string | null
+          tenant_id: string | null
+          update_id: number
+          user_id: string | null
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          direction?: string
+          error?: string | null
+          message_text?: string | null
+          raw?: Json | null
+          reply_text?: string | null
+          status?: string | null
+          tenant_id?: string | null
+          update_id: number
+          user_id?: string | null
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          direction?: string
+          error?: string | null
+          message_text?: string | null
+          raw?: Json | null
+          reply_text?: string | null
+          status?: string | null
+          tenant_id?: string | null
+          update_id?: number
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      telegram_user_links: {
+        Row: {
+          bot_id: string | null
+          chat_id: number
+          is_active: boolean
+          last_message_at: string | null
+          linked_at: string
+          mode: string
+          telegram_first_name: string | null
+          telegram_username: string | null
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          bot_id?: string | null
+          chat_id: number
+          is_active?: boolean
+          last_message_at?: string | null
+          linked_at?: string
+          mode?: string
+          telegram_first_name?: string | null
+          telegram_username?: string | null
+          tenant_id: string
+          user_id: string
+        }
+        Update: {
+          bot_id?: string | null
+          chat_id?: number
+          is_active?: boolean
+          last_message_at?: string | null
+          linked_at?: string
+          mode?: string
+          telegram_first_name?: string | null
+          telegram_username?: string | null
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       tenant_data_sources: {
         Row: {
           allow_chatbots: boolean | null
@@ -1030,7 +1162,74 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      mv_leads_agent_daily: {
+        Row: {
+          agente: string | null
+          contactados: number | null
+          dia: string | null
+          gestionados: number | null
+          tenant_id: string | null
+          total_ttf_min: number | null
+          ventas: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mv_leads_daily: {
+        Row: {
+          abandonos: number | null
+          campana_inconcert: string | null
+          campana_mkt: string | null
+          categoria_mkt: string | null
+          ciudad: string | null
+          cliente: string | null
+          contactados: number | null
+          dia: string | null
+          gestionados: number | null
+          leads: number | null
+          no_gestionados: number | null
+          tenant_id: string | null
+          tipo_llamada: string | null
+          total_ttf_min: number | null
+          total_ttn_min: number | null
+          ventas: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mv_leads_hourly: {
+        Row: {
+          cliente: string | null
+          contactados: number | null
+          hora: string | null
+          leads: number | null
+          tenant_id: string | null
+          ventas: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       _build_filters_where: { Args: { _f: Json }; Returns: string }
@@ -1173,6 +1372,15 @@ export type Database = {
           total_ventas: number
         }[]
       }
+      generate_telegram_link_code: {
+        Args: {
+          _bot_id?: string
+          _mode?: string
+          _tenant_id: string
+          _user_id: string
+        }
+        Returns: string
+      }
       get_accessible_tenant_ids: {
         Args: { _user_id: string }
         Returns: string[]
@@ -1189,6 +1397,15 @@ export type Database = {
         Returns: Json
       }
       get_my_accessible_module_slugs: { Args: never; Returns: string[] }
+      get_strategic_bi_scorecard: {
+        Args: {
+          _fecha_desde: string
+          _fecha_hasta: string
+          _filters?: Json
+          _tenant_id: string
+        }
+        Returns: Json
+      }
       get_user_tenant: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
@@ -1251,6 +1468,7 @@ export type Database = {
           udt_name: string
         }[]
       }
+      refresh_bi_materialized_views: { Args: never; Returns: undefined }
       search_dashboard_sessions: {
         Args: {
           _date_from?: string
@@ -1269,12 +1487,12 @@ export type Database = {
     }
     Enums: {
       app_role:
-      | "super_admin"
-      | "tenant_admin"
-      | "manager"
-      | "analyst"
-      | "operator"
-      | "viewer"
+        | "super_admin"
+        | "tenant_admin"
+        | "manager"
+        | "analyst"
+        | "operator"
+        | "viewer"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1288,116 +1506,116 @@ type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
-  | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-    DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-  : never = never,
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-    DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
-  ? R
-  : never
+    ? R
+    : never
   : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-    DefaultSchema["Views"])
-  ? (DefaultSchema["Tables"] &
-    DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
-      Row: infer R
-    }
-  ? R
-  : never
-  : never
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-  | keyof DefaultSchema["Tables"]
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-  : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-    Insert: infer I
-  }
-  ? I
-  : never
+      Insert: infer I
+    }
+    ? I
+    : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-  ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-    Insert: infer I
-  }
-  ? I
-  : never
-  : never
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-  | keyof DefaultSchema["Tables"]
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-  : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-    Update: infer U
-  }
-  ? U
-  : never
+      Update: infer U
+    }
+    ? U
+    : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-  ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-    Update: infer U
-  }
-  ? U
-  : never
-  : never
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
-  | keyof DefaultSchema["Enums"]
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
   EnumName extends DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-  : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
   : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-  ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
-  : never
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-  | keyof DefaultSchema["CompositeTypes"]
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
   CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-  : never = never,
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-  ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-  : never
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
 
 export const Constants = {
   public: {
