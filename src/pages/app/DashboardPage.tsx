@@ -42,13 +42,16 @@ export default function DashboardPage() {
     clearAllFilters
   } = useDashboardFilters();
 
+  const [activeTab, setActiveTab] = useState<string>("executive");
   const { period, setPeriod } = useComparative();
   const metricsQuery = useLeadsMetrics(filters, period);
   const { metrics, isLoading, isError, error, refetch, isFetching } = metricsQuery;
   const rpcData = metricsQuery.data;
 
+  // Solo descargar el dataset pesado de leads cuando el usuario abre la pestaña "Actividad"
+  // (las demás pestañas usan RPC agregado, mucho más rápido).
   const datasetQuery = useDashboardLeadsDataset({
-    enabled: true,
+    enabled: activeTab === "activity",
     fchRango: { desde: filters.desde, hasta: filters.hasta },
     panelFiltersKey: leadsFiltersQueryKey(filters)
   });
