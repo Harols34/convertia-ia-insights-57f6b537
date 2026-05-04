@@ -295,22 +295,30 @@ async function processUpdate(update: any, admin: ReturnType<typeof createClient>
   const username = msg.from?.username || null;
   const firstName = msg.from?.first_name || null;
 
-  // Idempotency: skip if already processed
+  console.log(`[handler] update=${updateId} chat=${chatId} text="${text.slice(0, 80)}"`);
+
+  // Idempotency: skip if already FULLY processed
   const { data: existing } = await admin
     .from("telegram_messages")
-    .select("update_id")
+    .select("update_id, status")
     .eq("update_id", updateId)
     .maybeSingle();
-  if (existing) return;
+  if (existing && existing.status === "processed") {
+    console.log(`[handler] skip update=${updateId} already processed`);
+    return;
+  }
 
-  await admin.from("telegram_messages").insert({
-    update_id: updateId,
-    chat_id: chatId,
-    direction: "in",
-    message_text: text,
-    raw: update,
-    status: "received",
-  });
+  if (!existing) {
+    await admin.from("telegram_messages").insert({
+      update_id: updateId,
+      chat_id: chatId,
+      direction: "in",
+      message_text: text,
+      raw: update,
+      status: "received",
+    });
+  }
+
 
   if (!text) {
     await tgSend(chatId, "Solo proceso mensajes de texto por ahora.");
