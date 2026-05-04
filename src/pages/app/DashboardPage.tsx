@@ -73,7 +73,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-slate-50/50">
-      <Tabs defaultValue="executive" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="sticky top-0 z-50 w-full bg-white/60 backdrop-blur-2xl border-b border-slate-200/50 shadow-sm transition-all duration-300">
           <BIHeader 
             filters={filters}
