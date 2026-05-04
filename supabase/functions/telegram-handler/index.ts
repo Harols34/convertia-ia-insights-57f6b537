@@ -148,6 +148,7 @@ async function mintAccessTokenForUser(userId: string): Promise<string | null> {
   const lj = await lr.json();
   const otp: string | undefined = lj?.properties?.email_otp;
   const hashed: string | undefined = lj?.properties?.hashed_token;
+  console.log(`[mint] generate_link ok hasOtp=${!!otp} hasHashed=${!!hashed} keys=${Object.keys(lj?.properties || {}).join(",")}`);
 
   // 3) Try /verify with the OTP first (most reliable), then fallback to hashed token
   // Use type "email" for plain OTP, type "magiclink" for hashed token
