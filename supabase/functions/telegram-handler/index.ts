@@ -119,6 +119,68 @@ function dashboardToText(dash: any, msg: string): string {
   return lines.join("\n");
 }
 
+async function mintAccessTokenForUser(userId: string): Promise<string | null> {
+  // 1) get email of the user
+  const ur = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+  });
+  if (!ur.ok) {
+    console.error("[mint] admin/users failed", ur.status, await ur.text());
+    return null;
+  }
+  const u = await ur.json();
+  const email: string | undefined = u?.email;
+  if (!email) {
+    console.error("[mint] user has no email", userId);
+    return null;
+  }
+
+  // 2) generate a magiclink (gives us a hashed_token)
+  const lr = await fetch(`${SUPABASE_URL}/auth/v1/admin/generate_link`, {
+    method: "POST",
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "magiclink", email }),
+  });
+  if (!lr.ok) {
+    console.error("[mint] generate_link failed", lr.status, await lr.text());
+    return null;
+  }
+  const lj = await lr.json();
+  const hashed: string | undefined =
+    lj?.properties?.hashed_token || lj?.hashed_token || lj?.action_link?.match(/token=([^&]+)/)?.[1];
+  if (!hashed) {
+    console.error("[mint] no hashed_token in response", JSON.stringify(lj).slice(0, 300));
+    return null;
+  }
+
+  // 3) verify the otp -> session with access_token
+  const vr = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
+    method: "POST",
+    headers: { apikey: SERVICE_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "magiclink", token: hashed, email }),
+  });
+  if (!vr.ok) {
+    console.error("[mint] verify failed", vr.status, await vr.text());
+    return null;
+  }
+  const vj = await vr.json();
+  return vj?.access_token || null;
+}
+
+// In-memory cache (per function instance) — ok for single-invocation lifetime
+const tokenCache = new Map<string, { token: string; expiresAt: number }>();
+
+async function getAccessTokenForUser(userId: string): Promise<string | null> {
+  const cached = tokenCache.get(userId);
+  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
+  const token = await mintAccessTokenForUser(userId);
+  if (token) {
+    // Supabase access tokens last 1h by default
+    tokenCache.set(userId, { token, expiresAt: Date.now() + 50 * 60_000 });
+  }
+  return token;
+}
+
 async function callChatAi(opts: {
   userId: string;
   text: string;
@@ -126,63 +188,20 @@ async function callChatAi(opts: {
   history: { role: "user" | "assistant"; content: string }[];
 }): Promise<string> {
   const { userId, text, mode, history } = opts;
-  // Generate a temporary access token for this user via admin API
-  const admin = createClient(SUPABASE_URL, SERVICE_KEY);
-  const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-    type: "magiclink",
-    email: "noop@telegram.local", // not used; we want the access_token
-  } as any).catch(() => ({ data: null, error: { message: "skip" } } as any));
-  // The above won't help; use direct internal call instead:
-  // Call chat-ai with a service-impersonation header? chat-ai expects a real user JWT.
-  // Workaround: invoke the supabase admin createClient with auth.admin to mint a session for this user.
-  let accessToken: string | null = null;
-  try {
-    // Use admin to get an impersonation token for the user
-    const r = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
-      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
-    });
-    if (r.ok) {
-      const u = await r.json();
-      const email = u?.email;
-      if (email) {
-        // Generate a magic link to extract access_token from URL
-        const lnk = await fetch(`${SUPABASE_URL}/auth/v1/admin/generate_link`, {
-          method: "POST",
-          headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "magiclink", email }),
-        });
-        if (lnk.ok) {
-          const lj = await lnk.json();
-          // The token in `hashed_token` can be exchanged via verify endpoint
-          const hashed = lj?.properties?.hashed_token || lj?.hashed_token;
-          if (hashed) {
-            const ver = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
-              method: "POST",
-              headers: { apikey: SERVICE_KEY, "Content-Type": "application/json" },
-              body: JSON.stringify({ type: "magiclink", token: hashed, email }),
-            });
-            if (ver.ok) {
-              const vj = await ver.json();
-              accessToken = vj?.access_token || null;
-            }
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.error("token mint:", e);
-  }
+
+  const accessToken = await getAccessTokenForUser(userId);
 
   if (!accessToken) {
     // Fallback: call OpenAI directly with no DB tool access (text-only response)
-    if (!OPENAI_API_KEY) return "⚠️ No pude autenticarte para consultar la base. Verifica tu vínculo en la app.";
+    if (!OPENAI_API_KEY) return "⚠️ No pude autenticarte para consultar la base. Pide soporte para revisar el vínculo de tu cuenta.";
+    console.warn("[callChatAi] no access token, falling back to direct OpenAI");
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: "Eres asistente analítico de Convertía. Responde breve en español." },
+          { role: "system", content: "Eres asistente analítico de Convertía. Responde breve en español. Aclara que no tienes acceso a la base ahora." },
           ...history.slice(-6),
           { role: "user", content: text },
         ],
