@@ -135,7 +135,7 @@ async function mintAccessTokenForUser(userId: string): Promise<string | null> {
     return null;
   }
 
-  // 2) generate a magiclink (gives us a hashed_token)
+  // 2) generate a magiclink (gives us properties.email_otp + hashed_token)
   const lr = await fetch(`${SUPABASE_URL}/auth/v1/admin/generate_link`, {
     method: "POST",
     headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
@@ -146,25 +146,30 @@ async function mintAccessTokenForUser(userId: string): Promise<string | null> {
     return null;
   }
   const lj = await lr.json();
-  const hashed: string | undefined =
-    lj?.properties?.hashed_token || lj?.hashed_token || lj?.action_link?.match(/token=([^&]+)/)?.[1];
-  if (!hashed) {
-    console.error("[mint] no hashed_token in response", JSON.stringify(lj).slice(0, 300));
-    return null;
-  }
+  const otp: string | undefined = lj?.properties?.email_otp;
+  const hashed: string | undefined = lj?.properties?.hashed_token;
 
-  // 3) verify the otp -> session with access_token
-  const vr = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
-    method: "POST",
-    headers: { apikey: SERVICE_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ type: "magiclink", token: hashed, email }),
-  });
-  if (!vr.ok) {
-    console.error("[mint] verify failed", vr.status, await vr.text());
-    return null;
+  // 3) Try /verify with the OTP first (most reliable), then fallback to hashed token
+  // Use type "email" for plain OTP, type "magiclink" for hashed token
+  const attempts: Array<{ type: string; token: string }> = [];
+  if (otp) attempts.push({ type: "email", token: otp });
+  if (hashed) attempts.push({ type: "magiclink", token: hashed });
+
+  for (const attempt of attempts) {
+    const vr = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
+      method: "POST",
+      headers: { apikey: SERVICE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ type: attempt.type, token: attempt.token, email }),
+    });
+    if (vr.ok) {
+      const vj = await vr.json();
+      if (vj?.access_token) return vj.access_token;
+    } else {
+      console.warn(`[mint] verify ${attempt.type} failed`, vr.status, (await vr.text()).slice(0, 200));
+    }
   }
-  const vj = await vr.json();
-  return vj?.access_token || null;
+  console.error("[mint] all verify attempts failed");
+  return null;
 }
 
 // In-memory cache (per function instance) — ok for single-invocation lifetime
