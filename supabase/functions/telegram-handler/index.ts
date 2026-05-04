@@ -119,6 +119,74 @@ function dashboardToText(dash: any, msg: string): string {
   return lines.join("\n");
 }
 
+async function mintAccessTokenForUser(userId: string): Promise<string | null> {
+  // 1) get email of the user
+  const ur = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+  });
+  if (!ur.ok) {
+    console.error("[mint] admin/users failed", ur.status, await ur.text());
+    return null;
+  }
+  const u = await ur.json();
+  const email: string | undefined = u?.email;
+  if (!email) {
+    console.error("[mint] user has no email", userId);
+    return null;
+  }
+
+  // 2) generate a magiclink (gives us properties.email_otp + hashed_token)
+  const lr = await fetch(`${SUPABASE_URL}/auth/v1/admin/generate_link`, {
+    method: "POST",
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "magiclink", email }),
+  });
+  if (!lr.ok) {
+    console.error("[mint] generate_link failed", lr.status, await lr.text());
+    return null;
+  }
+  const lj = await lr.json();
+  const otp: string | undefined = lj?.properties?.email_otp;
+  const hashed: string | undefined = lj?.properties?.hashed_token;
+  console.log(`[mint] generate_link ok hasOtp=${!!otp} hasHashed=${!!hashed} keys=${Object.keys(lj?.properties || {}).join(",")}`);
+
+  // 3) Try /verify with the OTP first (most reliable), then fallback to hashed token
+  // Use type "email" for plain OTP, type "magiclink" for hashed token
+  const attempts: Array<{ type: string; token: string }> = [];
+  if (otp) attempts.push({ type: "email", token: otp });
+  if (hashed) attempts.push({ type: "magiclink", token: hashed });
+
+  for (const attempt of attempts) {
+    const vr = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
+      method: "POST",
+      headers: { apikey: SERVICE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ type: attempt.type, token: attempt.token, email }),
+    });
+    if (vr.ok) {
+      const vj = await vr.json();
+      if (vj?.access_token) return vj.access_token;
+    } else {
+      console.warn(`[mint] verify ${attempt.type} failed`, vr.status, (await vr.text()).slice(0, 200));
+    }
+  }
+  console.error("[mint] all verify attempts failed");
+  return null;
+}
+
+// In-memory cache (per function instance) — ok for single-invocation lifetime
+const tokenCache = new Map<string, { token: string; expiresAt: number }>();
+
+async function getAccessTokenForUser(userId: string): Promise<string | null> {
+  const cached = tokenCache.get(userId);
+  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
+  const token = await mintAccessTokenForUser(userId);
+  if (token) {
+    // Supabase access tokens last 1h by default
+    tokenCache.set(userId, { token, expiresAt: Date.now() + 50 * 60_000 });
+  }
+  return token;
+}
+
 async function callChatAi(opts: {
   userId: string;
   text: string;
@@ -126,63 +194,20 @@ async function callChatAi(opts: {
   history: { role: "user" | "assistant"; content: string }[];
 }): Promise<string> {
   const { userId, text, mode, history } = opts;
-  // Generate a temporary access token for this user via admin API
-  const admin = createClient(SUPABASE_URL, SERVICE_KEY);
-  const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-    type: "magiclink",
-    email: "noop@telegram.local", // not used; we want the access_token
-  } as any).catch(() => ({ data: null, error: { message: "skip" } } as any));
-  // The above won't help; use direct internal call instead:
-  // Call chat-ai with a service-impersonation header? chat-ai expects a real user JWT.
-  // Workaround: invoke the supabase admin createClient with auth.admin to mint a session for this user.
-  let accessToken: string | null = null;
-  try {
-    // Use admin to get an impersonation token for the user
-    const r = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
-      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
-    });
-    if (r.ok) {
-      const u = await r.json();
-      const email = u?.email;
-      if (email) {
-        // Generate a magic link to extract access_token from URL
-        const lnk = await fetch(`${SUPABASE_URL}/auth/v1/admin/generate_link`, {
-          method: "POST",
-          headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "magiclink", email }),
-        });
-        if (lnk.ok) {
-          const lj = await lnk.json();
-          // The token in `hashed_token` can be exchanged via verify endpoint
-          const hashed = lj?.properties?.hashed_token || lj?.hashed_token;
-          if (hashed) {
-            const ver = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
-              method: "POST",
-              headers: { apikey: SERVICE_KEY, "Content-Type": "application/json" },
-              body: JSON.stringify({ type: "magiclink", token: hashed, email }),
-            });
-            if (ver.ok) {
-              const vj = await ver.json();
-              accessToken = vj?.access_token || null;
-            }
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.error("token mint:", e);
-  }
+
+  const accessToken = await getAccessTokenForUser(userId);
 
   if (!accessToken) {
     // Fallback: call OpenAI directly with no DB tool access (text-only response)
-    if (!OPENAI_API_KEY) return "⚠️ No pude autenticarte para consultar la base. Verifica tu vínculo en la app.";
+    if (!OPENAI_API_KEY) return "⚠️ No pude autenticarte para consultar la base. Pide soporte para revisar el vínculo de tu cuenta.";
+    console.warn("[callChatAi] no access token, falling back to direct OpenAI");
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: "Eres asistente analítico de Convertía. Responde breve en español." },
+          { role: "system", content: "Eres asistente analítico de Convertía. Responde breve en español. Aclara que no tienes acceso a la base ahora." },
           ...history.slice(-6),
           { role: "user", content: text },
         ],
@@ -276,22 +301,30 @@ async function processUpdate(update: any, admin: ReturnType<typeof createClient>
   const username = msg.from?.username || null;
   const firstName = msg.from?.first_name || null;
 
-  // Idempotency: skip if already processed
+  console.log(`[handler] update=${updateId} chat=${chatId} text="${text.slice(0, 80)}"`);
+
+  // Idempotency: skip if already FULLY processed
   const { data: existing } = await admin
     .from("telegram_messages")
-    .select("update_id")
+    .select("update_id, status")
     .eq("update_id", updateId)
     .maybeSingle();
-  if (existing) return;
+  if (existing && existing.status === "processed") {
+    console.log(`[handler] skip update=${updateId} already processed`);
+    return;
+  }
 
-  await admin.from("telegram_messages").insert({
-    update_id: updateId,
-    chat_id: chatId,
-    direction: "in",
-    message_text: text,
-    raw: update,
-    status: "received",
-  });
+  if (!existing) {
+    await admin.from("telegram_messages").insert({
+      update_id: updateId,
+      chat_id: chatId,
+      direction: "in",
+      message_text: text,
+      raw: update,
+      status: "received",
+    });
+  }
+
 
   if (!text) {
     await tgSend(chatId, "Solo proceso mensajes de texto por ahora.");
@@ -419,20 +452,25 @@ async function processUpdate(update: any, admin: ReturnType<typeof createClient>
 
   await tgSend(chatId, reply || "Sin respuesta.");
 
-  await admin.from("telegram_messages").insert({
-    update_id: -Math.abs(updateId) - 1, // synthetic id for outbound; ensure unique
-    chat_id: chatId,
-    user_id: link.user_id,
-    tenant_id: link.tenant_id,
-    direction: "out",
-    reply_text: reply,
-    status: "sent",
-  }).catch(() => {});
+  try {
+    await admin.from("telegram_messages").insert({
+      update_id: -(Date.now()), // synthetic negative id, unique per ms
+      chat_id: chatId,
+      user_id: link.user_id,
+      tenant_id: link.tenant_id,
+      direction: "out",
+      reply_text: reply,
+      status: "sent",
+    });
+  } catch (e) {
+    console.error("[handler] outbound insert err:", e);
+  }
   await admin.from("telegram_messages").update({
     status: "processed",
     user_id: link.user_id,
     tenant_id: link.tenant_id,
   }).eq("update_id", updateId);
+  console.log(`[handler] done update=${updateId} replyLen=${reply.length}`);
 }
 
 serve(async (req) => {
