@@ -447,19 +447,20 @@ async function processUpdate(update: any, admin: ReturnType<typeof createClient>
   await tgSend(chatId, reply || "Sin respuesta.");
 
   await admin.from("telegram_messages").insert({
-    update_id: -Math.abs(updateId) - 1, // synthetic id for outbound; ensure unique
+    update_id: -(Date.now()), // synthetic negative id, unique per ms
     chat_id: chatId,
     user_id: link.user_id,
     tenant_id: link.tenant_id,
     direction: "out",
     reply_text: reply,
     status: "sent",
-  }).catch(() => {});
+  }).catch((e) => console.error("[handler] outbound insert err:", e));
   await admin.from("telegram_messages").update({
     status: "processed",
     user_id: link.user_id,
     tenant_id: link.tenant_id,
   }).eq("update_id", updateId);
+  console.log(`[handler] done update=${updateId} replyLen=${reply.length}`);
 }
 
 serve(async (req) => {
