@@ -1662,20 +1662,32 @@ serve(async (req) => {
     //   1) User token (frontend) -> resolve user via getUser()
     //   2) Service-role token + body.userId (server-to-server, e.g. telegram-handler)
     let user: { id: string } | null = null;
+    let userJwt: string = token;
     if (token === SERVICE_KEY && body.userId) {
       const { data: u } = await admin.auth.admin.getUserById(body.userId);
-      if (u?.user) user = { id: u.user.id };
+      if (u?.user) {
+        user = { id: u.user.id };
+        const minted = await signSupabaseJwt(u.user.id);
+        if (!minted) {
+          console.error("[chat-ai] SUPABASE_JWT_SECRET missing — cannot impersonate");
+          return new Response(JSON.stringify({ error: "Server misconfigured" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        userJwt = minted;
+      }
     } else {
-      const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      const sbTmp = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
         global: { headers: { Authorization: auth } },
       });
-      const { data: { user: u } } = await sb.auth.getUser();
+      const { data: { user: u } } = await sbTmp.auth.getUser();
       if (u) user = { id: u.id };
     }
     if (!user)
       return new Response(JSON.stringify({ error: "Token inválido" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-    const sb = admin; // for the few sb.rpc calls below — service role bypasses RLS, OK for read-only RPCs
+    // sb is a user-scoped client where auth.uid() resolves to the impersonated user
+    const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: `Bearer ${userJwt}` } },
+    });
 
     // Get ALL accessible tenant IDs for this user
     const { data: tenantIds } = await admin.rpc("get_accessible_tenant_ids", { _user_id: user.id });
