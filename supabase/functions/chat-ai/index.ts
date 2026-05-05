@@ -1,5 +1,23 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { create as jwtCreate, getNumericDate } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
+
+async function signSupabaseJwt(userId: string): Promise<string | null> {
+  const secret = Deno.env.get("SUPABASE_JWT_SECRET");
+  if (!secret) return null;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"],
+  );
+  return await jwtCreate(
+    { alg: "HS256", typ: "JWT" },
+    { sub: userId, role: "authenticated", aud: "authenticated", exp: getNumericDate(60 * 60) },
+    key,
+  );
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
