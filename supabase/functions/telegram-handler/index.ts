@@ -119,74 +119,6 @@ function dashboardToText(dash: any, msg: string): string {
   return lines.join("\n");
 }
 
-async function mintAccessTokenForUser(userId: string): Promise<string | null> {
-  // 1) get email of the user
-  const ur = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
-    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
-  });
-  if (!ur.ok) {
-    console.error("[mint] admin/users failed", ur.status, await ur.text());
-    return null;
-  }
-  const u = await ur.json();
-  const email: string | undefined = u?.email;
-  if (!email) {
-    console.error("[mint] user has no email", userId);
-    return null;
-  }
-
-  // 2) generate a magiclink (gives us properties.email_otp + hashed_token)
-  const lr = await fetch(`${SUPABASE_URL}/auth/v1/admin/generate_link`, {
-    method: "POST",
-    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ type: "magiclink", email }),
-  });
-  if (!lr.ok) {
-    console.error("[mint] generate_link failed", lr.status, await lr.text());
-    return null;
-  }
-  const lj = await lr.json();
-  const otp: string | undefined = lj?.properties?.email_otp;
-  const hashed: string | undefined = lj?.properties?.hashed_token;
-  console.log(`[mint] generate_link ok hasOtp=${!!otp} hasHashed=${!!hashed} keys=${Object.keys(lj?.properties || {}).join(",")}`);
-
-  // 3) Try /verify with the OTP first (most reliable), then fallback to hashed token
-  // Use type "email" for plain OTP, type "magiclink" for hashed token
-  const attempts: Array<{ type: string; token: string }> = [];
-  if (otp) attempts.push({ type: "email", token: otp });
-  if (hashed) attempts.push({ type: "magiclink", token: hashed });
-
-  for (const attempt of attempts) {
-    const vr = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
-      method: "POST",
-      headers: { apikey: SERVICE_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ type: attempt.type, token: attempt.token, email }),
-    });
-    if (vr.ok) {
-      const vj = await vr.json();
-      if (vj?.access_token) return vj.access_token;
-    } else {
-      console.warn(`[mint] verify ${attempt.type} failed`, vr.status, (await vr.text()).slice(0, 200));
-    }
-  }
-  console.error("[mint] all verify attempts failed");
-  return null;
-}
-
-// In-memory cache (per function instance) — ok for single-invocation lifetime
-const tokenCache = new Map<string, { token: string; expiresAt: number }>();
-
-async function getAccessTokenForUser(userId: string): Promise<string | null> {
-  const cached = tokenCache.get(userId);
-  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
-  const token = await mintAccessTokenForUser(userId);
-  if (token) {
-    // Supabase access tokens last 1h by default
-    tokenCache.set(userId, { token, expiresAt: Date.now() + 50 * 60_000 });
-  }
-  return token;
-}
-
 async function callChatAi(opts: {
   userId: string;
   text: string;
@@ -195,40 +127,16 @@ async function callChatAi(opts: {
 }): Promise<string> {
   const { userId, text, mode, history } = opts;
 
-  const accessToken = await getAccessTokenForUser(userId);
-
-  if (!accessToken) {
-    // Fallback: call OpenAI directly with no DB tool access (text-only response)
-    if (!OPENAI_API_KEY) return "⚠️ No pude autenticarte para consultar la base. Pide soporte para revisar el vínculo de tu cuenta.";
-    console.warn("[callChatAi] no access token, falling back to direct OpenAI");
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: "Eres asistente analítico de Convertía. Responde breve en español. Aclara que no tienes acceso a la base ahora." },
-          ...history.slice(-6),
-          { role: "user", content: text },
-        ],
-        temperature: 0.3,
-        max_tokens: 800,
-      }),
-    });
-    const j = await r.json();
-    return j?.choices?.[0]?.message?.content || "Sin respuesta.";
-  }
-
   const messages = [...history.slice(-8), { role: "user", content: text }];
-  const payload: Record<string, unknown> = { messages };
+  const payload: Record<string, unknown> = { messages, userId };
   if (mode === "dashboard") payload.mode = "dashdinamics";
 
   const res = await fetch(`${SUPABASE_URL}/functions/v1/chat-ai`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${SERVICE_KEY}`,
       "Content-Type": "application/json",
-      apikey: Deno.env.get("SUPABASE_ANON_KEY") || "",
+      apikey: SERVICE_KEY,
     },
     body: JSON.stringify(payload),
   });
