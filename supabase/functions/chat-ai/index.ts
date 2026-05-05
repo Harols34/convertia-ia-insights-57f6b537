@@ -1632,17 +1632,32 @@ serve(async (req) => {
     if (!auth?.startsWith("Bearer "))
       return new Response(JSON.stringify({ error: "No autorizado" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-    const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: auth } },
-    });
-    const { data: { user }, error: ue } = await sb.auth.getUser();
-    if (ue || !user)
-      return new Response(JSON.stringify({ error: "Token inválido" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const token = auth.slice(7);
+    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, SERVICE_KEY);
 
     const body = await req.json();
     const { messages, mode, botId, webhookUrl } = body;
     const af: Filters = body.filters ?? {};
-    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+    // Two auth modes:
+    //   1) User token (frontend) -> resolve user via getUser()
+    //   2) Service-role token + body.userId (server-to-server, e.g. telegram-handler)
+    let user: { id: string } | null = null;
+    if (token === SERVICE_KEY && body.userId) {
+      const { data: u } = await admin.auth.admin.getUserById(body.userId);
+      if (u?.user) user = { id: u.user.id };
+    } else {
+      const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: auth } },
+      });
+      const { data: { user: u } } = await sb.auth.getUser();
+      if (u) user = { id: u.id };
+    }
+    if (!user)
+      return new Response(JSON.stringify({ error: "Token inválido" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+    const sb = admin; // for the few sb.rpc calls below — service role bypasses RLS, OK for read-only RPCs
 
     // Get ALL accessible tenant IDs for this user
     const { data: tenantIds } = await admin.rpc("get_accessible_tenant_ids", { _user_id: user.id });
