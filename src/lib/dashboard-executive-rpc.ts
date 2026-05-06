@@ -297,22 +297,14 @@ export async function fetchExecutiveDashboardData(filters: LeadsDashboardFilters
     discoveredResponses,
   ] = await Promise.all([
     supabase.rpc("accessible_leads_kpis", { _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
-    supabase.rpc("get_strategic_bi_scorecard", { 
-      _tenant_id: (await supabase.auth.getSession()).data.session?.user.id,
-      _fecha_desde: desde, 
-      _fecha_hasta: hasta, 
-      _filters: rpcFilters 
+    supabase.rpc("get_strategic_bi_scorecard", {
+      _tenant_id: "00000000-0000-0000-0000-000000000000",
+      _fecha_desde: desde,
+      _fecha_hasta: hasta,
+      _filters: rpcFilters
     }),
-    supabase.from('mv_leads_daily')
-      .select('dia, leads, ventas, contactados, gestionados, total_ttf_min')
-      .gte('dia', desde)
-      .lte('dia', hasta)
-      .order('dia', { ascending: true }),
-    supabase.from('mv_leads_hourly')
-      .select('hora, leads, ventas, contactados')
-      .gte('hora', `${desde} 00:00:00`)
-      .lte('hora', `${hasta} 23:59:59`)
-      .order('hora', { ascending: true }),
+    supabase.rpc("accessible_leads_daily_metrics", { _fecha_desde: desde, _fecha_hasta: hasta }),
+    supabase.rpc("accessible_leads_hourly_metrics", { _fecha_desde: desde, _fecha_hasta: hasta }),
     supabase.rpc("accessible_leads_timeseries", { _metric: "leads", _granularity: "week", _limit: 20, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
     supabase.rpc("accessible_leads_timeseries", { _metric: "ventas", _granularity: "week", _limit: 20, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
     supabase.rpc("accessible_leads_funnel", { _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
