@@ -319,11 +319,7 @@ export async function fetchExecutiveDashboardData(filters: LeadsDashboardFilters
     supabase.rpc("accessible_leads_kpis", { _fecha_desde: prevStart, _fecha_hasta: prevEnd, _filters: rpcFilters }),
     supabase.rpc("accessible_leads_kpis", { _fecha_desde: currentIsoWeekStart, _fecha_hasta: currentIsoWeekEnd, _filters: rpcFilters }),
     supabase.rpc("accessible_leads_kpis", { _fecha_desde: previousIsoWeekStart, _fecha_hasta: previousIsoWeekEnd, _filters: rpcFilters }),
-    supabase.from('mv_leads_daily')
-      .select('dia, leads, ventas')
-      .gte('dia', prevStart)
-      .lte('dia', prevEnd)
-      .order('dia', { ascending: true }),
+    supabase.rpc("accessible_leads_daily_metrics", { _fecha_desde: prevStart, _fecha_hasta: prevEnd }),
     Promise.all(
       DIMENSION_META.map((meta) =>
           supabase.rpc("accessible_leads_group_metrics", {
