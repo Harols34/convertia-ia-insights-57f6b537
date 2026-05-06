@@ -1257,6 +1257,19 @@ export type Database = {
         }
         Returns: Json
       }
+      accessible_leads_daily_metrics: {
+        Args: { _fecha_desde?: string; _fecha_hasta?: string }
+        Returns: {
+          abandonos: number
+          contactados: number
+          dia: string
+          gestionados: number
+          leads: number
+          no_gestionados: number
+          total_ttf_min: number
+          ventas: number
+        }[]
+      }
       accessible_leads_dimensions: { Args: never; Returns: Json }
       accessible_leads_funnel: {
         Args: {
@@ -1277,6 +1290,15 @@ export type Database = {
           _limit?: number
         }
         Returns: Json
+      }
+      accessible_leads_hourly_metrics: {
+        Args: { _fecha_desde?: string; _fecha_hasta?: string }
+        Returns: {
+          contactados: number
+          hora: string
+          leads: number
+          ventas: number
+        }[]
       }
       accessible_leads_kpis: {
         Args: {
