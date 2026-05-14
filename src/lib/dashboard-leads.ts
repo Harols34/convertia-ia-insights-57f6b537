@@ -1,4 +1,4 @@
-import { endOfDay, format, parseISO, startOfMonth, subDays, startOfDay } from "date-fns";
+import { endOfDay, format, parseISO, startOfMonth, subMonths, startOfDay } from "date-fns";
 import type { Database } from "@/integrations/supabase/types";
 export type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
 
@@ -69,8 +69,10 @@ export const DASHBOARD_DEFAULT_WEEK_BARS = 3;
 export const defaultLeadsDashboardFilters = (): LeadsDashboardFilters => {
   const now = new Date();
   return {
-    desde: format(subDays(now, 30), "yyyy-MM-dd"),
-    hasta: format(now, "yyyy-MM-dd"),
+    // Carga inicial acotada: mes anterior + mes actual.
+    // Los filtros de fecha siguen permitiendo consultar cualquier mes histórico.
+    desde: format(startOfMonth(subMonths(now, 1)), "yyyy-MM-dd"),
+    hasta: format(endOfDay(now), "yyyy-MM-dd"),
     esVenta: "all",
     dimensions: {},
   };
