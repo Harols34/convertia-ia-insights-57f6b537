@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { endOfDay, format, startOfMonth, subMonths } from "date-fns";
 import type { Database } from "@/integrations/supabase/types";
 import { fetchAllIntegrationRows } from "@/components/integraciones/fetch-integration-table";
 
@@ -11,8 +12,15 @@ type CacheEntry = {
 const TTL_MS = 60_000;
 const cache = new Map<string, CacheEntry>();
 
-function buildKey(tableName: string, stripColumnNames?: string[], selectColumns?: string[]) {
-  return `${tableName}::${(stripColumnNames ?? []).slice().sort().join("|")}::${(selectColumns ?? []).slice().sort().join("|")}`;
+export function getDefaultLeadsInitialRange(now: Date = new Date()) {
+  return {
+    desde: format(startOfMonth(subMonths(now, 1)), "yyyy-MM-dd"),
+    hasta: format(endOfDay(now), "yyyy-MM-dd"),
+  };
+}
+
+function buildKey(tableName: string, stripColumnNames?: string[], selectColumns?: string[], fchCreacionRango?: { desde?: string; hasta?: string }) {
+  return `${tableName}::${(stripColumnNames ?? []).slice().sort().join("|")}::${(selectColumns ?? []).slice().sort().join("|")}::${fchCreacionRango?.desde ?? ""}::${fchCreacionRango?.hasta ?? ""}`;
 }
 
 export async function fetchCachedIntegrationRows(
@@ -20,8 +28,10 @@ export async function fetchCachedIntegrationRows(
   tableName: string,
   stripColumnNames?: string[],
   selectColumns?: string[],
+  fchCreacionRango?: { desde?: string; hasta?: string },
 ): Promise<Record<string, unknown>[]> {
-  const key = buildKey(tableName, stripColumnNames, selectColumns);
+  const range = tableName === "leads" ? (fchCreacionRango ?? getDefaultLeadsInitialRange()) : undefined;
+  const key = buildKey(tableName, stripColumnNames, selectColumns, range);
   const now = Date.now();
   const existing = cache.get(key);
 
@@ -29,7 +39,7 @@ export async function fetchCachedIntegrationRows(
   if (existing?.inflight) return existing.inflight;
 
   const entry: CacheEntry = existing ?? { expiresAt: 0, inflight: null, rows: null };
-  entry.inflight = fetchAllIntegrationRows(client, tableName, undefined, stripColumnNames, selectColumns).then((rows) => {
+  entry.inflight = fetchAllIntegrationRows(client, tableName, undefined, stripColumnNames, selectColumns, undefined, 5000, range).then((rows) => {
     entry.rows = rows;
     entry.expiresAt = Date.now() + TTL_MS;
     entry.inflight = null;
