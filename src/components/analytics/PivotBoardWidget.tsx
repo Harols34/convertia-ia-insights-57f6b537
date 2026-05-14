@@ -71,6 +71,7 @@ export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidg
           config.tableName,
           stripCols.length ? stripCols : undefined,
           config.tableName === "leads" ? selectColumns : undefined,
+          undefined,
         );
         if (!cancelled) setRows(data);
       } catch (e) {
