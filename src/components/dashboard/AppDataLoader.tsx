@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Loader2, Database } from "lucide-react";
-import { useDashboardLeadsDataset } from "@/hooks/use-dashboard-leads-dataset";
 
 export function AppDataLoader({ children }: { children: React.ReactNode }) {
   const [progress, setProgress] = useState(0);
@@ -52,13 +51,14 @@ export function AppDataLoader({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      {children}
       <AnimatePresence>
         {showOverlay && (
           <motion.div
             initial={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.6, ease: "easeInOut" }}
-            className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-background/95 backdrop-blur-md"
+            className="pointer-events-none fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-background/95 backdrop-blur-md"
           >
             <motion.div
               initial={{ scale: 0.8, opacity: 0 }}
@@ -99,7 +99,6 @@ export function AppDataLoader({ children }: { children: React.ReactNode }) {
           </motion.div>
         )}
       </AnimatePresence>
-      {!showOverlay && children}
     </>
   );
 }
