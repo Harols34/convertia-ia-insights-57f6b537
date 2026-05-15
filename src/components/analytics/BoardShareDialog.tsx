@@ -33,18 +33,27 @@ export function BoardShareDialog({ boardId, isOpen, onOpenChange, ownerId }: Boa
   const { data: shares = [], isLoading: loadingShares } = useQuery({
     queryKey: ["board-shares", boardId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // No existe FK entre analytics_board_shares.user_id y profiles, así que evitamos el embed
+      // (causaba 400) y combinamos los datos en dos consultas.
+      const { data: rows, error } = await supabase
         .from("analytics_board_shares")
-        .select(`
-          id,
-          user_id,
-          access_level,
-          profiles:user_id (id, full_name, avatar_url)
-        `)
+        .select("id, user_id, access_level")
         .eq("board_id", boardId);
-      
       if (error) throw error;
-      return data || [];
+      const userIds = (rows ?? []).map((r) => r.user_id).filter(Boolean) as string[];
+      let profilesById = new Map<string, { id: string; full_name: string | null; avatar_url: string | null }>();
+      if (userIds.length) {
+        const { data: profs, error: pErr } = await supabase
+          .from("profiles")
+          .select("id, full_name, avatar_url")
+          .in("id", userIds);
+        if (pErr) throw pErr;
+        profilesById = new Map((profs ?? []).map((p) => [p.id, p]));
+      }
+      return (rows ?? []).map((r) => ({
+        ...r,
+        profiles: r.user_id ? profilesById.get(r.user_id) ?? null : null,
+      }));
     },
     enabled: isOpen
   });
