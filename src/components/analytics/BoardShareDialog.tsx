@@ -142,7 +142,7 @@ export function BoardShareDialog({ boardId, isOpen, onOpenChange, ownerId }: Boa
                           </Avatar>
                           <div className="flex flex-col">
                             <span className="text-sm font-medium">{u.full_name}</span>
-                            <span className="text-[10px] text-muted-foreground">ID: {u.id.slice(0, 8)}...</span>
+                            <span className="text-[10px] text-muted-foreground">{u.tenant_name ?? "Sin cuenta"}</span>
                           </div>
                         </div>
                         <Button
