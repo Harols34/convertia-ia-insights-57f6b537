@@ -1234,6 +1234,10 @@ export type Database = {
     Functions: {
       _build_filters_where: { Args: { _f: Json }; Returns: string }
       _date_field_expr: { Args: { _d: string }; Returns: string }
+      _leads_filter_clause: {
+        Args: { _alias?: string; _filters: Json }
+        Returns: string
+      }
       accessible_leads_agent_metrics: {
         Args: {
           _date_field?: string
@@ -1257,19 +1261,37 @@ export type Database = {
         }
         Returns: Json
       }
-      accessible_leads_daily_metrics: {
-        Args: { _fecha_desde?: string; _fecha_hasta?: string }
-        Returns: {
-          abandonos: number
-          contactados: number
-          dia: string
-          gestionados: number
-          leads: number
-          no_gestionados: number
-          total_ttf_min: number
-          ventas: number
-        }[]
-      }
+      accessible_leads_daily_metrics:
+        | {
+            Args: { _fecha_desde?: string; _fecha_hasta?: string }
+            Returns: {
+              abandonos: number
+              contactados: number
+              dia: string
+              gestionados: number
+              leads: number
+              no_gestionados: number
+              total_ttf_min: number
+              ventas: number
+            }[]
+          }
+        | {
+            Args: {
+              _fecha_desde?: string
+              _fecha_hasta?: string
+              _filters?: Json
+            }
+            Returns: {
+              abandonos: number
+              contactados: number
+              dia: string
+              gestionados: number
+              leads: number
+              no_gestionados: number
+              total_ttf_min: number
+              ventas: number
+            }[]
+          }
       accessible_leads_dimensions: { Args: never; Returns: Json }
       accessible_leads_funnel: {
         Args: {
@@ -1291,15 +1313,29 @@ export type Database = {
         }
         Returns: Json
       }
-      accessible_leads_hourly_metrics: {
-        Args: { _fecha_desde?: string; _fecha_hasta?: string }
-        Returns: {
-          contactados: number
-          hora: string
-          leads: number
-          ventas: number
-        }[]
-      }
+      accessible_leads_hourly_metrics:
+        | {
+            Args: { _fecha_desde?: string; _fecha_hasta?: string }
+            Returns: {
+              contactados: number
+              hora: string
+              leads: number
+              ventas: number
+            }[]
+          }
+        | {
+            Args: {
+              _fecha_desde?: string
+              _fecha_hasta?: string
+              _filters?: Json
+            }
+            Returns: {
+              contactados: number
+              hora: string
+              leads: number
+              ventas: number
+            }[]
+          }
       accessible_leads_kpis: {
         Args: {
           _date_field?: string
