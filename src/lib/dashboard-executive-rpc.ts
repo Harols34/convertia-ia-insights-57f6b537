@@ -303,8 +303,8 @@ export async function fetchExecutiveDashboardData(filters: LeadsDashboardFilters
       _fecha_hasta: hasta,
       _filters: rpcFilters
     }),
-    supabase.rpc("accessible_leads_daily_metrics", { _fecha_desde: desde, _fecha_hasta: hasta }),
-    supabase.rpc("accessible_leads_hourly_metrics", { _fecha_desde: desde, _fecha_hasta: hasta }),
+    supabase.rpc("accessible_leads_daily_metrics" as any, { _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters } as any),
+    supabase.rpc("accessible_leads_hourly_metrics" as any, { _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters } as any),
     supabase.rpc("accessible_leads_timeseries", { _metric: "leads", _granularity: "week", _limit: 20, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
     supabase.rpc("accessible_leads_timeseries", { _metric: "ventas", _granularity: "week", _limit: 20, _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
     supabase.rpc("accessible_leads_funnel", { _fecha_desde: desde, _fecha_hasta: hasta, _filters: rpcFilters }),
@@ -319,7 +319,7 @@ export async function fetchExecutiveDashboardData(filters: LeadsDashboardFilters
     supabase.rpc("accessible_leads_kpis", { _fecha_desde: prevStart, _fecha_hasta: prevEnd, _filters: rpcFilters }),
     supabase.rpc("accessible_leads_kpis", { _fecha_desde: currentIsoWeekStart, _fecha_hasta: currentIsoWeekEnd, _filters: rpcFilters }),
     supabase.rpc("accessible_leads_kpis", { _fecha_desde: previousIsoWeekStart, _fecha_hasta: previousIsoWeekEnd, _filters: rpcFilters }),
-    supabase.rpc("accessible_leads_daily_metrics", { _fecha_desde: prevStart, _fecha_hasta: prevEnd }),
+    supabase.rpc("accessible_leads_daily_metrics" as any, { _fecha_desde: prevStart, _fecha_hasta: prevEnd, _filters: rpcFilters } as any),
     Promise.all(
       DIMENSION_META.map((meta) =>
           supabase.rpc("accessible_leads_group_metrics", {
