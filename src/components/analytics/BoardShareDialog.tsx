@@ -192,10 +192,10 @@ export function BoardShareDialog({ boardId, isOpen, onOpenChange, ownerId }: Boa
                         <AvatarFallback className="text-[10px]">{s.profiles?.full_name?.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
                       <div className="flex flex-col">
-                        <span className="text-sm font-medium">{s.profiles?.full_name}</span>
+                        <span className="text-sm font-medium">{s.profiles?.full_name ?? "Usuario"}</span>
                         <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                           <Shield className="h-3 w-3" />
-                          Editor colaborativo
+                          {s.profiles?.tenant_name ?? "Editor colaborativo"}
                         </span>
                       </div>
                     </div>
