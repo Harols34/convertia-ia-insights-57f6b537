@@ -1535,6 +1535,15 @@ export type Database = {
         Returns: Json
       }
       get_my_accessible_module_slugs: { Args: never; Returns: string[] }
+      get_profiles_by_ids: {
+        Args: { user_ids: string[] }
+        Returns: {
+          avatar_url: string
+          full_name: string
+          id: string
+          tenant_name: string
+        }[]
+      }
       get_strategic_bi_scorecard: {
         Args: {
           _fecha_desde: string
@@ -1619,6 +1628,15 @@ export type Database = {
           created_at: string
           id: string
           title: string
+        }[]
+      }
+      search_shareable_users: {
+        Args: { search_term: string }
+        Returns: {
+          avatar_url: string
+          full_name: string
+          id: string
+          tenant_name: string
         }[]
       }
       set_active_tenant: { Args: { _tenant_id: string }; Returns: undefined }
