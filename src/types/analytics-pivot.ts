@@ -100,6 +100,8 @@ export interface BoardWidgetLayout {
   h: number;
   minW?: number;
   minH?: number;
+  /** Identificador opcional usado por react-grid-layout en presets */
+  i?: string;
 }
 
 export const PIVOT_VIZ_OPTIONS: { id: PivotVizType; label: string; group: string; icon?: string }[] = [
