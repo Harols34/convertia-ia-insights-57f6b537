@@ -24,6 +24,7 @@ import { crossSlicesForTable } from "@/lib/board-cross-filter";
 import { mergeHiddenDataColumns } from "@/lib/tenant-data-source-utils";
 import { isDateLikeType } from "@/lib/pivot-dates";
 import { fetchCachedIntegrationRows } from "@/lib/integration-rows-cache";
+import { translatePivotConfigToRpc, buildGridFromAggregatedData } from "@/lib/pivot-rpc-bridge";
 
 interface PivotBoardWidgetProps {
   config: PivotWidgetPersistedConfig;
@@ -33,29 +34,13 @@ interface PivotBoardWidgetProps {
 
 export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidgetProps) {
   const { slices, togglePivotRowSlice } = useBoardCrossFilter();
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const crossForTable = useMemo(() => crossSlicesForTable(slices, config.tableName), [slices, config.tableName]);
+
+  const [gridData, setGridData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const stripCols = useMemo(
-    () => mergeHiddenDataColumns(config.hiddenDataColumns, sourceHiddenColumns),
-    [config.hiddenDataColumns, sourceHiddenColumns],
-  );
-  const dateMeta = config.dateFields ?? [];
-  const gran = config.fieldDateGranularity ?? {};
-  const selectColumns = useMemo(() => {
-    const cols = new Set<string>([
-      ...config.rowFields,
-      ...config.colFields,
-      ...config.filterFields,
-      ...(config.dateFields ?? []),
-    ]);
-    if (config.tableName === "leads") cols.add("fch_creacion");
-    for (const measure of config.measures) {
-      if (measure.kind === "field") cols.add(measure.field);
-    }
-    return [...cols];
-  }, [config.tableName, config.rowFields, config.colFields, config.filterFields, config.dateFields, config.measures]);
+  const bridge = useMemo(() => translatePivotConfigToRpc(config), [config]);
   const appearance = useMemo(
     () => sanitizeWidgetAppearance(config.appearance),
     [JSON.stringify(config.appearance ?? null)],
@@ -67,14 +52,29 @@ export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidg
       setLoading(true);
       setError(null);
       try {
-        const data = await fetchCachedIntegrationRows(
-          supabase,
-          config.tableName,
-          stripCols.length ? stripCols : undefined,
-          config.tableName === "leads" ? selectColumns : undefined,
-          undefined,
-        );
-        if (!cancelled) setRows(data);
+        // Combinamos filtros del config con los filtros interactivos del tablero
+        const finalFilters = [...bridge.filters];
+        Object.entries(crossForTable).forEach(([f, vals]) => {
+          const existingIdx = finalFilters.findIndex(xf => xf.field === f);
+          if (existingIdx >= 0) {
+            // Si ya existe un filtro estático para este campo, lo sobreescribimos con el interactivo (comportamiento slice)
+            finalFilters[existingIdx] = { ...finalFilters[existingIdx], values: vals };
+          } else {
+            finalFilters.push({ field: f, op: 'in', values: vals });
+          }
+        });
+
+        console.log("RPC Pivot Aggregation Params (with Cross-Filter):", { ...bridge, filters: finalFilters });
+        const { data, error } = await supabase.rpc("analytics_aggregate", {
+          p_group_by: bridge.groupBy,
+          p_measures: bridge.measures,
+          p_filters: finalFilters,
+          p_date_granularity: bridge.dateGranularity,
+          p_limit: bridge.limit
+        });
+
+        if (error) throw error;
+        if (!cancelled) setGridData(data as any[]);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Error al cargar datos");
       } finally {
@@ -84,9 +84,9 @@ export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidg
     return () => {
       cancelled = true;
     };
-  }, [config.tableName, stripCols.join("\0"), selectColumns]);
+  }, [bridge, crossForTable]); // Re-renderizar cuando cambian los filtros interactivos
 
-  const crossForTable = useMemo(() => crossSlicesForTable(slices, config.tableName), [slices, config.tableName]);
+
 
   const { data: colMeta } = useQuery({
     queryKey: ["integration-columns", config.tableName],
@@ -99,58 +99,10 @@ export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidg
     },
   });
 
-  const dateColNamesSet = useMemo(() => {
-    if (!colMeta?.length) return new Set<string>();
-    return new Set(
-      colMeta.filter((c) => isDateLikeType(c.data_type, c.udt_name)).map((c) => c.column_name),
-    );
-  }, [colMeta]);
-
   const grid = useMemo(() => {
-    if (!rows.length || !config.measures.length) return null;
-    try {
-      const cross = crossForTable;
-      const fieldSet = new Set([...config.filterFields, ...Object.keys(cross)]);
-
-      const dateFieldsEffectiveSet = new Set(config.dateFields ?? []);
-      for (const f of fieldSet) {
-        if (dateColNamesSet.has(f)) dateFieldsEffectiveSet.add(f);
-      }
-      const dateMetaEffective = [...dateFieldsEffectiveSet];
-      const granEffective: Record<string, DateGranularity> = { ...gran };
-      for (const f of fieldSet) {
-        if (dateColNamesSet.has(f) && granEffective[f] === undefined) {
-          granEffective[f] = "month";
-        }
-      }
-
-      const filters: PivotFilter[] = [];
-      for (const field of fieldSet) {
-        const all = uniquePivotDimensionValues(rows, field, dateMetaEffective, granEffective);
-        const fromCross = cross[field];
-        const fromWidget = config.filterSelections[field];
-        const sel =
-          fromCross !== undefined && fromCross.length > 0 ? fromCross : fromWidget;
-        if (sel === undefined) continue;
-        if (sel.length === 0) {
-          filters.push({ field, values: ["__sin_coincidencias__"] });
-          continue;
-        }
-        if (all.length > 0 && sel.length >= all.length) continue;
-        filters.push({ field, values: sel });
-      }
-      return buildPivotGrid(rows, {
-        rowFields: config.rowFields,
-        colFields: config.colFields,
-        filters,
-        measures: config.measures,
-        dateFields: dateMetaEffective,
-        fieldDateGranularity: granEffective,
-      });
-    } catch {
-      return null;
-    }
-  }, [rows, config, dateMeta, gran, crossForTable, dateColNamesSet]);
+    if (!gridData.length || !config.measures.length) return null;
+    return buildGridFromAggregatedData(gridData, config);
+  }, [gridData, config]);
 
   const chartOption = useMemo(() => {
     if (!grid || config.viz === "table" || !config.chartMeasureId || isCustomCardViz(config.viz)) return null;
@@ -159,28 +111,43 @@ export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidg
 
   const chartEvents = useMemo(
     () => ({
-      click: (params: { dataIndex?: number }) => {
+      click: (params: { dataIndex?: number; name?: string; componentType?: string }) => {
         if (!grid || !config.rowFields.length) return;
-        if (typeof params.dataIndex !== "number") return;
-        const rk = grid.rowKeys[params.dataIndex];
-        if (rk) togglePivotRowSlice(config.tableName, config.rowFields, rk);
+        
+        // Intentar encontrar el rowKey basándose en el nombre de la categoría (más robusto para diversos tipos de gráficos)
+        let rowKey: string | undefined;
+        
+        if (params.name && grid.rowKeys.includes(params.name)) {
+          rowKey = params.name;
+        } else if (typeof params.dataIndex === "number") {
+          rowKey = grid.rowKeys[params.dataIndex];
+        }
+
+        if (rowKey) {
+          togglePivotRowSlice(config.tableName, config.rowFields, rowKey);
+        }
       },
     }),
     [grid, config.tableName, config.rowFields, togglePivotRowSlice],
   );
 
-  const measureLabel = config.measures.find((m) => m.id === config.chartMeasureId);
+  const crossValsForDim = useMemo(() => {
+    if (config.rowFields.length === 1) {
+      return crossForTable[config.rowFields[0]];
+    }
+    return undefined;
+  }, [crossForTable, config.rowFields]);
 
-  const crossDimSingle = config.rowFields.length === 1 ? config.rowFields[0] : null;
-  const crossValsForDim = crossDimSingle ? crossForTable[crossDimSingle] : undefined;
-  const tableRowOpacity =
-    crossDimSingle && crossValsForDim && crossValsForDim.length > 0
-      ? (rowKey: string) => {
-          const v = parsePivotRowKeyParts(rowKey)[0];
-          if (v === undefined) return 1;
-          return crossValsForDim.includes(v) ? 1 : 0.38;
-        }
-      : undefined;
+  const tableRowOpacity = useMemo(() => {
+    if (config.rowFields.length === 1 && crossValsForDim && crossValsForDim.length > 0) {
+      return (rowKey: string) => {
+        const v = parsePivotRowKeyParts(rowKey)[0];
+        if (v === undefined) return 1;
+        return crossValsForDim.includes(v) ? 1 : 0.35; // Mayor contraste para los que no están seleccionados
+      };
+    }
+    return undefined;
+  }, [config.rowFields, crossValsForDim]);
 
   if (loading) {
     return (
@@ -217,6 +184,7 @@ export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidg
   }
 
   if (isCustomCardViz(config.viz) && config.chartMeasureId) {
+    const measureLabel = config.measures.find((m) => m.id === config.chartMeasureId);
     const gtot = grandTotalMeasure(grid, config.chartMeasureId);
     const lbl = measureLabel?.kind === "field" ? measureLabel.field : measureLabel?.label ?? "Medida";
     const primary = appearance?.primaryColor ?? undefined;

@@ -39,7 +39,7 @@ export async function fetchCachedIntegrationRows(
   if (existing?.inflight) return existing.inflight;
 
   const entry: CacheEntry = existing ?? { expiresAt: 0, inflight: null, rows: null };
-  entry.inflight = fetchAllIntegrationRows(client, tableName, undefined, stripColumnNames, selectColumns, undefined, 5000, range).then((rows) => {
+  entry.inflight = fetchAllIntegrationRows(client, tableName, undefined, stripColumnNames, selectColumns, undefined, 10000, range).then((rows) => {
     entry.rows = rows;
     entry.expiresAt = Date.now() + TTL_MS;
     entry.inflight = null;

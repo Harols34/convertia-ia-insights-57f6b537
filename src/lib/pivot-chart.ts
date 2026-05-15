@@ -268,26 +268,100 @@ export function buildPivotChartOption(
         ],
       };
     }
-  } else {
-    const stacked = viz === "bar_stacked" || viz === "area";
-    const series = colKeys.map((ck) => ({
-      name: formatPivotLabel(colLabels.get(ck) ?? parseKey(ck)),
-      type: viz === "bar" || viz === "bar_stacked" ? "bar" : viz === "area" ? "line" : "line",
-      stack: stacked ? "total" : undefined,
-      areaStyle: viz === "area" ? {} : undefined,
-      smooth: viz === "line" || viz === "area",
-      data: rowKeys.map((rk) => cells.get(rk)?.get(ck)?.get(measureId) ?? 0),
+  } else if (viz === "treemap") {
+    const data = rowKeys.map((rk) => ({
+      name: formatPivotLabel(rowLabels.get(rk) ?? parseKey(rk)),
+      value: cells.get(rk)?.get(colKeys[0] ?? "")?.get(measureId) ?? 0,
     }));
+    base = {
+      tooltip: { trigger: "item" },
+      series: [{ type: "treemap", data, levels: [{ itemStyle: { borderColor: "#fff", borderWidth: 1, gapWidth: 1 } }] }],
+    };
+  } else if (viz === "sunburst") {
+    const data = rowKeys.map((rk) => ({
+      name: formatPivotLabel(rowLabels.get(rk) ?? parseKey(rk)),
+      value: cells.get(rk)?.get(colKeys[0] ?? "")?.get(measureId) ?? 0,
+    }));
+    base = {
+      tooltip: { trigger: "item" },
+      series: [{ type: "sunburst", data, radius: [0, "90%"], label: { rotate: "radial" } }],
+    };
+  } else if (viz === "waterfall") {
+    const data = rowKeys.map((rk) => cells.get(rk)?.get(colKeys[0] ?? "")?.get(measureId) ?? 0);
+    const help: number[] = [];
+    const positive: number[] = [];
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) {
+      help.push(sum);
+      positive.push(data[i]);
+      sum += data[i];
+    }
+    base = {
+      tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+      xAxis: { type: "category", data: categories },
+      yAxis: { type: "value" },
+      series: [
+        { name: "Placeholder", type: "bar", stack: "all", itemStyle: { borderColor: "transparent", color: "transparent" }, emphasis: { itemStyle: { borderColor: "transparent", color: "transparent" } }, data: help },
+        { name: "Valor", type: "bar", stack: "all", label: { show: true, position: "top" }, data: positive },
+      ],
+    };
+  } else if (viz === "ranking_horizontal" || viz === "ranking_vertical") {
+    const isHorizontal = viz === "ranking_horizontal";
+    const data = rowKeys
+      .map((rk) => ({
+        rk,
+        name: formatPivotLabel(rowLabels.get(rk) ?? parseKey(rk)),
+        value: cells.get(rk)?.get(colKeys[0] ?? "")?.get(measureId) ?? 0,
+      }))
+      .sort((a, b) => b.value - a.value);
 
     base = {
       tooltip: { trigger: "axis" },
+      grid: { left: "3%", right: "4%", bottom: "3%", containLabel: true },
+      xAxis: isHorizontal ? { type: "value" } : { type: "category", data: data.map((d) => d.name) },
+      yAxis: isHorizontal ? { type: "category", data: data.map((d) => d.name).reverse() } : { type: "value" },
+      series: [
+        {
+          type: "bar",
+          data: isHorizontal ? data.map((d) => d.value).reverse() : data.map((d) => d.value),
+          label: { show: true, position: isHorizontal ? "right" : "top" },
+        },
+      ],
+    };
+  } else {
+    const stacked = viz === "bar_stacked" || viz === "area" || viz === "area_stacked" || viz === "bar_100_stacked" || viz === "column_100_stacked";
+    const is100 = viz === "bar_100_stacked" || viz === "column_100_stacked";
+    
+    const series = colKeys.map((ck) => ({
+      name: formatPivotLabel(colLabels.get(ck) ?? parseKey(ck)),
+      type: (viz.includes("bar") || viz.includes("column")) ? "bar" : "line",
+      stack: stacked ? "total" : undefined,
+      areaStyle: (viz === "area" || viz === "area_stacked") ? {} : undefined,
+      smooth: viz === "line" || viz.includes("area"),
+      data: rowKeys.map((rk) => {
+        const val = cells.get(rk)?.get(ck)?.get(measureId) ?? 0;
+        if (!is100) return val;
+        let total = 0;
+        colKeys.forEach(ck2 => total += (cells.get(rk)?.get(ck2)?.get(measureId) ?? 0));
+        return total > 0 ? (val / total) * 100 : 0;
+      }),
+    }));
+
+    base = {
+      tooltip: { trigger: "axis", formatter: is100 ? (params: any[]) => {
+        let res = params[0].name + "<br/>";
+        params.forEach(p => {
+          res += `${p.marker} ${p.seriesName}: ${p.value.toFixed(1)}%<br/>`;
+        });
+        return res;
+      } : undefined },
       legend: { type: "scroll", bottom: 0 },
-      xAxis: {
+      xAxis: viz.includes("horizontal") ? { type: "value", max: is100 ? 100 : undefined } : {
         type: "category",
         data: categories,
         axisLabel: { rotate: categories.some((c) => c.length > 12) ? 35 : 0 },
       },
-      yAxis: { type: "value" },
+      yAxis: viz.includes("horizontal") ? { type: "category", data: categories } : { type: "value", max: is100 ? 100 : undefined },
       series,
     };
   }

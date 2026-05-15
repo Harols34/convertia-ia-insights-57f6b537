@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Database, Plus, Pencil, Trash2, LayoutDashboard, Filter, PanelRight, Wand2 } from "lucide-react";
+import { Database, Plus, Pencil, Trash2, LayoutDashboard, Filter, PanelRight, Wand2, Info, Settings, MoreHorizontal, ChevronDown, Share2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -14,17 +14,27 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuSeparator, 
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DataSourcePivotPanel } from "@/components/integraciones/DataSourcePivotPanel";
 import { AnalyticsBoardCanvas, isPivotWidgetPersistedConfig } from "@/components/analytics/AnalyticsBoardCanvas";
 import type { BoardWidgetRow } from "@/components/analytics/AnalyticsBoardCanvas";
 import { BoardCrossFilterProvider } from "@/contexts/BoardCrossFilterContext";
 import { ClearBoardCrossFiltersButton } from "@/components/analytics/ClearBoardCrossFiltersButton";
+import { AIConstructorDialog } from "@/components/analytics/AIConstructorDialog";
 import { parseHiddenColumnsFromRestrictions } from "@/lib/tenant-data-source-utils";
-import { isDateLikeType } from "@/lib/pivot-dates";
+import { fetchCachedIntegrationRows } from "@/lib/integration-rows-cache";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import type { Json } from "@/integrations/supabase/types";
 import type { BoardFilterWidgetConfig, BoardWidgetLayout, PivotWidgetPersistedConfig } from "@/types/analytics-pivot";
+import { ANALYTICS_PRESETS } from "@/lib/analytics-presets";
 import { isBoardFilterWidgetConfig } from "@/types/analytics-pivot";
 import { toast } from "sonner";
 import { resolveWritableTenantId } from "@/lib/accessible-tenant";
@@ -62,6 +72,7 @@ export default function AnalyticsPage() {
   const [constructorDocked, setConstructorDocked] = useState(false);
   /** Constructor en hoja lateral (modal) */
   const [constructorSheetOpen, setConstructorSheetOpen] = useState(false);
+  const [aiConstructorOpen, setAiConstructorOpen] = useState(false);
 
   const { data: boards = [], isLoading: boardsLoading } = useQuery({
     queryKey: ["analytics-boards", user?.id],
@@ -108,7 +119,32 @@ export default function AnalyticsPage() {
     if (!user?.id || boardsLoading) return;
     if (boards.length > 0 || seedAttempted.current) return;
     seedAttempted.current = true;
-    createBoard.mutate("Mi tablero");
+    
+    (async () => {
+      try {
+        for (const preset of ANALYTICS_PRESETS) {
+          const boardId = await createBoard.mutateAsync(preset.name);
+          if (!boardId) continue;
+          for (const w of preset.widgets) {
+            const cfg: PivotWidgetPersistedConfig = {
+              tableName: "leads",
+              displayName: w.displayName || "Vista",
+              viz: w.viz as any,
+              rowFields: w.rowFields || [],
+              colFields: w.colFields || [],
+              measures: w.measures as any,
+              chartMeasureId: w.chartMeasureId,
+              filters: [],
+              layout: w.layout as any,
+              appearance: { primaryColor: "#5470c6" }
+            };
+            await addWidget.mutateAsync({ cfg, boardId });
+          }
+        }
+      } catch (e) {
+        console.error("Error seeding dashboards:", e);
+      }
+    })();
   }, [user?.id, boards, boardsLoading, createBoard]);
 
   useEffect(() => {
@@ -126,6 +162,8 @@ export default function AnalyticsPage() {
     setEditFilterWidget(null);
     setFilterAddOpen(false);
   }, [selectedBoardId]);
+
+
 
   const { data: dashboardSources } = useQuery({
     queryKey: ["data-sources-dashboards"],
@@ -149,6 +187,22 @@ export default function AnalyticsPage() {
       ];
     },
   });
+
+  // Precarga proactiva en segundo plano
+  useEffect(() => {
+    if (dashboardSources?.length && user?.id) {
+      // Priorizar la fuente seleccionada actualmente
+      if (pivotTableName) {
+        fetchCachedIntegrationRows(supabase, pivotTableName).catch(() => {});
+      }
+      // Precarga proactiva en segundo plano de las otras fuentes principales
+      dashboardSources.slice(0, 5).forEach((src) => {
+        if (src.table_name !== pivotTableName) {
+          fetchCachedIntegrationRows(supabase, src.table_name).catch(() => {});
+        }
+      });
+    }
+  }, [dashboardSources, user?.id, pivotTableName]);
 
   const selectedPivotSource = useMemo(() => {
     if (!dashboardSources?.length) return null;
@@ -195,32 +249,37 @@ export default function AnalyticsPage() {
   }, [dashboardSources, pivotTableName]);
 
   const addWidget = useMutation({
-    mutationFn: async (cfg: PivotWidgetPersistedConfig) => {
-      if (!selectedBoardId) throw new Error("Sin tablero");
+    mutationFn: async ({ cfg, boardId }: { cfg: PivotWidgetPersistedConfig; boardId?: string }) => {
+      const targetBoardId = boardId || selectedBoardId;
+      if (!targetBoardId) throw new Error("Sin tablero");
+      
       const { data: existing, error: e1 } = await supabase
         .from("analytics_board_widgets")
         .select("id, layout")
-        .eq("board_id", selectedBoardId);
+        .eq("board_id", targetBoardId);
       if (e1) throw e1;
+      
       let y = 0;
       for (const w of existing ?? []) {
         const l = w.layout as unknown as BoardWidgetLayout;
         y = Math.max(y, (l?.y ?? 0) + (l?.h ?? 0));
       }
+      
       const { error } = await supabase.from("analytics_board_widgets").insert({
-        board_id: selectedBoardId,
+        board_id: targetBoardId,
         widget_type: "pivot",
         title: cfg.chrome?.title?.trim() || cfg.displayName,
         config: cfg as unknown as Json,
-        layout: { x: 0, y, w: 6, h: 10, minW: 2, minH: 2 },
+        layout: cfg.layout || { x: 0, y, w: 6, h: 10, minW: 2, minH: 2 },
         sort_order: existing?.length ?? 0,
       });
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["analytics-board-widgets", selectedBoardId] });
+    onSuccess: (_, { boardId }) => {
+      const targetId = boardId || selectedBoardId;
+      queryClient.invalidateQueries({ queryKey: ["analytics-board-widgets", targetId] });
       setConstructorSheetOpen(false);
-      toast.success("Vista guardada en el tablero");
+      if (!boardId) toast.success("Vista guardada en el tablero");
     },
     onError: (e: Error) => toast.error(e.message || "No se pudo guardar el widget"),
   });
@@ -340,7 +399,7 @@ export default function AnalyticsPage() {
         toast.error("Selecciona o crea un tablero primero");
         return;
       }
-      addWidget.mutate(cfg);
+      addWidget.mutate({ cfg });
     },
     [selectedBoardId, addWidget],
   );
@@ -392,109 +451,157 @@ export default function AnalyticsPage() {
     <BoardCrossFilterProvider>
     <div className="flex flex-col lg:flex-row gap-0 items-stretch min-h-[calc(100vh-6rem)]">
       <div className="flex-1 min-w-0 min-h-0 flex flex-col gap-3 lg:pr-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0 bg-background/60 backdrop-blur-md sticky top-0 z-30 py-2 -mx-1 px-1">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
-              <LayoutDashboard className="h-5 w-5 text-primary-foreground" />
+            <div className="w-12 h-12 rounded-2xl gradient-primary flex items-center justify-center shadow-lg shadow-primary/20">
+              <LayoutDashboard className="h-6 w-6 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-2xl font-display font-bold tracking-tight">Dashboard Dinámicos</h1>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Lienzo amplio y widgets redimensionables. Usa <strong>Crear widget</strong> o el botón flotante para configurar en un panel; opcionalmente fija el <strong>Panel lateral</strong>. En tablas y filtros puedes elegir varios valores; el resto se atenúa.
-              </p>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-display font-bold tracking-tight">Analytics Insights</h1>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full text-muted-foreground hover:text-primary">
+                      <Info className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 text-xs space-y-2 p-4">
+                    <p className="font-bold text-primary">¿Cómo funciona?</p>
+                    <p>Usa <strong>Crear widget</strong> para configurar visualizaciones dinámicas arrastrando campos.</p>
+                    <p>Los filtros del tablero (slicers) afectan a todos los widgets de la misma tabla.</p>
+                    <p>Puedes redimensionar y mover los widgets libremente en el lienzo.</p>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">Lienzo dinámico para Business Intelligence personalizado.</p>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              className="h-9 gap-1.5 gradient-primary shadow-sm hover:shadow-md transition-all font-semibold"
+              onClick={() => setAiConstructorOpen(true)}
+            >
+              <Wand2 className="h-3.5 w-3.5" />
+              Constructor IA
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="default"
+              className="h-9 gap-1.5 bg-foreground text-background hover:bg-foreground/90 shadow-sm"
+              disabled={!selectedBoardId || !selectedPivotSource}
+              onClick={() => {
+                setEditBoardWidget(null);
+                setConstructorDocked(false);
+                setConstructorSheetOpen(true);
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Crear widget
+            </Button>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <Label className="text-xs text-muted-foreground sr-only sm:not-sr-only sm:inline">Tablero activo</Label>
-          <Select
-            value={selectedBoardId ?? ""}
-            onValueChange={(v) => setSelectedBoardId(v)}
-            disabled={boardsLoading || !boards.length}
-          >
-            <SelectTrigger className="h-9 w-[min(100%,220px)] text-xs">
-              <SelectValue placeholder={boardsLoading ? "Cargando…" : "Elige tablero"} />
-            </SelectTrigger>
-            <SelectContent>
-              {boards.map((b) => (
-                <SelectItem key={b.id} value={b.id} className="text-xs">
-                  {b.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-9 gap-1"
-            onClick={() => {
-              setNewBoardName("Nuevo tablero");
-              setNewBoardOpen(true);
-            }}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Nuevo
-          </Button>
-          <Button size="sm" variant="outline" className="h-9 gap-1" onClick={openRename} disabled={!selectedBoardId}>
-            <Pencil className="h-3.5 w-3.5" />
-            Renombrar
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-9 gap-1 text-destructive border-destructive/30 hover:bg-destructive/10"
-            onClick={() => {
-              if (selectedBoardId && confirm("¿Eliminar este tablero y todas sus vistas guardadas?")) {
-                deleteBoard.mutate(selectedBoardId);
-              }
-            }}
-            disabled={!selectedBoardId}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Eliminar
-          </Button>
-          <ClearBoardCrossFiltersButton />
+        <div className="flex flex-wrap items-center gap-2 shrink-0 py-1 border-y border-border/40">
+          <div className="flex items-center gap-2">
+            <Select
+              value={selectedBoardId ?? ""}
+              onValueChange={(v) => setSelectedBoardId(v)}
+              disabled={boardsLoading || !boards.length}
+            >
+              <SelectTrigger className="h-8 w-[180px] text-[11px] bg-muted/30 border-none shadow-none focus:ring-0">
+                <SelectValue placeholder={boardsLoading ? "Cargando…" : "Tablero..."} />
+              </SelectTrigger>
+              <SelectContent>
+                {boards.map((b) => (
+                  <SelectItem key={b.id} value={b.id} className="text-xs">
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 w-8 p-0 rounded-full text-muted-foreground hover:text-primary"
+              onClick={() => {
+                setNewBoardName("Nuevo tablero");
+                setNewBoardOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div className="h-4 w-[1px] bg-border mx-1" />
+
           <Button
             type="button"
             size="sm"
-            variant="default"
-            className="h-9 gap-1"
-            disabled={!selectedBoardId || !selectedPivotSource}
-            onClick={() => {
-              setEditBoardWidget(null);
-              setConstructorDocked(false);
-              setConstructorSheetOpen(true);
-            }}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Crear widget
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={constructorDocked ? "secondary" : "outline"}
-            className="h-9 gap-1"
-            disabled={!selectedPivotSource}
-            onClick={() => {
-              setConstructorDocked((d) => !d);
-              setConstructorSheetOpen(false);
-            }}
-          >
-            <PanelRight className="h-3.5 w-3.5" />
-            Panel lateral
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            className="h-9 gap-1"
+            variant="ghost"
+            className="h-8 gap-1.5 text-[11px] font-medium"
             disabled={!selectedBoardId || !selectedPivotSource}
             onClick={() => setFilterAddOpen(true)}
           >
-            <Filter className="h-3.5 w-3.5" />
-            Filtro del tablero
+            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+            Filtro de Board
           </Button>
+
+          <div className="flex-1" />
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-[11px] border-border/60">
+                <Settings className="h-3.5 w-3.5" />
+                Acciones
+                <ChevronDown className="h-3 w-3 opacity-50" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={openRename} disabled={!selectedBoardId}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Renombrar
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => {
+                  setConstructorDocked((d) => !d);
+                  setConstructorSheetOpen(false);
+                }}
+                disabled={!selectedPivotSource}
+              >
+                <PanelRight className="mr-2 h-4 w-4" />
+                {constructorDocked ? "Ocultar panel lateral" : "Mostrar panel lateral"}
+              </DropdownMenuItem>
+              <DropdownMenuItem className="text-primary">
+                <Share2 className="mr-2 h-4 w-4" />
+                Compartir tablero
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:bg-destructive/10"
+                onClick={() => {
+                  if (selectedBoardId && confirm("¿Eliminar este tablero y todas sus vistas guardadas?")) {
+                    deleteBoard.mutate(selectedBoardId);
+                  }
+                }}
+                disabled={!selectedBoardId}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Eliminar tablero
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        <div className="flex items-center justify-between gap-4 px-1 shrink-0">
+          <div className="flex-1 overflow-hidden">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <ClearBoardCrossFiltersButton />
+            </div>
+          </div>
         </div>
 
         <AnalyticsBoardCanvas boardId={selectedBoardId} className="flex-1" onEditWidget={handleEditWidget} />
@@ -553,11 +660,11 @@ export default function AnalyticsPage() {
           <DataSourcePivotPanel
             key={`${selectedPivotSource.table_name}-${editBoardWidget?.id ?? "new"}-dock`}
             tableName={selectedPivotSource.table_name}
-            displayName={editBoardWidget?.config.displayName ?? selectedPivotSource.display_name}
+            displayName={(editBoardWidget?.config as any)?.displayName ?? selectedPivotSource.display_name}
             hiddenDataColumns={parseHiddenColumnsFromRestrictions(
               (selectedPivotSource as { restrictions?: unknown }).restrictions,
             )}
-            initialConfig={editBoardWidget?.config ?? null}
+            initialConfig={editBoardWidget?.config as any ?? null}
             boardWidgetId={editBoardWidget?.id ?? null}
             onUpdateBoardWidget={(widgetId, cfg) => updateBoardWidget.mutate({ widgetId, config: cfg })}
             onCancelBoardEdit={() => setEditBoardWidget(null)}
@@ -577,11 +684,11 @@ export default function AnalyticsPage() {
           if (!open) setEditBoardWidget(null);
         }}
       >
-        <SheetContent side="right" className="w-full sm:max-w-2xl p-0 flex flex-col gap-0 overflow-hidden">
-          <SheetHeader className="px-4 py-3 border-b border-border shrink-0 space-y-1 text-left">
-            <SheetTitle>{editBoardWidget ? "Editar widget" : "Crear widget"}</SheetTitle>
-            <SheetDescription>
-              Configura y pulsa <strong>Añadir al tablero</strong> o <strong>Guardar cambios</strong>. El panel se cierra al guardar correctamente.
+        <SheetContent side="right" className="w-full sm:max-w-5xl p-0 flex flex-col gap-0 overflow-hidden border-l border-border/50 shadow-2xl">
+          <SheetHeader className="px-6 py-4 border-b border-border bg-muted/20 shrink-0 space-y-1 text-left">
+            <SheetTitle className="text-xl font-bold">{editBoardWidget ? "Personalizar Widget" : "Constructor de Visualizaciones"}</SheetTitle>
+            <SheetDescription className="text-xs">
+              Arrastra los campos a las zonas de configuración para crear tu vista. Los cambios se reflejarán instantáneamente.
             </SheetDescription>
           </SheetHeader>
           {selectedPivotSource ? (
@@ -613,11 +720,11 @@ export default function AnalyticsPage() {
                 <DataSourcePivotPanel
                   key={`${selectedPivotSource.table_name}-${editBoardWidget?.id ?? "new"}-sheet`}
                   tableName={selectedPivotSource.table_name}
-                  displayName={editBoardWidget?.config.displayName ?? selectedPivotSource.display_name}
+                  displayName={(editBoardWidget?.config as any)?.displayName ?? selectedPivotSource.display_name}
                   hiddenDataColumns={parseHiddenColumnsFromRestrictions(
                     (selectedPivotSource as { restrictions?: unknown }).restrictions,
                   )}
-                  initialConfig={editBoardWidget?.config ?? null}
+                  initialConfig={editBoardWidget?.config as any ?? null}
                   boardWidgetId={editBoardWidget?.id ?? null}
                   onUpdateBoardWidget={(widgetId, cfg) => updateBoardWidget.mutate({ widgetId, config: cfg })}
                   onCancelBoardEdit={() => {
@@ -767,6 +874,23 @@ export default function AnalyticsPage() {
         </DialogContent>
       </Dialog>
     </div>
+      <AIConstructorDialog
+        open={aiConstructorOpen}
+        onOpenChange={setAiConstructorOpen}
+        onGenerate={async (proposal) => {
+          try {
+            const boardId = await createBoard.mutateAsync(proposal.name);
+            if (!boardId) return;
+            for (const w of proposal.widgets) {
+              await addWidget.mutateAsync({ cfg: w, boardId });
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }}
+        tableName={pivotTableName}
+        availableColumns={filterColumnOptionsVisible.map(c => c.column_name)}
+      />
     </BoardCrossFilterProvider>
   );
 }

@@ -41,21 +41,33 @@ export function isBoardFilterWidgetConfig(c: unknown): c is BoardFilterWidgetCon
 
 export type PivotVizType =
   | "table"
+  | "pivot_table"
   | "bar"
   | "bar_horizontal"
   | "bar_stacked"
+  | "bar_100_stacked"
+  | "column_stacked"
+  | "column_100_stacked"
   | "line"
   | "area"
+  | "area_stacked"
   | "pie"
   | "donut"
-  | "scatter"
-  | "radar"
+  | "treemap"
+  | "sunburst"
   | "funnel"
   | "gauge"
   | "card"
+  | "card_trend"
   | "card_ring"
   | "heatmap"
-  | "mixed_line_bar";
+  | "scatter"
+  | "bubble"
+  | "radar"
+  | "mixed_line_bar"
+  | "waterfall"
+  | "ranking_horizontal"
+  | "ranking_vertical";
 
 /** Configuración serializable de un widget pivot (se guarda en analytics_board_widgets.config) */
 export interface PivotWidgetPersistedConfig {
@@ -86,21 +98,42 @@ export interface BoardWidgetLayout {
   minH?: number;
 }
 
-export const PIVOT_VIZ_OPTIONS: { id: PivotVizType; label: string; group: string }[] = [
-  { id: "table", label: "Tabla", group: "Tablas" },
-  { id: "card", label: "Tarjeta KPI (número)", group: "Indicadores" },
-  { id: "card_ring", label: "Tarjeta circular (progreso)", group: "Indicadores" },
-  { id: "gauge", label: "Medidor", group: "Indicadores" },
-  { id: "bar", label: "Barras verticales", group: "Barras y líneas" },
-  { id: "bar_horizontal", label: "Barras horizontales", group: "Barras y líneas" },
-  { id: "bar_stacked", label: "Barras apiladas", group: "Barras y líneas" },
-  { id: "mixed_line_bar", label: "Barras + línea", group: "Barras y líneas" },
-  { id: "line", label: "Líneas", group: "Barras y líneas" },
-  { id: "area", label: "Área", group: "Barras y líneas" },
-  { id: "pie", label: "Pastel", group: "Proporción" },
-  { id: "donut", label: "Anillo", group: "Proporción" },
-  { id: "funnel", label: "Embudo", group: "Proporción" },
-  { id: "scatter", label: "Dispersión", group: "Avanzado" },
-  { id: "radar", label: "Radar", group: "Avanzado" },
-  { id: "heatmap", label: "Mapa de calor", group: "Avanzado" },
+export const PIVOT_VIZ_OPTIONS: { id: PivotVizType; label: string; group: string; icon?: string }[] = [
+  // Indicadores
+  { id: "card", label: "Tarjeta KPI", group: "Indicadores" },
+  { id: "card_trend", label: "KPI con Tendencia", group: "Indicadores" },
+  { id: "card_ring", label: "Progreso Circular", group: "Indicadores" },
+  { id: "gauge", label: "Medidor / Velocímetro", group: "Indicadores" },
+
+  // Comparación
+  { id: "bar", label: "Barras Verticales", group: "Comparación" },
+  { id: "bar_horizontal", label: "Barras Horizontales", group: "Comparación" },
+  { id: "bar_stacked", label: "Barras Apiladas", group: "Comparación" },
+  { id: "bar_100_stacked", label: "Barras 100% Apiladas", group: "Comparación" },
+  { id: "ranking_vertical", label: "Ranking Vertical", group: "Comparación" },
+  { id: "ranking_horizontal", label: "Ranking Horizontal", group: "Comparación" },
+
+  // Tiempo
+  { id: "line", label: "Líneas de Evolución", group: "Tiempo" },
+  { id: "area", label: "Áreas de Tendencia", group: "Tiempo" },
+  { id: "area_stacked", label: "Áreas Apiladas", group: "Tiempo" },
+  { id: "mixed_line_bar", label: "Barras + Línea", group: "Tiempo" },
+
+  // Composición
+  { id: "pie", label: "Gráfico de Tarta", group: "Composición" },
+  { id: "donut", label: "Gráfico de Anillo", group: "Composición" },
+  { id: "treemap", label: "TreeMap (Jerárquico)", group: "Composición" },
+  { id: "sunburst", label: "Sunburst", group: "Composición" },
+  { id: "funnel", label: "Embudo de Conversión", group: "Composición" },
+  { id: "waterfall", label: "Cascada (Waterfall)", group: "Composición" },
+
+  // Distribución y Avanzado
+  { id: "heatmap", label: "Mapa de Calor", group: "Avanzado" },
+  { id: "scatter", label: "Dispersión (Scatter)", group: "Avanzado" },
+  { id: "bubble", label: "Burbujas", group: "Avanzado" },
+  { id: "radar", label: "Radar / Araña", group: "Avanzado" },
+
+  // Tablas
+  { id: "table", label: "Tabla de Detalle", group: "Tablas" },
+  { id: "pivot_table", label: "Tabla Dinámica", group: "Tablas" },
 ];
