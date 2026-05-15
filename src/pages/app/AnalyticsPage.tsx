@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Database, Plus, Pencil, Trash2, LayoutDashboard, Filter, PanelRight, Wand2, Info, Settings, MoreHorizontal, ChevronDown, Share2 } from "lucide-react";
+import { Database, Plus, Pencil, Trash2, LayoutDashboard, Filter, PanelRight, Wand2, Info, Settings, MoreHorizontal, ChevronDown, Share2, Users } from "lucide-react";
+import { isDateLikeType } from "@/lib/pivot-dates";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -313,7 +314,7 @@ export default function AnalyticsPage() {
         widget_type: "pivot",
         title: cfg.chrome?.title?.trim() || cfg.displayName,
         config: cfg as unknown as Json,
-        layout: cfg.layout || { x: 0, y, w: 6, h: 10, minW: 2, minH: 2 },
+        layout: (cfg.layout || { x: 0, y, w: 6, h: 10, minW: 2, minH: 2 }) as unknown as Json,
         sort_order: existing?.length ?? 0,
       });
       if (error) throw error;
