@@ -313,7 +313,7 @@ export default function AnalyticsPage() {
         widget_type: "pivot",
         title: cfg.chrome?.title?.trim() || cfg.displayName,
         config: cfg as unknown as Json,
-        layout: cfg.layout || { x: 0, y, w: 6, h: 10, minW: 2, minH: 2 },
+        layout: (cfg.layout || { x: 0, y, w: 6, h: 10, minW: 2, minH: 2 }) as unknown as Json,
         sort_order: existing?.length ?? 0,
       });
       if (error) throw error;
