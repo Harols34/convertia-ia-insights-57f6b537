@@ -16,7 +16,6 @@ import { X, Loader2, RefreshCw, GripVertical, BarChart3, Calculator, LayoutDashb
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { fetchAllIntegrationRows } from "./fetch-integration-table";
-import { getDefaultLeadsInitialRange } from "@/lib/integration-rows-cache";
 import { PivotTableView } from "./PivotTableView";
 import { buildPivotChartOption, firstCellValue, grandTotalMeasure, isCustomCardViz } from "@/lib/pivot-chart";
 import {
@@ -275,10 +274,9 @@ export function DataSourcePivotPanel({
     setLoadingData(true);
     setRowCount(0);
     try {
-      const initialRange = tableName === "leads" ? getDefaultLeadsInitialRange() : undefined;
-      const data = await fetchAllIntegrationRows(supabase, tableName, (n) => setRowCount(n), hiddenDataColumns, undefined, undefined, 5000, initialRange);
+      const data = await fetchAllIntegrationRows(supabase, tableName, (n) => setRowCount(n), hiddenDataColumns, undefined, undefined, 5000);
       setRows(data);
-      toast.success(`Datos cargados: ${data.length} filas${initialRange ? " · mes anterior + actual" : ""}`);
+      toast.success(`Datos cargados: ${data.length} filas`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Error al cargar";
       toast.error(msg);

@@ -30,7 +30,7 @@ export async function fetchCachedIntegrationRows(
   selectColumns?: string[],
   fchCreacionRango?: { desde?: string; hasta?: string },
 ): Promise<Record<string, unknown>[]> {
-  const range = tableName === "leads" ? (fchCreacionRango ?? getDefaultLeadsInitialRange()) : undefined;
+  const range = tableName === "leads" ? fchCreacionRango : undefined;
   const key = buildKey(tableName, stripColumnNames, selectColumns, range);
   const now = Date.now();
   const existing = cache.get(key);

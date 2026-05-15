@@ -50,11 +50,12 @@ export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidg
       ...config.filterFields,
       ...(config.dateFields ?? []),
     ]);
+    if (config.tableName === "leads") cols.add("fch_creacion");
     for (const measure of config.measures) {
       if (measure.kind === "field") cols.add(measure.field);
     }
     return [...cols];
-  }, [config.rowFields, config.colFields, config.filterFields, config.dateFields, config.measures]);
+  }, [config.tableName, config.rowFields, config.colFields, config.filterFields, config.dateFields, config.measures]);
   const appearance = useMemo(
     () => sanitizeWidgetAppearance(config.appearance),
     [JSON.stringify(config.appearance ?? null)],
