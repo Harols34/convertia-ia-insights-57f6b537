@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Database, Plus, Pencil, Trash2, LayoutDashboard, Filter, PanelRight, Wand2, Info, Settings, MoreHorizontal, ChevronDown, Share2, Users } from "lucide-react";
 import { isDateLikeType } from "@/lib/pivot-dates";
@@ -35,7 +35,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import type { Json } from "@/integrations/supabase/types";
 import type { BoardFilterWidgetConfig, BoardWidgetLayout, PivotWidgetPersistedConfig } from "@/types/analytics-pivot";
-import { ANALYTICS_PRESETS } from "@/lib/analytics-presets";
 import { isBoardFilterWidgetConfig } from "@/types/analytics-pivot";
 import { toast } from "sonner";
 import { resolveWritableTenantId } from "@/lib/accessible-tenant";
@@ -53,7 +52,6 @@ type BoardRow = {
 export default function AnalyticsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const seedAttempted = useRef(false);
 
   const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
   const [newBoardOpen, setNewBoardOpen] = useState(false);
@@ -119,38 +117,6 @@ export default function AnalyticsPage() {
       toast.error("No se pudo crear el tablero. Usa «Nuevo» para intentar de nuevo.");
     },
   });
-
-  useEffect(() => {
-    if (!user?.id || boardsLoading) return;
-    if (boards.length > 0 || seedAttempted.current) return;
-    seedAttempted.current = true;
-    
-    (async () => {
-      try {
-        for (const preset of ANALYTICS_PRESETS) {
-          const boardId = await createBoard.mutateAsync(preset.name);
-          if (!boardId) continue;
-          for (const w of preset.widgets) {
-            const cfg: PivotWidgetPersistedConfig = {
-              tableName: "leads",
-              displayName: w.displayName || "Vista",
-              viz: w.viz as any,
-              rowFields: w.rowFields || [],
-              colFields: w.colFields || [],
-              measures: w.measures as any,
-              chartMeasureId: w.chartMeasureId,
-              filters: [],
-              layout: w.layout as any,
-              appearance: { primaryColor: "#5470c6" }
-            };
-            await addWidget.mutateAsync({ cfg, boardId });
-          }
-        }
-      } catch (e) {
-        console.error("Error seeding dashboards:", e);
-      }
-    })();
-  }, [user?.id, boards, boardsLoading, createBoard]);
 
   // Sincronización en Tiempo Real para Colaboración
   useEffect(() => {
