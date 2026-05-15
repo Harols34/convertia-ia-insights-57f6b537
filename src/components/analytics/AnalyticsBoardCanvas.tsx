@@ -26,11 +26,14 @@ export interface BoardWidgetRow {
 }
 
 export function isPivotWidgetPersistedConfig(c: unknown): c is PivotWidgetPersistedConfig {
+  if (typeof c !== "object" || c === null) return false;
+  const o = c as Record<string, unknown>;
+  // Aceptamos configs nuevos (version=1) y legacy: basta con que tengan viz, tableName y measures.
   return (
-    typeof c === "object" &&
-    c !== null &&
-    (c as PivotWidgetPersistedConfig).version === 1 &&
-    "viz" in c
+    "viz" in o &&
+    typeof o.tableName === "string" &&
+    Array.isArray(o.measures) &&
+    o.kind !== "board_filter"
   );
 }
 
