@@ -25,6 +25,8 @@ import { mergeHiddenDataColumns } from "@/lib/tenant-data-source-utils";
 import { isDateLikeType } from "@/lib/pivot-dates";
 import { fetchCachedIntegrationRows } from "@/lib/integration-rows-cache";
 
+const LEADS_DATE_FIELDS = new Set(["fch_creacion", "fch_negocio", "fch_prim_gestion", "fch_ultim_gestion", "fch_prim_resultado_marcadora", "created_at", "updated_at"]);
+
 interface PivotBoardWidgetProps {
   config: PivotWidgetPersistedConfig;
   /** Ocultas definidas en la fuente (`tenant_data_sources.restrictions`); se aplican aunque el widget se guardó antes. */
@@ -50,11 +52,17 @@ export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidg
       ...config.filterFields,
       ...(config.dateFields ?? []),
     ]);
+    if (config.tableName === "leads") cols.add("fch_creacion");
     for (const measure of config.measures) {
       if (measure.kind === "field") cols.add(measure.field);
     }
     return [...cols];
-  }, [config.rowFields, config.colFields, config.filterFields, config.dateFields, config.measures]);
+  }, [config.tableName, config.rowFields, config.colFields, config.filterFields, config.dateFields, config.measures]);
+  const shouldLoadAllLeads = useMemo(() => {
+    if (config.tableName !== "leads") return false;
+    const fields = [...config.rowFields, ...config.colFields, ...config.filterFields, ...(config.dateFields ?? [])];
+    return fields.some((field) => LEADS_DATE_FIELDS.has(field));
+  }, [config.tableName, config.rowFields, config.colFields, config.filterFields, config.dateFields]);
   const appearance = useMemo(
     () => sanitizeWidgetAppearance(config.appearance),
     [JSON.stringify(config.appearance ?? null)],
@@ -71,7 +79,7 @@ export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidg
           config.tableName,
           stripCols.length ? stripCols : undefined,
           config.tableName === "leads" ? selectColumns : undefined,
-          undefined,
+          shouldLoadAllLeads ? undefined : undefined,
         );
         if (!cancelled) setRows(data);
       } catch (e) {
@@ -83,7 +91,7 @@ export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidg
     return () => {
       cancelled = true;
     };
-  }, [config.tableName, stripCols.join("\0"), selectColumns]);
+  }, [config.tableName, stripCols.join("\0"), selectColumns, shouldLoadAllLeads]);
 
   const crossForTable = useMemo(() => crossSlicesForTable(slices, config.tableName), [slices, config.tableName]);
 
