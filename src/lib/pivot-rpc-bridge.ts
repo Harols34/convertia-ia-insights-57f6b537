@@ -38,7 +38,7 @@ export function translatePivotConfigToRpc(config: PivotWidgetPersistedConfig): A
     return null;
   }).filter(Boolean) as any[];
 
-  const filters = Object.entries(config.filterSelections).map(([field, values]) => ({
+  const filters = Object.entries(config.filterSelections ?? {}).map(([field, values]) => ({
     field,
     op: 'in',
     values
