@@ -149,103 +149,126 @@ export function PivotBoardWidget({ config, sourceHiddenColumns }: PivotBoardWidg
     return undefined;
   }, [config.rowFields, crossValsForDim]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[80px] text-muted-foreground gap-2 text-xs flex-1">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Cargando datos…
-      </div>
-    );
-  }
+  // Ya no retornamos prematuramente en loading para evitar parpadeo.
+  // Solo si no hay datos previos y estamos cargando mostramos el loader central.
 
   if (error) {
     return <p className="text-xs text-destructive p-2">{error}</p>;
   }
 
-  if (!grid || !config.measures.length) {
-    return <p className="text-xs text-muted-foreground p-2">Sin datos para esta configuración.</p>;
-  }
+  const renderContent = () => {
+    if (!grid || !config.measures.length) {
+      return <p className="text-xs text-muted-foreground p-2">Sin datos para esta configuración.</p>;
+    }
 
-  if (config.viz === "table") {
+    if (config.viz === "table") {
+      return (
+        <div className="min-h-0 flex-1 overflow-auto w-full">
+          <PivotTableView
+            grid={grid}
+            measures={config.measures}
+            rowOpacity={tableRowOpacity}
+            onRowClick={
+              config.rowFields.length
+                ? (rk) => togglePivotRowSlice(config.tableName, config.rowFields, rk)
+                : undefined
+            }
+          />
+        </div>
+      );
+    }
+
+    if (isCustomCardViz(config.viz) && config.chartMeasureId) {
+      const measureLabel = config.measures.find((m) => m.id === config.chartMeasureId);
+      const gtot = grandTotalMeasure(grid, config.chartMeasureId);
+      const lbl = measureLabel?.kind === "field" ? measureLabel.field : measureLabel?.label ?? "Medida";
+      const primary = appearance?.primaryColor ?? undefined;
+      const track = appearance?.secondaryColor ?? undefined;
+      const cardAreaBg = appearance?.backgroundColor;
+      
+      return (
+        <div
+          className="flex flex-col items-center justify-center p-2 min-h-[100px] flex-1 gap-2 w-full"
+          style={cardAreaBg ? { backgroundColor: cardAreaBg } : undefined}
+        >
+          {config.viz === "card" ? (
+            <p
+              className="text-2xl font-bold tabular-nums"
+              style={primary ? { color: primary } : undefined}
+            >
+              {gtot.toLocaleString("es", { maximumFractionDigits: 2 })}
+            </p>
+          ) : (
+            (() => {
+              const first = firstCellValue(grid, config.chartMeasureId);
+              const pct = gtot > 0 ? Math.min(100, Math.round((first / gtot) * 100)) : 0;
+              const fill = primary ?? "hsl(var(--primary))";
+              const base = track ?? "hsl(var(--muted))";
+              const innerBg = cardAreaBg ?? "hsl(var(--card))";
+              return (
+                <div
+                  className="relative flex h-28 w-28 items-center justify-center rounded-full"
+                  style={{
+                    background: `conic-gradient(${fill} ${pct * 3.6}deg, ${base} 0deg)`,
+                  }}
+                >
+                  <div
+                    className="absolute inset-2 flex flex-col items-center justify-center rounded-full text-center"
+                    style={{ backgroundColor: innerBg }}
+                  >
+                    <span className="text-sm font-bold tabular-nums">{gtot.toLocaleString("es", { maximumFractionDigits: 1 })}</span>
+                    <span className="text-[9px] text-muted-foreground leading-tight">1ª fila / total {pct}%</span>
+                  </div>
+                </div>
+              );
+            })()
+          )}
+          <span className="text-[10px] text-muted-foreground">{lbl}</span>
+        </div>
+      );
+    }
+
+    if (!chartOption || !chartOption.series || (Array.isArray(chartOption.series) && chartOption.series.length === 0)) {
+      return <p className="text-xs text-muted-foreground p-2">No se pudo generar el gráfico o no hay series de datos.</p>;
+    }
+
     return (
-      <div className="min-h-0 flex-1 overflow-auto w-full">
-        <PivotTableView
-          grid={grid}
-          measures={config.measures}
-          rowOpacity={tableRowOpacity}
-          onRowClick={
-            config.rowFields.length
-              ? (rk) => togglePivotRowSlice(config.tableName, config.rowFields, rk)
-              : undefined
-          }
+      <div className="min-h-[120px] h-full min-h-0 flex-1 min-w-0 w-full flex flex-col">
+        <ReactECharts
+          option={chartOption}
+          style={{ height: "100%", minHeight: 120, width: "100%", flex: 1 }}
+          notMerge
+          lazyUpdate
+          onEvents={chartEvents}
         />
       </div>
     );
-  }
-
-  if (isCustomCardViz(config.viz) && config.chartMeasureId) {
-    const measureLabel = config.measures.find((m) => m.id === config.chartMeasureId);
-    const gtot = grandTotalMeasure(grid, config.chartMeasureId);
-    const lbl = measureLabel?.kind === "field" ? measureLabel.field : measureLabel?.label ?? "Medida";
-    const primary = appearance?.primaryColor ?? undefined;
-    const track = appearance?.secondaryColor ?? undefined;
-
-    const cardAreaBg = appearance?.backgroundColor;
-    return (
-      <div
-        className="flex flex-col items-center justify-center p-2 min-h-[100px] flex-1 gap-2 w-full"
-        style={cardAreaBg ? { backgroundColor: cardAreaBg } : undefined}
-      >
-        {config.viz === "card" ? (
-          <p
-            className="text-2xl font-bold tabular-nums"
-            style={primary ? { color: primary } : undefined}
-          >
-            {gtot.toLocaleString("es", { maximumFractionDigits: 2 })}
-          </p>
-        ) : (
-          (() => {
-            const first = firstCellValue(grid, config.chartMeasureId);
-            const pct = gtot > 0 ? Math.min(100, Math.round((first / gtot) * 100)) : 0;
-            const fill = primary ?? "hsl(var(--primary))";
-            const base = track ?? "hsl(var(--muted))";
-            const innerBg = cardAreaBg ?? "hsl(var(--card))";
-            return (
-              <div
-                className="relative flex h-28 w-28 items-center justify-center rounded-full"
-                style={{
-                  background: `conic-gradient(${fill} ${pct * 3.6}deg, ${base} 0deg)`,
-                }}
-              >
-                <div
-                  className="absolute inset-2 flex flex-col items-center justify-center rounded-full text-center"
-                  style={{ backgroundColor: innerBg }}
-                >
-                  <span className="text-sm font-bold tabular-nums">{gtot.toLocaleString("es", { maximumFractionDigits: 1 })}</span>
-                  <span className="text-[9px] text-muted-foreground leading-tight">1ª fila / total {pct}%</span>
-                </div>
-              </div>
-            );
-          })()
-        )}
-        <span className="text-[10px] text-muted-foreground">{lbl}</span>
-      </div>
-    );
-  }
-
-  if (!chartOption) {
-    return <p className="text-xs text-muted-foreground p-2">No se pudo generar el gráfico.</p>;
-  }
+  };
 
   return (
-    <div className="min-h-[120px] h-full min-h-0 flex-1 min-w-0 w-full flex flex-col">
-      <ReactECharts
-        option={chartOption}
-        style={{ height: "100%", minHeight: 120, width: "100%", flex: 1 }}
-        notMerge
-        lazyUpdate
-        onEvents={chartEvents}
-      />
+    <div className="min-h-[120px] h-full min-h-0 flex-1 min-w-0 w-full flex flex-col relative group/widget">
+      {loading && (
+        <div className={cn(
+          "absolute z-50 transition-all duration-300",
+          grid ? "top-2 right-2" : "inset-0 flex items-center justify-center bg-background/50"
+        )}>
+          <Loader2 className={cn("animate-spin text-primary", grid ? "h-3.5 w-3.5 opacity-40" : "h-5 w-5")} />
+          {!grid && <span className="ml-2 text-[10px] font-medium text-muted-foreground">Cargando...</span>}
+        </div>
+      )}
+      
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center bg-destructive/5 z-40 p-4 text-center">
+          <p className="text-[10px] text-destructive font-medium">{error}</p>
+        </div>
+      )}
+
+      {renderContent()}
     </div>
   );
+}
+
+// Extraemos el renderizado para limpieza
+function cn(...classes: any[]) {
+  return classes.filter(Boolean).join(" ");
 }

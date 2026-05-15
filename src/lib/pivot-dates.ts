@@ -1,9 +1,10 @@
 /** Agrupación tipo Power BI / Excel para campos fecha-datetime */
 
-export type DateGranularity = "raw" | "day" | "month" | "year" | "quarter" | "week";
+export type DateGranularity = "raw" | "hour" | "day" | "month" | "year" | "quarter" | "week";
 
 export const DATE_GRANULARITY_LABELS: Record<DateGranularity, string> = {
   raw: "Fecha completa (solo día)",
+  hour: "Hora (YYYY-MM-DD HH:00)",
   day: "Día",
   month: "Mes",
   year: "Año",
@@ -57,7 +58,10 @@ export function bucketDateValue(v: unknown, g: DateGranularity): string {
   const y = d.getFullYear();
   const m = d.getMonth() + 1;
   const day = d.getDate();
+  const hour = d.getHours();
   switch (g) {
+    case "hour":
+      return `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")} ${String(hour).padStart(2, "0")}:00`;
     case "day":
       return `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     case "month":

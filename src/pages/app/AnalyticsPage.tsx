@@ -38,12 +38,15 @@ import { ANALYTICS_PRESETS } from "@/lib/analytics-presets";
 import { isBoardFilterWidgetConfig } from "@/types/analytics-pivot";
 import { toast } from "sonner";
 import { resolveWritableTenantId } from "@/lib/accessible-tenant";
+import { BoardShareDialog } from "@/components/analytics/BoardShareDialog";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 type BoardRow = {
   id: string;
   name: string;
   sort_order: number;
   created_at: string;
+  user_id: string;
 };
 
 export default function AnalyticsPage() {
@@ -54,6 +57,7 @@ export default function AnalyticsPage() {
   const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
   const [newBoardOpen, setNewBoardOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [newBoardName, setNewBoardName] = useState("Nuevo tablero");
   const [renameValue, setRenameValue] = useState("");
   const [pivotTableName, setPivotTableName] = useState<string>("");
@@ -80,7 +84,7 @@ export default function AnalyticsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("analytics_user_boards")
-        .select("id, name, sort_order, created_at")
+        .select("id, name, sort_order, created_at, user_id")
         .order("sort_order", { ascending: false })
         .order("created_at", { ascending: true });
       if (error) throw error;
@@ -146,6 +150,45 @@ export default function AnalyticsPage() {
       }
     })();
   }, [user?.id, boards, boardsLoading, createBoard]);
+
+  // Sincronización en Tiempo Real para Colaboración
+  useEffect(() => {
+    if (!user?.id || !selectedBoardId) return;
+
+    // Escuchar cambios en widgets y estructura del tablero
+    const channel = supabase
+      .channel(`board-collaboration-${selectedBoardId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'analytics_board_widgets',
+          filter: `board_id=eq.${selectedBoardId}`
+        },
+        () => {
+          // Invalidar consultas para refrescar el tablero ante cambios de otros usuarios
+          queryClient.invalidateQueries({ queryKey: ["board-widgets", selectedBoardId] });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'analytics_user_boards',
+          filter: `id=eq.${selectedBoardId}`
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["analytics-boards", user.id] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedBoardId, user?.id]);
 
   useEffect(() => {
     if (!boards.length) {
@@ -517,7 +560,10 @@ export default function AnalyticsPage() {
               <SelectContent>
                 {boards.map((b) => (
                   <SelectItem key={b.id} value={b.id} className="text-xs">
-                    {b.name}
+                    <div className="flex items-center gap-2">
+                      {b.user_id !== user?.id && <Users className="h-3 w-3 text-blue-500" />}
+                      {b.name}
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -535,6 +581,21 @@ export default function AnalyticsPage() {
               <Plus className="h-4 w-4" />
             </Button>
           </div>
+
+          {selectedBoardId && (
+            <>
+              <div className="h-4 w-[1px] bg-border mx-1" />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 text-[11px] font-bold text-primary bg-primary/5 hover:bg-primary/10 border border-primary/20 rounded-lg px-3"
+                onClick={() => setShareOpen(true)}
+              >
+                <Share2 className="h-3.5 w-3.5" />
+                Compartir
+              </Button>
+            </>
+          )}
 
           <div className="h-4 w-[1px] bg-border mx-1" />
 
@@ -747,6 +808,15 @@ export default function AnalyticsPage() {
           )}
         </SheetContent>
       </Sheet>
+
+      {selectedBoardId && (
+        <BoardShareDialog
+          boardId={selectedBoardId}
+          isOpen={shareOpen}
+          onOpenChange={setShareOpen}
+          ownerId={boards.find(b => b.id === selectedBoardId)?.user_id || ""}
+        />
+      )}
 
       <Dialog open={newBoardOpen} onOpenChange={setNewBoardOpen}>
         <DialogContent className="sm:max-w-sm">

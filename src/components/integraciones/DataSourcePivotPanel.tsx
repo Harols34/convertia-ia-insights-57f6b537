@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useTransition, Children } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ReactECharts from "echarts-for-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -193,7 +193,7 @@ function DropZone({
         )}
       </div>
       <div className="flex flex-wrap gap-1.5 min-h-[24px]">
-        {React.Children.count(children) === 0 ? (
+        {Children.count(children) === 0 ? (
           <div className="m-auto flex items-center gap-1 opacity-30 select-none">
             <Plus className="h-3 w-3" />
             <span className="text-[9px] font-medium italic">Soltar aquí</span>
@@ -225,6 +225,7 @@ export function DataSourcePivotPanel({
   const [fieldSearch, setFieldSearch] = useState("");
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loadingData, setLoadingData] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     // Carga automática al montar el componente si no hay datos
@@ -360,8 +361,12 @@ export function DataSourcePivotPanel({
 
         if (error) throw error;
         if (!cancelled) setGridData(data as any[]);
-      } catch (e) {
+      } catch (e: any) {
         console.error("Preview error:", e);
+        if (!cancelled) {
+          toast.error(`Error al sincronizar: ${e.message || "Error desconocido"}`);
+          setGridData([]);
+        }
       } finally {
         if (!cancelled) setLoadingData(false);
       }
@@ -391,18 +396,20 @@ export function DataSourcePivotPanel({
   }, [gridData, rowFields, colFields, measures, filterFields, filterSelections, fieldDateGranularity, viz, chartMeasureId, appearance]);
 
   const toggleFilterValue = (field: string, value: string, checked: boolean) => {
-    const all = uniquePivotDimensionValues(rows, field, dateFieldsMeta, fieldDateGranularity);
-    setFilterSelections((prev) => {
-      const base = new Set(prev[field] ?? all);
-      if (checked) base.add(value);
-      else base.delete(value);
-      const arr = [...base].filter((v) => all.includes(v));
-      if (arr.length === 0) return { ...prev, [field]: [] };
-      if (arr.length === all.length) {
-        const { [field]: _, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [field]: arr };
+    startTransition(() => {
+      const all = uniquePivotDimensionValues(rows, field, dateFieldsMeta, fieldDateGranularity);
+      setFilterSelections((prev) => {
+        const base = new Set(prev[field] ?? all);
+        if (checked) base.add(value);
+        else base.delete(value);
+        const arr = [...base].filter((v) => all.includes(v));
+        if (arr.length === 0) return { ...prev, [field]: [] };
+        if (arr.length === all.length) {
+          const { [field]: _, ...rest } = prev;
+          return rest;
+        }
+        return { ...prev, [field]: arr };
+      });
     });
   };
 
