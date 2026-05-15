@@ -71,13 +71,13 @@ export type PivotVizType =
 
 /** Configuración serializable de un widget pivot (se guarda en analytics_board_widgets.config) */
 export interface PivotWidgetPersistedConfig {
-  version: 1;
+  version?: 1;
   tableName: string;
   displayName: string;
-  filterFields: string[];
+  filterFields?: string[];
   rowFields: string[];
   colFields: string[];
-  filterSelections: Record<string, string[]>;
+  filterSelections?: Record<string, string[]>;
   measures: PivotMeasureSpec[];
   viz: PivotVizType;
   chartMeasureId: string;
@@ -87,6 +87,10 @@ export interface PivotWidgetPersistedConfig {
   hiddenDataColumns?: string[];
   appearance?: WidgetAppearance;
   chrome?: WidgetChrome;
+  /** Filtros estáticos opcionales (legacy / presets) */
+  filters?: unknown[];
+  /** Layout sugerido del preset (no se persiste en config; se mueve a `layout` de la fila). */
+  layout?: BoardWidgetLayout;
 }
 
 export interface BoardWidgetLayout {
