@@ -260,13 +260,34 @@ export async function fetchExecutiveDashboardData(filters: LeadsDashboardFilters
   let prevStart: string;
   let prevEnd: string;
 
-  if (comparativePeriod === "prev_year") {
-    prevStart = format(subYears(dateStart, 1), "yyyy-MM-dd");
-    prevEnd = format(subYears(dateEnd, 1), "yyyy-MM-dd");
-  } else {
-    // Default: Periodo anterior inmediato
-    prevEnd = format(subDays(dateStart, 1), "yyyy-MM-dd");
-    prevStart = format(subDays(parseISO(prevEnd), diffDays - 1), "yyyy-MM-dd");
+  switch (comparativePeriod) {
+    case "ayer":
+    case "prev_day":
+      prevStart = format(subDays(dateStart, 1), "yyyy-MM-dd");
+      prevEnd = format(subDays(dateEnd, 1), "yyyy-MM-dd");
+      break;
+    case "semana_anterior":
+    case "prev_week":
+      prevStart = format(subWeeks(dateStart, 1), "yyyy-MM-dd");
+      prevEnd = format(subWeeks(dateEnd, 1), "yyyy-MM-dd");
+      break;
+    case "mes_anterior":
+    case "prev_month":
+      prevStart = format(subMonths(dateStart, 1), "yyyy-MM-dd");
+      prevEnd = format(subMonths(dateEnd, 1), "yyyy-MM-dd");
+      break;
+    case "año_anterior":
+    case "prev_year":
+      prevStart = format(subYears(dateStart, 1), "yyyy-MM-dd");
+      prevEnd = format(subYears(dateEnd, 1), "yyyy-MM-dd");
+      break;
+    case "periodo_previo_equivalente":
+    case "prev_period":
+    default:
+      // Periodo inmediatamente anterior con la misma cantidad de días
+      prevEnd = format(subDays(dateStart, 1), "yyyy-MM-dd");
+      prevStart = format(subDays(parseISO(prevEnd), diffDays - 1), "yyyy-MM-dd");
+      break;
   }
   
   const currentIsoWeekStart = format(startOfISOWeek(dateEnd), "yyyy-MM-dd");
