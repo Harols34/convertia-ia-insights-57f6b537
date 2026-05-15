@@ -33,22 +33,19 @@ export function BoardShareDialog({ boardId, isOpen, onOpenChange, ownerId }: Boa
   const { data: shares = [], isLoading: loadingShares } = useQuery({
     queryKey: ["board-shares", boardId],
     queryFn: async () => {
-      // No existe FK entre analytics_board_shares.user_id y profiles, así que evitamos el embed
-      // (causaba 400) y combinamos los datos en dos consultas.
       const { data: rows, error } = await supabase
         .from("analytics_board_shares")
         .select("id, user_id, access_level")
         .eq("board_id", boardId);
       if (error) throw error;
       const userIds = (rows ?? []).map((r) => r.user_id).filter(Boolean) as string[];
-      let profilesById = new Map<string, { id: string; full_name: string | null; avatar_url: string | null }>();
+      let profilesById = new Map<string, { id: string; full_name: string | null; avatar_url: string | null; tenant_name: string | null }>();
       if (userIds.length) {
+        // RPC global (SECURITY DEFINER) para resolver perfiles de cualquier tenant
         const { data: profs, error: pErr } = await supabase
-          .from("profiles")
-          .select("id, full_name, avatar_url")
-          .in("id", userIds);
+          .rpc("get_profiles_by_ids", { user_ids: userIds });
         if (pErr) throw pErr;
-        profilesById = new Map((profs ?? []).map((p) => [p.id, p]));
+        profilesById = new Map((profs ?? []).map((p: any) => [p.id, p]));
       }
       return (rows ?? []).map((r) => ({
         ...r,
@@ -61,18 +58,14 @@ export function BoardShareDialog({ boardId, isOpen, onOpenChange, ownerId }: Boa
   const { data: availableUsers = [] } = useQuery({
     queryKey: ["available-users-for-share", search],
     queryFn: async () => {
-      if (!search || search.length < 3) return [];
+      if (!search || search.length < 2) return [];
+      // RPC global para buscar usuarios de TODOS los tenants
       const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, avatar_url")
-        .ilike("full_name", `%${search}%`)
-        .neq("id", currentUser?.id)
-        .limit(5);
-      
+        .rpc("search_shareable_users", { search_term: search });
       if (error) throw error;
       return data || [];
     },
-    enabled: isOpen && search.length >= 3
+    enabled: isOpen && search.length >= 2
   });
 
   const addShare = useMutation({
