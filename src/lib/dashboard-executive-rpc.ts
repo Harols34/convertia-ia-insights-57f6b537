@@ -1,4 +1,4 @@
-import { endOfISOWeek, format, getISODay, parseISO, startOfISOWeek, subDays, subYears } from "date-fns";
+import { endOfISOWeek, format, getISODay, parseISO, startOfISOWeek, subDays, subWeeks, subMonths, subYears } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { LEADS_FILTER_EMPTY_TOKEN, type LeadRow, type LeadsDashboardFilters } from "@/lib/dashboard-leads";
