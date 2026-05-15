@@ -14,6 +14,38 @@ export type Database = {
   }
   public: {
     Tables: {
+      analytics_board_shares: {
+        Row: {
+          access_level: string
+          board_id: string | null
+          created_at: string | null
+          id: string
+          user_id: string | null
+        }
+        Insert: {
+          access_level?: string
+          board_id?: string | null
+          created_at?: string | null
+          id?: string
+          user_id?: string | null
+        }
+        Update: {
+          access_level?: string
+          board_id?: string | null
+          created_at?: string | null
+          id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_board_shares_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_user_boards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       analytics_board_widgets: {
         Row: {
           board_id: string
@@ -61,8 +93,12 @@ export type Database = {
       analytics_user_boards: {
         Row: {
           created_at: string
+          description: string | null
+          icon: string | null
           id: string
+          is_preset: boolean
           name: string
+          preset_key: string | null
           sort_order: number
           tenant_id: string
           updated_at: string
@@ -70,8 +106,12 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          description?: string | null
+          icon?: string | null
           id?: string
+          is_preset?: boolean
           name?: string
+          preset_key?: string | null
           sort_order?: number
           tenant_id: string
           updated_at?: string
@@ -79,8 +119,12 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          description?: string | null
+          icon?: string | null
           id?: string
+          is_preset?: boolean
           name?: string
+          preset_key?: string | null
           sort_order?: number
           tenant_id?: string
           updated_at?: string
@@ -1398,6 +1442,18 @@ export type Database = {
           udt_name: string
         }[]
       }
+      analytics_aggregate: {
+        Args: {
+          p_date_granularity?: Json
+          p_filters?: Json
+          p_group_by?: string[]
+          p_limit?: number
+          p_measures?: Json
+          p_order_by?: string
+          p_order_dir?: string
+        }
+        Returns: Json
+      }
       analytics_dimension_values: {
         Args: {
           p_date_granularity?: string
@@ -1407,6 +1463,19 @@ export type Database = {
           p_table_name: string
         }
         Returns: Json
+      }
+      analytics_distinct_values: {
+        Args: { p_field: string; p_filters?: Json; p_limit?: number }
+        Returns: Json
+      }
+      analytics_kpi_summary: { Args: { p_filters?: Json }; Returns: Json }
+      check_board_access: {
+        Args: { p_board_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      check_board_ownership: {
+        Args: { p_board_id: string; p_user_id: string }
+        Returns: boolean
       }
       execute_leads_query: {
         Args: { _query: string; _tenant_id: string }
