@@ -22,8 +22,12 @@ export async function fetchAllIntegrationRows(
   pageSize: number = 5000,
   fchCreacionRango?: { desde?: string; hasta?: string },
 ): Promise<Record<string, unknown>[]> {
-  const limit = Math.min(pageSize > 0 ? pageSize : 5000, 5000); // Enforce safety limit (Supabase default max_rows is 5000)
-  const selectClause = selectColumns?.length ? selectColumns.join(",") : "*";
+  const limit = Math.min(pageSize > 0 ? pageSize : 5000, 5000); // Tamaño por página; la función pagina hasta agotar el dataset.
+  const requestedColumns = selectColumns?.length ? [...new Set(selectColumns)] : undefined;
+  const needsCursorColumn = tableName === "leads" && requestedColumns && !requestedColumns.includes("id");
+  const selectClause = requestedColumns?.length
+    ? [...requestedColumns, ...(needsCursorColumn ? ["id"] : [])].join(",")
+    : "*";
 
   // Helper to apply filters consistently
   const applyFilters = (q: any) => {
@@ -47,34 +51,23 @@ export async function fetchAllIntegrationRows(
     return filtered;
   };
 
-  // 1. Get total count
-  let countQuery = client.from(tableName as keyof Database["public"]["Tables"]).select('*', { count: 'exact', head: true });
-  countQuery = applyFilters(countQuery);
-  const { count, error: countError } = await countQuery;
-  
-  if (countError) throw countError;
-  if (!count || count === 0) return [];
-
-  // 2. Fetch data
+  // 1. Leads usa paginación por cursor sin conteo previo: evita latencia y elimina el límite efectivo de 5000.
   if (tableName === "leads") {
-    // Keyset pagination (cursor-based) para evitar timeout / error 500 con offsets grandes (> 100k)
+    // Keyset pagination por UUID estable. No dependemos de `id_lead`, que puede no venir en la proyección del widget.
     const allRows: Record<string, unknown>[] = [];
     let hasMore = true;
-    let lastId: any = null;
+    let lastCursor: string | null = null;
     let loadedCount = 0;
 
-    // Forzamos ordenación por ID para un cursor unidimensional simple y seguro.
-    // El orden cronológico no se afecta de forma crítica, ya que los IDs suelen ser secuenciales,
-    // y el cliente re-ordena o agrupa los datos en memoria según sea necesario.
     while (hasMore) {
       let q = client.from("leads").select(selectClause);
       q = applyFilters(q);
 
-      if (lastId !== null) {
-        q = q.gt("id_lead", lastId);
+      if (lastCursor !== null) {
+        q = q.gt("id", lastCursor);
       }
 
-      q = q.order("id_lead", { ascending: true }).limit(limit);
+      q = q.order("id", { ascending: true }).limit(limit);
 
       const fetchChunk = async (retries = 3): Promise<any[]> => {
         try {
@@ -94,7 +87,10 @@ export async function fetchAllIntegrationRows(
       let batch = (await fetchChunk()) as Record<string, unknown>[];
       if (batch.length === 0) break;
 
-      lastId = batch[batch.length - 1].id_lead;
+      lastCursor = String(batch[batch.length - 1].id);
+      if (needsCursorColumn) {
+        batch = batch.map(({ id, ...row }) => row);
+      }
       if (stripColumnNames?.length) {
         batch = stripRowKeys(batch, stripColumnNames);
       }
@@ -109,6 +105,14 @@ export async function fetchAllIntegrationRows(
     }
     return allRows;
   }
+
+  // 2. Otras tablas: conteo + chunks offset-based.
+  let countQuery = client.from(tableName as keyof Database["public"]["Tables"]).select('*', { count: 'exact', head: true });
+  countQuery = applyFilters(countQuery);
+  const { count, error: countError } = await countQuery;
+  
+  if (countError) throw countError;
+  if (!count || count === 0) return [];
 
   // 2b. Parallel chunks (offset-based) para otras tablas más pequeñas
   const totalChunks = Math.ceil(count / limit);
